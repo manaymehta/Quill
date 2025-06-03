@@ -8,6 +8,16 @@ const AddEditNotes = ({onClose}) => {
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
 
+  const [error, setError] = useState("");
+
+  const handleAddNote = () => {
+    if(!content && !title){
+      setError("Please enter content")
+      return;
+    }
+    setError("");
+  }
+
   return (
     <div>
       <div className='relative'>
@@ -26,7 +36,10 @@ const AddEditNotes = ({onClose}) => {
           className='outline-none font-medium text-xl pl-1 pt-1'
           placeholder='Title '
           value={title}
-          onChange={(e) => {setTitle(e.target.value)}}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            setError("");
+          }}
         />
       </div>
 
@@ -38,7 +51,10 @@ const AddEditNotes = ({onClose}) => {
           placeholder='Content '
           rows={10}
           value={content}
-          onChange={(e) => {setContent(e.target.value)}}
+          onChange={(e) => {
+            setContent(e.target.value)
+            setError("");
+          }}
         />
       </div>
 
@@ -46,9 +62,11 @@ const AddEditNotes = ({onClose}) => {
         <TagInput tags={tags} setTags={setTags}/>
       </div>
         
+      {error && (<p className='text-xs pl-2 pt-2 text-red-500'>{error}</p>)}
+
       <button 
-        className=' btn-primary rounded-full transition-all ease-in-out'
-        onClick={()=>{}}  
+        className='w-full text-sm bg-primary text-white p-2 my-3 hover:bg-blue-600 rounded-full transition-all ease-in-out'
+        onClick={handleAddNote}  
       >
         ADD
       </button>
