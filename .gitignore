@@ -1,0 +1,30 @@
+# ====== Node (Backend & Frontend) ======
+node_modules/
+
+# ====== Builds ======
+build/
+dist/
+
+# ====== Environment Variables ======
+.env
+
+# ====== Logs ======
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ====== OS Files ======
+.DS_Store
+Thumbs.db
+
+# ====== Editor Directories and Files ======
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# ====== Others ======
+*.local
+*.env.local
