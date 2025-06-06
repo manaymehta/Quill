@@ -7,7 +7,8 @@ const mongoose = require("mongoose")
 mongoose.connect(config.connectionString)
 
 //database
-const User = require("./models/user.model")
+const User = require("./models/user.model");
+const Note = require('./models/note.model');
 
 //express
 const express = require("express");
@@ -53,8 +54,8 @@ app.post("/create-account", async (req, res) => {
   }
 
   //if email id already registered 
-  const isUser = await User.findOne({email: email});
-  if(isUser){
+  const isUser = await User.findOne({ email: email });
+  if (isUser) {
     return res
       .json({ error: true, message: "User already exists", });
   }
@@ -68,7 +69,7 @@ app.post("/create-account", async (req, res) => {
   await user.save();
 
   //signing new user info with token
-  const accessToken = jwt.sign({user}, process.env.ACCESS_TOKEN_SECRET,{
+  const accessToken = jwt.sign({ user }, process.env.ACCESS_TOKEN_SECRET, {
     expiresIn: "36000m",
   });
 
@@ -97,14 +98,14 @@ app.post("/login", async (req, res) => {
   }
 
   //if email id already registered 
-  const userInfo = await User.findOne({email: email});
-  if(!userInfo){
+  const userInfo = await User.findOne({ email: email });
+  if (!userInfo) {
     return res
       .json({ error: true, message: "User not found", });
   }
 
-  if(userInfo.email==email && userInfo.password==password){
-    const user = {user: userInfo};
+  if (userInfo.email == email && userInfo.password == password) {
+    const user = { user: userInfo };
     const accessToken = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
       expiresIn: "36000m"
     });
@@ -115,13 +116,48 @@ app.post("/login", async (req, res) => {
       email,
       accessToken
     });
-  } else{
+  } else {
     return res
       .status(400)
       .json({
         error: true,
         message: "Invalid Credentials"
       });
+  }
+});
+
+app.post("/add-note", authenticateToken, async (req, res) => {
+  const { title, content, tags } = req.body;
+  const { user } = req.user;
+
+  //error handling
+  if (!title && !content) {
+    return res
+      .status(400)
+      .json({ error: true, message: "Content or Title is required", });
+  }
+
+  try {
+    const note = new Note({
+      title: title || " ",
+      content: content || " ",
+      tags: tags || [],
+      userId: user._id,
+    })
+
+    await note.save();
+
+    return res.json({
+      error: false,
+      note,
+      message: "Note created succesfully",
+    });
+  }
+  catch (error) {
+    return res.json({
+      error: true,
+      message: "Internal Server Error",
+    });
   }
 });
 
