@@ -27,10 +27,6 @@ app.use(
   })
 );
 
-app.get("/", (req, res) => {
-  res.json({ data: "Hello" });
-});
-
 app.post("/create-account", async (req, res) => {
   const { fullName, email, password } = req.body;
 
@@ -69,9 +65,14 @@ app.post("/create-account", async (req, res) => {
   await user.save();
 
   //signing new user info with token
-  const accessToken = jwt.sign({ user }, process.env.ACCESS_TOKEN_SECRET, {
-    expiresIn: "36000m",
-  });
+  //const accesToken = jwt.sign({ user }, process.env.ACCESS_TOKEN_SECRET, {expiresIn: "36000m",});
+  const accessToken = jwt.sign({
+    _id: user._id
+  },
+    process.env.ACCESS_TOKEN_SECRET, {
+    expiresIn: "36000m"
+  }
+  );
 
   return res.json({
     error: false,
@@ -105,10 +106,11 @@ app.post("/login", async (req, res) => {
   }
 
   if (userInfo.email == email && userInfo.password == password) {
-    const user = { user: userInfo };
-    const accessToken = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-      expiresIn: "36000m"
-    });
+    const accessToken = jwt.sign(
+      { _id: userInfo._id },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "1h" }
+    );
 
     return res.json({
       error: false,
@@ -128,7 +130,7 @@ app.post("/login", async (req, res) => {
 
 app.post("/add-note", authenticateToken, async (req, res) => {
   const { title, content, tags } = req.body;
-  const { user } = req.user;
+  const userId = req.user._id;
 
   //error handling
   if (!title && !content) {
@@ -142,7 +144,7 @@ app.post("/add-note", authenticateToken, async (req, res) => {
       title: title || " ",
       content: content || " ",
       tags: tags || [],
-      userId: user._id,
+      userId,
     })
 
     await note.save();
@@ -151,6 +153,48 @@ app.post("/add-note", authenticateToken, async (req, res) => {
       error: false,
       note,
       message: "Note created succesfully",
+    });
+  }
+  catch (error) {
+    return res.json({
+      error: true,
+      message: error,
+    });
+  }
+});
+
+app.put("/edit-note/:noteId", authenticateToken, async (req, res) => {
+  const noteId = req.params.noteId;
+  const { title, content, tags, isPinned } = req.body;
+  const userId = req.user._id;
+
+  //error handling
+  if (!title && !content && !tags) {
+    return res
+      .status(400)
+      .json({ error: true, message: "No changes", });
+  }
+
+  try {
+    const note = await Note.findOne({ _id: noteId, userId: userId });
+
+    if (!note) {
+      return res.json({ error: true, message: "Note doesn't exist" });
+    }
+
+    if (title) note.title = title;
+    if (content) note.content = content;
+    if (tags) note.tags = tags;
+    if (typeof isPinned !== "undefined") {
+      note.isPinned = isPinned;
+    }
+
+    await note.save();
+
+    return res.json({
+      error: false,
+      note,
+      message: "Note edited successfully"
     });
   }
   catch (error) {
