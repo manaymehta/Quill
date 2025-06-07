@@ -128,6 +128,31 @@ app.post("/login", async (req, res) => {
   }
 });
 
+app.get("/get-user", authenticateToken, async (req, res) => {
+  const userId = req.user._id;
+
+  try {
+    const userInfo = await User.findOne({ _id: userId });
+
+    if(!userInfo){
+      return res.status(401);
+    }
+    return res.json({
+      error: false,
+      message: "User Info",
+      user:{
+        fullName: userInfo.fullName,
+        email: userInfo.email,
+        _id: userInfo._id,
+        createdOn: userInfo.createdOn,
+      }
+    })
+  }
+  catch (error) {
+    res.status(500).json({error: true, message: "Internal Server Error"});
+  }
+});
+
 app.post("/add-note", authenticateToken, async (req, res) => {
   const { title, content, tags } = req.body;
   const userId = req.user._id;
