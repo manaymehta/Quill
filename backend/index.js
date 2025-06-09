@@ -67,7 +67,9 @@ app.post("/create-account", async (req, res) => {
   //signing new user info with token
   //const accesToken = jwt.sign({ user }, process.env.ACCESS_TOKEN_SECRET, {expiresIn: "36000m",});
   const accessToken = jwt.sign({
-    _id: user._id
+    _id: user._id,
+    email: user.email,
+    fullName: user.fullName
   },
     process.env.ACCESS_TOKEN_SECRET, {
     expiresIn: "36000m"
@@ -106,8 +108,11 @@ app.post("/login", async (req, res) => {
   }
 
   if (userInfo.email == email && userInfo.password == password) {
-    const accessToken = jwt.sign(
-      { _id: userInfo._id },
+    const accessToken = jwt.sign({
+      _id: userInfo._id,
+      email: userInfo.email,
+      fullName: userInfo.fullName
+    },
       process.env.ACCESS_TOKEN_SECRET,
       { expiresIn: "36000m" }
     );
@@ -134,13 +139,13 @@ app.get("/get-user", authenticateToken, async (req, res) => {
   try {
     const userInfo = await User.findOne({ _id: userId });
 
-    if(!userInfo){
+    if (!userInfo) {
       return res.status(401);
     }
     return res.json({
       error: false,
       message: "User Info",
-      user:{
+      user: {
         fullName: userInfo.fullName,
         email: userInfo.email,
         _id: userInfo._id,
@@ -149,7 +154,7 @@ app.get("/get-user", authenticateToken, async (req, res) => {
     })
   }
   catch (error) {
-    res.status(500).json({error: true, message: "Internal Server Error"});
+    res.status(500).json({ error: true, message: "Internal Server Error" });
   }
 });
 
@@ -292,7 +297,7 @@ app.put("/update-note-pinned/:noteId", authenticateToken, async (req, res) => {
   try {
     const note = await Note.findOne({ userId: userId, _id: noteId });
 
-    if(!note) {return res.status(404).json({error: true, message: "Note not found"});}
+    if (!note) { return res.status(404).json({ error: true, message: "Note not found" }); }
 
     note.isPinned = false;
     await note.save();
@@ -303,7 +308,7 @@ app.put("/update-note-pinned/:noteId", authenticateToken, async (req, res) => {
     });
   }
   catch (error) {
-    res.status(500).json({error: true,message: "Internal Server Error"})
+    res.status(500).json({ error: true, message: "Internal Server Error" })
   }
 });
 app.listen(8000);

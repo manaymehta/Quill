@@ -1,61 +1,84 @@
 import React, { useState } from 'react'
 import Navbar from '../../components/Navbar/Navbar';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { validateEmail } from '../../utils/helper';
 import PasswordInput from '../../components/Input/PasswordInput';
+import axiosInstance from '../../utils/axiosInstance';
 
 const Login = () => {
 
-	const [email, setEmail] = useState("");
-	const [password, setPassword] = useState("");
-	const [error, setError] = useState(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
 
-	const handleLogin = async (e) => {
-		e.preventDefault();
+  const navigate = useNavigate();
 
-		if (!validateEmail(email)) {
-			setError("Please enter a valid email address");
-			return;
-		}
-		if (!password) {
-			setError("Please enter password");
-			return;
-		}
-		setError("");
+  const handleLogin = async (e) => {
+    e.preventDefault();
 
-		//Login API
-	}
-	return <>
-		<Navbar />
-		<div className='flex items-center justify-center mt-30'>
-			<div className='border rounded bg-white w-96 px-7 py-10'>
-				<form onSubmit={handleLogin}>
-					<h4 className='text-2xl mb-7'>Login</h4>
-					<input
-						className='input-box'
-						type='email'
-						placeholder='Email'
-						value={email}
-						onChange={(e) => setEmail(e.target.value)}
-					/>
+    if (!validateEmail(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+    if (!password) {
+      setError("Please enter password");
+      return;
+    }
+    setError("");
 
-					<PasswordInput
-						value={password}
-						onChange={(e) => setPassword(e.target.value)}
-					/>
+    //Login API Call using axios
+    try{
+      const response = await axiosInstance.post("/login", {
+        email: email,
+        password: password,
+      });
 
-					{error && <p className='text-red-500 text-xs pb-1'>{error}</p>}
+      //Handle successful login response
+      if(response.data && response.data.accessToken) {
+        localStorage.setItem("token", response.data.accessToken);
+        navigate("/dashboard");
+      }
+    }
+    catch(error){
+      if(error.response && error.response.data && error.response.data.message){
+        setError(error.response.data.message);
+      } else{
+        setError("Unexpected Error. Please try again");
+      }
+    }
+  };
+  
+  return <>
+    <Navbar isVisible={false}/>
+    <div className='flex items-center justify-center mt-30'>
+      <div className='border border-slate-200 rounded bg-white w-96 px-7 py-10'>
+        <form onSubmit={handleLogin}>
+          <h4 className='text-2xl mb-7'>Login</h4>
+          <input
+            className='input-box'
+            type='email'
+            placeholder='Email'
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
 
-					<button className='btn-primary' type='submit'>Login</button>
+          <PasswordInput
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
 
-					<p className='text-sm text-center mt-4'>
-						Not registered yet?{" "}
-						<Link to='/signup' className='text-primary font-medium underline'>Create an accout</Link>
-					</p>
-				</form>
-			</div>
-		</div>
-	</>;
+          {error && <p className='text-red-500 text-xs pb-1'>{error}</p>}
+
+          <button className='btn-primary cursor-pointer' type='submit'>Login</button>
+
+          <p className='text-sm text-center mt-4'>
+            Not registered yet?{" "}
+            <Link to='/signup' className='text-primary font-medium underline'>Create an accout</Link>
+          </p>
+        </form>
+      </div>
+    </div>
+  </>;
 }
 
 export default Login
