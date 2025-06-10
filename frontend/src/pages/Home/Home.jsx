@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react'
 import Navbar from '../../components/Navbar/Navbar'
 import NoteCard from '../../components/Cards/NoteCard'
 import { MdAdd } from 'react-icons/md'
-import moment from "moment";
 import AddEditNotes from './AddEditNotes'
 import Modal from 'react-modal';
 import axiosInstance from '../../utils/axiosInstance'
@@ -10,18 +9,20 @@ import { useNavigate } from 'react-router-dom'
 
 
 const Home = () => {
-
+  const navigate = useNavigate();
   const [userInfo, setUserInfo] = useState(null);
   const [allNotes, setAllNotes] = useState([]);
-  const navigate = useNavigate();
   const [openAddEditModal, setOpenAddEditModal] = useState({
     isShown: false,
     type: "add",
     data: null,
   });
 
-  const getUserInfo = async () => {
+  const handleEdit = (note) => {
+    setOpenAddEditModal({ isShown: true, type: "edit", data: note  })
+  }
 
+  const getUserInfo = async () => {
     try {
       const response = await axiosInstance.get("/get-user");
       if (response.data && response.data.user) {
@@ -61,17 +62,17 @@ const Home = () => {
       <div className='container mx-auto'>
         <div className='grid grid-cols-4 gap-4 mt-8 ml-4'>
 
-          {allNotes.map((item, index) => (
+          {allNotes.map((note, index) => (
             <NoteCard
-              key={item._id}
-              title={item.title}
-              date={item.date}
-              content={item.content}
-              tags={item.tags}
-              isPinned={item.isPinned}
-              onEdit={()=>{}}
-              onDelete={()=>{}}
-              onPinned={()=>{}}
+              key={note._id}
+              title={note.title}
+              date={note.date}
+              content={note.content}
+              tags={note.tags}
+              isPinned={note.isPinned}
+              onEdit={() => {handleEdit(note)}}
+              onDelete={() => { }}
+              onPinned={() => { }}
             />
           ))}
 
@@ -103,6 +104,7 @@ const Home = () => {
         <AddEditNotes
           type={openAddEditModal.type}
           noteData={openAddEditModal.data}
+          getAllNotes={getAllNotes}
           onClose={() => {
             setOpenAddEditModal({ isShown: false, type: "add", data: null });
           }} />

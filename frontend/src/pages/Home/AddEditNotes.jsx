@@ -1,33 +1,63 @@
 import React, { useState } from 'react'
 import { MdAdd, MdClose } from 'react-icons/md'
 import TagInput from '../../components/Input/TagInput'
+import axiosInstance from '../../utils/axiosInstance';
 
-const AddEditNotes = ({type, noteData, onClose}) => {
-
-  const [tags, setTags] = useState([]);
-  const [content, setContent] = useState("");
-  const [title, setTitle] = useState("");
-
+const AddEditNotes = ({ type, noteData, onClose, getAllNotes }) => { //noteData used for current values of note to be edited
+  const [tags, setTags] = useState(noteData?.tags || []);
+  const [content, setContent] = useState(noteData?.content || "");
+  const [title, setTitle] = useState(noteData?.title || "");
   const [error, setError] = useState("");
 
   const editNote = async () => {
-
+    const noteId = noteData._id;
+    try {
+      const response = await axiosInstance.put("/edit-note/" + noteId, {
+        title,
+        content,
+        tags
+      });
+      if (response.data && response.data.note) {
+        getAllNotes();
+        onClose();
+      }
+    }
+    catch (error) {
+      if (error.response && error.response.data && error.response.data.message) {
+        setError(error.response.data.message);
+      }
+    }
   }
 
   const addNewNote = async () => {
-
+    try {
+      const response = await axiosInstance.post("/add-note", {
+        title,
+        content,
+        tags
+      });
+      if (response.data && response.data.note) {
+        getAllNotes();
+        onClose();
+      }
+    }
+    catch (error) {
+      if (error.response && error.response.data && error.response.data.message) {
+        setError(error.response.data.message);
+      }
+    }
   }
 
+  //error conditions for adding a note
   const handleAddNote = () => {
-    if(!content && !title){
+    if (!content && !title) {
       setError("Please enter content")
       return;
     }
     setError("");
-
-    if(type === 'edit'){
+    if (type === 'edit') {
       editNote();
-    } else{
+    } else {
       addNewNote();
     }
   }
@@ -35,7 +65,7 @@ const AddEditNotes = ({type, noteData, onClose}) => {
   return (
     <div>
       <div className='relative'>
-        <button 
+        <button
           className='text-slate-400 hover:text-slate-600 flex items-center justify-center absolute -top-1 -right-1'
           onClick={onClose}
         >
@@ -73,16 +103,16 @@ const AddEditNotes = ({type, noteData, onClose}) => {
       </div>
 
       <div className='flex flex-col gap-2'>
-        <TagInput tags={tags} setTags={setTags}/>
+        <TagInput tags={tags} setTags={setTags} />
       </div>
-        
+
       {error && (<p className='text-xs pl-2 pt-2 text-red-500'>{error}</p>)}
 
-      <button 
+      <button
         className='w-full text-sm bg-primary text-white p-2 my-3 hover:bg-blue-600 rounded-full transition-all ease-in-out'
-        onClick={handleAddNote}  
+        onClick={handleAddNote}
       >
-        ADD
+        {type === "edit" ? "EDIT" : "ADD"}
       </button>
     </div>
   )
