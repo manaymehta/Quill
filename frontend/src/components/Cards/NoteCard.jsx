@@ -11,7 +11,7 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
           <h4 className='text-xl font-semibold text-slate-700'>{title}</h4>
           <span className='font-medium text-xs text-slate-500'>{moment(date).format("Do MMM YYYY")}</span>
         </div>
-        <MdOutlinePushPin className={`icon-btn ${isPinned ? 'text-black' : 'text-slate-400'}  hover:text-slate-600`} onClick={onPinned} />
+        <MdOutlinePushPin className={`icon-btn ${isPinned ? 'text-primary' : 'text-slate-400'}  hover:text-slate-600`} onClick={onPinned} />
       </div>
       
       <div>

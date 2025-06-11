@@ -15,6 +15,7 @@ const Home = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [allNotes, setAllNotes] = useState([]);
   const [showToast, setShowToast] = useState(false);
+  const [isSearch, setIsSearch] = useState(false)
   const [openAddEditModal, setOpenAddEditModal] = useState({  //passes values to modal  
     isShown: false,
     type: "add",
@@ -25,6 +26,26 @@ const Home = () => {
     message: "",
     type: "add"
   });
+
+  const onSearch = async (query) => {
+    try {
+      const response = await axiosInstance("/search-notes", {
+        params: {query}
+      });
+
+      if (response.data && response.data.notes) {
+        setIsSearch(true);
+        setAllNotes(response.data.notes)
+      }
+    } catch(error){
+      console.log(error);
+    }
+  }
+
+  const handleClearSearch = () => {
+    setIsSearch(false);
+    getAllNotes();
+  }
 
   const showToastMessage = (message, type) => {
     setToastMessageVisibility({ isShown: true, message, type });
@@ -87,6 +108,20 @@ const Home = () => {
     }
   }
 
+  const updateIsPinned = async (noteData) => {
+    const noteId = noteData._id;
+    try {
+      const response = await axiosInstance.put("/update-note-pinned/" + noteId, {isPinned: !noteData.isPinned});
+
+      if(response.data && response.data.note){
+        getAllNotes();
+        showToastMessage(`Note ${!noteData.isPinned ? "pinned": "unpinned"}`);
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
   useEffect(() => {
     getUserInfo();
     getAllNotes();
@@ -95,7 +130,7 @@ const Home = () => {
 
   return (
     <>
-      <Navbar onLogout={() => { }} userInfo={userInfo} />
+      <Navbar onSearch={onSearch} onLogout={() => { }} userInfo={userInfo} handleClearSearch={handleClearSearch} />
 
       <div className='container mx-auto'>
         {allNotes.length > 0 ? (
@@ -110,7 +145,7 @@ const Home = () => {
                 isPinned={note.isPinned}
                 onEdit={() => { handleEdit(note) }}
                 onDelete={() => { deleteNote(note) }}
-                onPinned={() => { }}
+                onPinned={() => { updateIsPinned(note)}}
               />
             ))}
           </div>

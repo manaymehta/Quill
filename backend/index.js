@@ -26,7 +26,7 @@ app.use(
     origin: "*",
   })
 );
-
+//User
 app.post("/create-account", async (req, res) => {
   const { fullName, email, password } = req.body;
 
@@ -193,6 +193,7 @@ app.post("/add-note", authenticateToken, async (req, res) => {
   }
 });
 
+//Note
 app.put("/edit-note/:noteId", authenticateToken, async (req, res) => {
   const noteId = req.params.noteId;
   const { title, content, tags, isPinned } = req.body;
@@ -292,6 +293,7 @@ app.delete("/delete-note/:noteId", authenticateToken, async (req, res) => {
 
 app.put("/update-note-pinned/:noteId", authenticateToken, async (req, res) => {
   const noteId = req.params.noteId;
+  const {isPinned} = req.body;
   const userId = req.user._id;
 
   try {
@@ -299,18 +301,47 @@ app.put("/update-note-pinned/:noteId", authenticateToken, async (req, res) => {
 
     if (!note) { return res.status(404).json({ error: true, message: "Note not found" }); }
 
-    note.isPinned = false;
+    note.isPinned = isPinned;
     await note.save();
 
     return res.json({
       error: false,
-      message: "Note unpinned"
+      message: "Note unpinned",
+      note
     });
   }
   catch (error) {
     res.status(500).json({ error: true, message: "Internal Server Error" })
   }
 });
+
+app.get("/search-notes/", authenticateToken, async (req, res) => {
+  const userId = req.user._id;
+  const {query} = req.query;
+
+  if(!query){
+    return res.status(400).json({error: true, message: "Search query is required"})
+  }
+
+  try {
+    const matchingNote = await Note.find({
+      userId: userId,
+      $or: [
+        {title: {$regex: new RegExp(query, "i")}},
+        {content: {$regex: new RegExp(query, "i")}}
+      ]
+    });
+
+    return res.json({
+      error: false,
+      message: "note found successfully",
+      notes: matchingNote
+    })
+  } catch (error) {
+    return res.status(500).json({error: true, message: "Internal Server Error"});
+  }
+});
+
 app.listen(8000);
 
 module.exports = app;
