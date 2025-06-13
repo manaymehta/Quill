@@ -31,10 +31,10 @@ const TagInput = ({ tags, setTags }) => {
       {tags?.length > 0 && (
         <div className='flex items-center gap-x-2 flex-wrap'>
           {tags.map((tag, index) => (
-            <span key={index} className='text-slate-500 rounded-full px-2 py-1.5 text-sm mt-2 bg-slate-100'>
+            <span key={index} className='text-neutral-500 rounded-full px-2 py-1.5 text-sm mt-2 '>
               # {tag}
               <button 
-                className='pl-1 relative top-0.5 text-slate-400'
+                className='pl-1 relative top-0.5 text-neutral-400'
                 onClick={() => {handleRemoveTag(tag)}}
               >
                 <MdClose />
@@ -44,7 +44,7 @@ const TagInput = ({ tags, setTags }) => {
         </div>)}
       <div className='flex items-center gap-4 mt-3'>
         <input
-          className='text-sm bg-transparent px-3 py-2 rounded outline-slate-200'
+          className='text-sm bg-neutral-200 px-3 py-2 rounded-full outline-slate-200'
           type='text'
           placeholder='Tags'
           onChange={onInputChange}
@@ -53,7 +53,7 @@ const TagInput = ({ tags, setTags }) => {
         />
 
         <button
-          className='w-8 h-8 rounded-full flex items-center justify-center bg-slate-200 text-slate-400 hover:bg-slate-300 hover:text-slate-500'
+          className='w-8 h-8 rounded-full flex items-center justify-center bg-neutral-300 text-stone-500 hover:bg-neutral-400 hover:text-white'
           onClick={addNewTag}
         >
           <MdAdd className='' />

@@ -8,6 +8,7 @@ import axiosInstance from '../../utils/axiosInstance'
 import { useNavigate } from 'react-router-dom'
 import Toast from '../../components/ToastMessage/Toast'
 import EmptyCard from '../../components/Cards/EmptyCard'
+import Sidebar from '../../components/Sidebar/Sidebar'
 
 const Home = () => {
 
@@ -16,6 +17,8 @@ const Home = () => {
   const [allNotes, setAllNotes] = useState([]);
   const [showToast, setShowToast] = useState(false);
   const [isSearch, setIsSearch] = useState(false)
+  const [shouldCloseModal, setShouldCloseModal] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [openAddEditModal, setOpenAddEditModal] = useState({  //passes values to modal  
     isShown: false,
     type: "add",
@@ -30,14 +33,14 @@ const Home = () => {
   const onSearch = async (query) => {
     try {
       const response = await axiosInstance("/search-notes", {
-        params: {query}
+        params: { query }
       });
 
       if (response.data && response.data.notes) {
         setIsSearch(true);
         setAllNotes(response.data.notes)
       }
-    } catch(error){
+    } catch (error) {
       console.log(error);
     }
   }
@@ -111,16 +114,24 @@ const Home = () => {
   const updateIsPinned = async (noteData) => {
     const noteId = noteData._id;
     try {
-      const response = await axiosInstance.put("/update-note-pinned/" + noteId, {isPinned: !noteData.isPinned});
+      const response = await axiosInstance.put("/update-note-pinned/" + noteId, { isPinned: !noteData.isPinned });
 
-      if(response.data && response.data.note){
+      if (response.data && response.data.note) {
         getAllNotes();
-        showToastMessage(`Note ${!noteData.isPinned ? "pinned": "unpinned"}`);
+        showToastMessage(`Note ${!noteData.isPinned ? "pinned" : "unpinned"}`);
       }
     } catch (error) {
       console.log(error);
     }
   }
+
+  const handleModalClose = () => {
+    if (openAddEditModal.type === "edit") {
+      setShouldCloseModal(true); // tell child to handle save first
+    } else {
+      setOpenAddEditModal({ isShown: false, type: "add", data: null });
+    }
+  };
 
   useEffect(() => {
     getUserInfo();
@@ -129,12 +140,19 @@ const Home = () => {
   }, [])
 
   return (
-    <>
-      <Navbar onSearch={onSearch} onLogout={() => { }} userInfo={userInfo} handleClearSearch={handleClearSearch} />
+    <div className='min-h-screen bg-neutral-200'>
+      <Navbar
+        onSearch={onSearch}
+        onLogout={() => { }}
+        userInfo={userInfo}
+        handleClearSearch={handleClearSearch}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        isSidebarOpen={isSidebarOpen}
+      />
 
-      <div className='container mx-auto'>
+      <div className={`container mx-auto transition-all duration-300 ease-in-out ${isSidebarOpen ? 'ml-64' : 'ml-0'}`}>
         {allNotes.length > 0 ? (
-          <div className='grid grid-cols-3 gap-4 mt-8 ml-4'>
+          <div className='grid grid-cols-4 gap-4 my-4 mx-2'>
             {allNotes.map((note, index) => (
               <NoteCard
                 key={note._id}
@@ -145,7 +163,7 @@ const Home = () => {
                 isPinned={note.isPinned}
                 onEdit={() => { handleEdit(note) }}
                 onDelete={() => { deleteNote(note) }}
-                onPinned={() => { updateIsPinned(note)}}
+                onPinned={() => { updateIsPinned(note) }}
               />
             ))}
           </div>
@@ -155,8 +173,7 @@ const Home = () => {
 
       </div>
 
-      <button className='flex justify-center w-16 h-16 items-center rounded-4xl bg-slate-400 hover:bg-primary absolute right-10 bottom-10 
-                        hover:rotate-45 hover:shadow-xl transition-all ease-in-out'
+      <button className='flex justify-center w-16 h-16 items-center rounded-4xl bg-neutral-400 hover:bg-neutral-500 absolute right-10 bottom-10 hover:rotate-45 hover:shadow-xl transition-all ease-in-out'
         onClick={() => { setOpenAddEditModal({ isShown: true, type: "add", data: null }); }}
       >
         <MdAdd className='text-[35px] text-white' />
@@ -164,14 +181,17 @@ const Home = () => {
 
       <Modal
         isOpen={openAddEditModal.isShown}
-        onRequestClose={() => { }}
+        onRequestClose={handleModalClose}
         style={{
+
           overlay: {
-            backgroundColor: "rgba(0,0,0,0.2)"
+            backgroundColor: "rgba(0,0,0,0.2)",
+
           }
         }}
-        className='mx-auto rounded-2xl bg-white w-[40%] max-h-3/4 mt-15 p-4'
+        className='mx-auto rounded-2xl bg-stone-100 w-150 mt-20 p-4'
         contentLabel=''
+
       >
         <AddEditNotes
           type={openAddEditModal.type}
@@ -179,8 +199,10 @@ const Home = () => {
           getAllNotes={getAllNotes}
           onClose={() => {
             setOpenAddEditModal({ isShown: false, type: "add", data: null });
+            setShouldCloseModal(false); // reset
           }}
           showToastMessage={showToastMessage}
+          shouldCloseModal={shouldCloseModal}
         />
       </Modal>
 
@@ -192,7 +214,9 @@ const Home = () => {
           onClose={handleCloseToast}
         />
       )}
-    </>
+
+      <Sidebar isOpen={isSidebarOpen} />
+    </div>
   )
 }
 

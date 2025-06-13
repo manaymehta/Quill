@@ -1,9 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { MdAdd, MdClose } from 'react-icons/md'
 import TagInput from '../../components/Input/TagInput'
 import axiosInstance from '../../utils/axiosInstance';
 
-const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage }) => { //noteData used for current values of note to be edited
+const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage,shouldCloseModal}) => { //noteData used for current values of note to be edited
   const [tags, setTags] = useState(noteData?.tags || []);
   const [content, setContent] = useState(noteData?.content || "");
   const [title, setTitle] = useState(noteData?.title || "");
@@ -18,7 +18,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage }
         tags
       });
       if (response.data && response.data.note) {
-        
+
         getAllNotes();
         onClose();
         showToastMessage("Note updated successfully", "edit");
@@ -39,7 +39,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage }
         tags
       });
       if (response.data && response.data.note) {
-        
+
         getAllNotes();
         onClose();
         showToastMessage("Note added successfully", "add");
@@ -51,6 +51,8 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage }
       }
     }
   }
+
+
 
   //error conditions for adding a note
   const handleAddNote = () => {
@@ -66,8 +68,14 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage }
     }
   }
 
+ useEffect(() => {
+  if (shouldCloseModal && type === "edit") {
+    handleAddNote();
+  }
+}, [shouldCloseModal]);
+
   return (
-    <div>
+    <div className=' '>
       <div className='relative'>
         <button
           className='text-slate-400 hover:text-slate-600 flex items-center justify-center absolute -top-1 -right-1'
@@ -95,7 +103,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage }
 
         <textarea
           type='text'
-          className='text-sm bg-slate-50 outline-none p-2 rounded-xl'
+          className='text-sm bg-stone-100 outline-none p-2 h-100 rounded-xl'
           placeholder='Content '
           rows={10}
           value={content}
@@ -113,7 +121,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage }
       {error && (<p className='text-xs pl-2 pt-2 text-red-500'>{error}</p>)}
 
       <button
-        className='w-full text-sm bg-primary text-white p-2 my-3 hover:bg-blue-600 rounded-full transition-all ease-in-out'
+        className='w-full text-sm bg-neutral-300 text-stone-500 p-2 my-3 hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out'
         onClick={handleAddNote}
       >
         {type === "edit" ? "EDIT" : "ADD"}
