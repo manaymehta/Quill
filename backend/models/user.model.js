@@ -5,6 +5,7 @@ const userSchema = new Schema({
     fullName: {type: String},
     email: {type: String},
     password: {type: String},
+    googleId: { type: String },
     createdOn: { type: Date, default: () => new Date() },
 });
 

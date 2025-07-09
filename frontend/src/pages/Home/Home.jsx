@@ -9,46 +9,26 @@ import { useNavigate } from 'react-router-dom'
 import Toast from '../../components/ToastMessage/Toast'
 import EmptyCard from '../../components/Cards/EmptyCard'
 import Sidebar from '../../components/Sidebar/Sidebar'
+import { useOutletContext } from 'react-router-dom';
+import { useUser } from '../../context/UserContext'
 
 const Home = () => {
-
-  const navigate = useNavigate();
-  const [userInfo, setUserInfo] = useState(null);
-  const [allNotes, setAllNotes] = useState([]);
+  const userInfo = useUser();
+  const { allNotes, setAllNotes, getAllNotes, getUserInfo } = useOutletContext();
   const [showToast, setShowToast] = useState(false);
-  const [isSearch, setIsSearch] = useState(false)
   const [shouldCloseModal, setShouldCloseModal] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   const [openAddEditModal, setOpenAddEditModal] = useState({  //passes values to modal  
     isShown: false,
     type: "add",
     data: null,
   });
+
   const [toastMessageVisibility, setToastMessageVisibility] = useState({
     isShown: false,
     message: "",
     type: "add"
   });
-
-  const onSearch = async (query) => {
-    try {
-      const response = await axiosInstance("/search-notes", {
-        params: { query }
-      });
-
-      if (response.data && response.data.notes) {
-        setIsSearch(true);
-        setAllNotes(response.data.notes)
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  const handleClearSearch = () => {
-    setIsSearch(false);
-    getAllNotes();
-  }
 
   const showToastMessage = (message, type) => {
     setToastMessageVisibility({ isShown: true, message, type });
@@ -65,34 +45,7 @@ const Home = () => {
 
   const handleEdit = (note) => {  //Modal in edit mode
     setOpenAddEditModal({ isShown: true, type: "edit", data: note })
-  }
-
-  const getUserInfo = async () => {
-    try {
-      const response = await axiosInstance.get("/get-user");
-      if (response.data && response.data.user) {
-        setUserInfo(response.data.user);
-      }
-
-    } catch (error) {
-      if (error.response.status == 401) {
-        localStorage.clear();
-        navigate("/login");
-      }
-    }
   };
-
-  const getAllNotes = async () => {
-    try {
-      const response = await axiosInstance.get("/get-all-notes")
-      if (response.data && response.data.notes) {
-        setAllNotes(response.data.notes);
-      }
-    }
-    catch (error) {
-      console.log("Unexpected error. Please try again");
-    }
-  }
 
   const deleteNote = async (note) => {
     const noteId = note._id;
@@ -109,7 +62,7 @@ const Home = () => {
         console.log("Unexpected error. Please try again");
       }
     }
-  }
+  };
 
   const updateIsPinned = async (noteData) => {
     const noteId = noteData._id;
@@ -123,7 +76,7 @@ const Home = () => {
     } catch (error) {
       console.log(error);
     }
-  }
+  };
 
   const handleModalClose = () => {
     if (openAddEditModal.type === "edit") {
@@ -137,23 +90,14 @@ const Home = () => {
     getUserInfo();
     getAllNotes();
     return () => { };
-  }, [])
+  }, []);
 
   return (
-    <div className='min-h-screen bg-neutral-200'>
-      <Navbar
-        onSearch={onSearch}
-        onLogout={() => { }}
-        userInfo={userInfo}
-        handleClearSearch={handleClearSearch}
-        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-        isSidebarOpen={isSidebarOpen}
-      />
-
-      <div className={`container mx-auto transition-all duration-300 ease-in-out ${isSidebarOpen ? 'ml-64' : 'ml-0'}`}>
+    <div className="min-h-screen bg-neutral-200">
+      <div className="p-4">
         {allNotes.length > 0 ? (
-          <div className='grid grid-cols-4 gap-4 my-4 mx-2'>
-            {allNotes.map((note, index) => (
+          <div className="grid grid-cols-4 gap-4">
+            {allNotes.map((note) => (
               <NoteCard
                 key={note._id}
                 title={note.title}
@@ -161,37 +105,35 @@ const Home = () => {
                 content={note.content}
                 tags={note.tags}
                 isPinned={note.isPinned}
-                onEdit={() => { handleEdit(note) }}
-                onDelete={() => { deleteNote(note) }}
-                onPinned={() => { updateIsPinned(note) }}
+                onEdit={() => handleEdit(note)}
+                onDelete={() => deleteNote(note)}
+                onPinned={() => updateIsPinned(note)}
               />
             ))}
           </div>
         ) : (
-          <EmptyCard className="" message={"It’s quiet here… Start by adding a note."} />
+          <EmptyCard message={"It’s quiet here… Start by adding a note."} />
         )}
-
       </div>
 
-      <button className='flex justify-center w-16 h-16 items-center rounded-4xl bg-neutral-400 hover:bg-neutral-500 absolute right-10 bottom-10 hover:rotate-45 hover:shadow-xl transition-all ease-in-out'
-        onClick={() => { setOpenAddEditModal({ isShown: true, type: "add", data: null }); }}
+      <button
+        className="flex justify-center w-16 h-16 items-center rounded-4xl bg-neutral-400 hover:bg-neutral-500 absolute right-10 bottom-10 hover:rotate-45 hover:shadow-xl transition-all ease-in-out"
+        onClick={() => {
+          setOpenAddEditModal({ isShown: true, type: "add", data: null });
+        }}
       >
-        <MdAdd className='text-[35px] text-white' />
+        <MdAdd className="text-[35px] text-white" />
       </button>
 
       <Modal
         isOpen={openAddEditModal.isShown}
         onRequestClose={handleModalClose}
         style={{
-
           overlay: {
             backgroundColor: "rgba(0,0,0,0.2)",
-
-          }
+          },
         }}
-        className='mx-auto rounded-2xl bg-stone-100 w-150 mt-20 p-4'
-        contentLabel=''
-
+        className="mx-auto rounded-2xl bg-stone-100 w-150 mt-20 p-4"
       >
         <AddEditNotes
           type={openAddEditModal.type}
@@ -199,7 +141,7 @@ const Home = () => {
           getAllNotes={getAllNotes}
           onClose={() => {
             setOpenAddEditModal({ isShown: false, type: "add", data: null });
-            setShouldCloseModal(false); // reset
+            setShouldCloseModal(false);
           }}
           showToastMessage={showToastMessage}
           shouldCloseModal={shouldCloseModal}
@@ -214,10 +156,9 @@ const Home = () => {
           onClose={handleCloseToast}
         />
       )}
-
-      <Sidebar isOpen={isSidebarOpen} />
     </div>
-  )
-}
+  );
+};
+
 
 export default Home

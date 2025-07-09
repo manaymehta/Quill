@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useEffect } from "react";
 import Navbar from '../../components/Navbar/Navbar';
 import { Link, useNavigate } from 'react-router-dom';
 import { validateEmail } from '../../utils/helper';
@@ -27,29 +28,59 @@ const Login = () => {
     setError("");
 
     //Login API Call using axios
-    try{
+    try {
       const response = await axiosInstance.post("/login", {
         email: email,
         password: password,
       });
 
       //Handle successful login response
-      if(response.data && response.data.accessToken) {
+      if (response.data && response.data.accessToken) {
         localStorage.setItem("token", response.data.accessToken);
         navigate("/dashboard");
       }
     }
-    catch(error){
-      if(error.response && error.response.data && error.response.data.message){
+    catch (error) {
+      if (error.response && error.response.data && error.response.data.message) {
         setError(error.response.data.message);
-      } else{
+      } else {
         setError("Unexpected Error. Please try again");
       }
     }
   };
-  
+
+  const handleGoogleLogin = async (response) => {
+    try {
+      const res = await axiosInstance.post("/auth/google", {
+        token: response.credential,
+      });
+
+      if (res.data && res.data.accessToken) {
+        localStorage.setItem("token", res.data.accessToken);
+        navigate("/dashboard");
+      }
+    } catch (err) {
+      console.error("Google login failed", err);
+      setError("Google login failed");
+    }
+  };
+
+  useEffect(() => {
+    if (window.google) {
+      window.google.accounts.id.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+        callback: handleGoogleLogin,
+      });
+
+      window.google.accounts.id.renderButton(
+        document.getElementById("google-login-btn"),
+        { theme: "outline", size: "large" }
+      );
+    }
+  }, []);
+
   return <>
-    <Navbar isVisible={false}/>
+    <Navbar isVisible={false} />
     <div className='flex items-center justify-center mt-30'>
       <div className='border border-slate-200 rounded bg-white w-96 px-7 py-10'>
         <form onSubmit={handleLogin}>
@@ -75,6 +106,7 @@ const Login = () => {
             Not registered yet?{" "}
             <Link to='/signup' className='text-primary font-medium underline'>Create an accout</Link>
           </p>
+          <div className="mt-5 flex justify-center" id="google-login-btn"></div>
         </form>
       </div>
     </div>

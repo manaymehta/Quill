@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useEffect } from "react";
 import Navbar from '../../components/Navbar/Navbar';
 import { Link, useNavigate } from 'react-router-dom';
 import PasswordInput from '../../components/Input/PasswordInput';
@@ -37,7 +38,7 @@ const SignUp = () => {
         password: password,
       });
 
-      if(response.data && response.data.error){
+      if (response.data && response.data.error) {
         setError(response.data.message)
         return
       }
@@ -55,6 +56,36 @@ const SignUp = () => {
       }
     }
   }
+
+  const handleGoogleLogin = async (response) => {
+    try {
+      const res = await axiosInstance.post("/auth/google", {
+        token: response.credential,
+      });
+
+      if (res.data && res.data.accessToken) {
+        localStorage.setItem("token", res.data.accessToken);
+        navigate("/dashboard");
+      }
+    } catch (err) {
+      console.error("Google login failed", err);
+      setError("Google login failed");
+    }
+  };
+
+  useEffect(() => {
+    if (window.google) {
+      window.google.accounts.id.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+        callback: handleGoogleLogin,
+      });
+
+      window.google.accounts.id.renderButton(
+        document.getElementById("google-login-btn"),
+        { theme: "outline", size: "large" }
+      );
+    }
+  }, []);
 
   return (<>
     <Navbar />
@@ -89,6 +120,7 @@ const SignUp = () => {
             Already have an account?{" "}
             <Link to='/login' className='text-primary font-medium underline'>Log in</Link>
           </p>
+          <div className="mt-5 flex justify-center" id="google-login-btn"></div>
         </form>
       </div>
     </div>

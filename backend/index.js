@@ -1,3 +1,6 @@
+const { OAuth2Client } = require("google-auth-library");
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 //dotenv
 require("dotenv").config()
 
@@ -133,6 +136,51 @@ app.post("/login", async (req, res) => {
   }
 });
 
+app.post("/auth/google", async (req, res) => {
+  const { token } = req.body;
+
+  try {
+    // Verify Google token
+    const ticket = await client.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { email, name, sub: googleId } = payload;
+
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      user = await User.create({
+        email,
+        fullName: name,
+        googleId,
+      });
+    }
+
+    const accessToken = jwt.sign(
+      {
+        _id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+      },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "36000m" }
+    );
+
+    return res.json({
+      error: false,
+      message: "Google Login Successful",
+      accessToken,
+    });
+  } catch (error) {
+    console.error("Google Auth Error", error);
+    res.status(401).json({ error: true, message: "Invalid Google Token" });
+  }
+});
+
+
 app.get("/get-user", authenticateToken, async (req, res) => {
   const userId = req.user._id;
 
@@ -241,6 +289,28 @@ app.get("/get-all-notes", authenticateToken, async (req, res) => {
 
   try {
     const notes = await Note.find({ userId: userId }).sort({ isPinned: -1 });
+
+    return res.json({
+      error: false,
+      message: "All notes retrieved successfully",
+      notes
+    })
+  }
+  catch (error) {
+    res
+      .status(500)
+      .json({
+        error: true,
+        message: "Internal Server Error"
+      })
+  }
+});
+
+app.get("/get-all-pinned-notes", authenticateToken, async (req, res) => {
+  const userId = req.user._id;
+
+  try {
+    const notes = await Note.find({ userId: userId, isPinned: true });
 
     return res.json({
       error: false,
