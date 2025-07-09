@@ -22,6 +22,8 @@ const app = express();
 const jwt = require("jsonwebtoken");
 const { authenticateToken } = require("./utilities");
 
+const axios = require('axios');
+
 app.use(express.json());
 
 app.use(
@@ -179,7 +181,6 @@ app.post("/auth/google", async (req, res) => {
     res.status(401).json({ error: true, message: "Invalid Google Token" });
   }
 });
-
 
 app.get("/get-user", authenticateToken, async (req, res) => {
   const userId = req.user._id;
@@ -411,6 +412,75 @@ app.get("/search-notes/", authenticateToken, async (req, res) => {
     return res.status(500).json({error: true, message: "Internal Server Error"});
   }
 });
+
+app.post("/summarize-note", authenticateToken, async (req, res) => {
+  const { text } = req.body;
+
+  if (!text || text.trim() === "") {
+    return res.status(400).json({
+      error: true,
+      message: "Text content is required for summarization."
+    });
+  }
+
+  try {
+    // IMPORTANT: Set this in your .env file
+    // For local development, this might be 'http://localhost:8001/summarize'
+    // For deployment on Render, it would be your deployed FastAPI service URL
+    const FASTAPI_SUMMARIZE_URL = process.env.FASTAPI_SUMMARIZE_URL;
+
+    if (!FASTAPI_SUMMARIZE_URL) {
+        console.error("FASTAPI_SUMMARIZE_URL is not defined in environment variables.");
+        return res.status(500).json({
+            error: true,
+            message: "Summarization service URL is not configured."
+        });
+    }
+
+    const fastapiResponse = await axios.post(FASTAPI_SUMMARIZE_URL, {
+      text: text,
+    });
+
+    if (fastapiResponse.data && fastapiResponse.data.summary) {
+      return res.json({
+        error: false,
+        summary: fastapiResponse.data.summary,
+        message: "Note summarized successfully."
+      });
+    } else {
+      return res.status(500).json({
+        error: true,
+        message: "FastAPI did not return a valid summary."
+      });
+    }
+
+  } catch (error) {
+    console.error("Error calling FastAPI summarization service:", error.message);
+
+    let errorMessage = "Internal Server Error during summarization.";
+    if (error.response) {
+      if (error.response.data && error.response.data.detail) {
+        errorMessage = "FastAPI Error: " + error.response.data.detail;
+      } else {
+        errorMessage = `FastAPI service responded with status ${error.response.status}: ${error.response.statusText}`;
+      }
+
+    } else if (error.request) {
+      // The request was made but no response was received
+      errorMessage = "Could not connect to the summarization service. Is FastAPI running?";
+
+    } else {
+      // Something else happened in setting up the request
+      errorMessage = "An unexpected error occurred before sending request to FastAPI.";
+    }
+
+    return res.status(500).json({
+      error: true,
+      message: errorMessage,
+    });
+  }
+});
+
 
 app.listen(8000);
 
