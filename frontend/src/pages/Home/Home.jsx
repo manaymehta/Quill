@@ -12,6 +12,7 @@ import Sidebar from '../../components/Sidebar/Sidebar'
 import { useOutletContext } from 'react-router-dom';
 import { useUser } from '../../context/UserContext'
 
+
 const Home = () => {
   const userInfo = useUser();
   const { allNotes, setAllNotes, getAllNotes, getUserInfo } = useOutletContext();
@@ -93,7 +94,7 @@ const Home = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-neutral-200">
+    <div className="h-screen bg-neutral-200 overflow-y-auto">
       <div className="p-4">
         {allNotes.length > 0 ? (
           <div className="grid grid-cols-4 gap-4">

@@ -1,5 +1,5 @@
 const { OAuth2Client } = require("google-auth-library");
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const client = new OAuth2Client(process.env.VITE_GOOGLE_CLIENT_ID);
 
 //dotenv
 require("dotenv").config()
@@ -125,7 +125,7 @@ app.post("/login", async (req, res) => {
     return res.json({
       error: false,
       message: "Login successful",
-      email,
+      user: userInfo,
       accessToken
     });
   } else {
@@ -174,6 +174,7 @@ app.post("/auth/google", async (req, res) => {
     return res.json({
       error: false,
       message: "Google Login Successful",
+      user,
       accessToken,
     });
   } catch (error) {

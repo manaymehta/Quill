@@ -9,7 +9,7 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
         if (e.target.closest('.no-card-click')) return;
         onEdit();
       }}
-      className='border border-slate-200 rounded-xl p-4 bg-stone-100 shadow-xs hover:shadow-xl transition-all ease-in-out cursor-pointer'
+      className='border-3 border-zinc-200 rounded-xl p-4 bg-stone-100 shadow-xs hover:shadow-xl transition-all ease-in-out cursor-pointer'
     >
       <div className='flex flex-col'>
         <div className='flex justify-between items-start'>

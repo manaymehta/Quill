@@ -1,68 +1,34 @@
-import React, { useState } from 'react'
-import { useEffect } from "react";
+import React, { useState, useEffect } from 'react';
 import Navbar from '../../components/Navbar/Navbar';
 import { Link, useNavigate } from 'react-router-dom';
 import { validateEmail } from '../../utils/helper';
 import PasswordInput from '../../components/Input/PasswordInput';
-import axiosInstance from '../../utils/axiosInstance';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const Login = () => {
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState(null);
-
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const navigate = useNavigate();
+
+  const { login, googleLogin, error, isLoading } = useAuthStore();
 
   const handleLogin = async (e) => {
     e.preventDefault();
 
     if (!validateEmail(email)) {
-      setError("Please enter a valid email address");
+      useAuthStore.setState({ error: 'Please enter a valid email address' });
       return;
     }
     if (!password) {
-      setError("Please enter password");
+      useAuthStore.setState({ error: 'Please enter password' });
       return;
     }
-    setError("");
-
-    //Login API Call using axios
-    try {
-      const response = await axiosInstance.post("/login", {
-        email: email,
-        password: password,
-      });
-
-      //Handle successful login response
-      if (response.data && response.data.accessToken) {
-        localStorage.setItem("token", response.data.accessToken);
-        navigate("/dashboard");
-      }
-    }
-    catch (error) {
-      if (error.response && error.response.data && error.response.data.message) {
-        setError(error.response.data.message);
-      } else {
-        setError("Unexpected Error. Please try again");
-      }
-    }
+    
+    await login(email, password, navigate);
   };
 
   const handleGoogleLogin = async (response) => {
-    try {
-      const res = await axiosInstance.post("/auth/google", {
-        token: response.credential,
-      });
-
-      if (res.data && res.data.accessToken) {
-        localStorage.setItem("token", res.data.accessToken);
-        navigate("/dashboard");
-      }
-    } catch (err) {
-      console.error("Google login failed", err);
-      setError("Google login failed");
-    }
+    await googleLogin(response, navigate);
   };
 
   useEffect(() => {
@@ -73,44 +39,62 @@ const Login = () => {
       });
 
       window.google.accounts.id.renderButton(
-        document.getElementById("google-login-btn"),
-        { theme: "outline", size: "large" }
+        document.getElementById('google-login-btn'),
+        { theme: 'outline', size: 'large' }
       );
     }
   }, []);
 
-  return <>
-    <Navbar isVisible={false} />
-    <div className='flex items-center justify-center mt-30'>
-      <div className='border border-slate-200 rounded bg-white w-96 px-7 py-10'>
-        <form onSubmit={handleLogin}>
-          <h4 className='text-2xl mb-7'>Login</h4>
-          <input
-            className='input-box'
-            type='email'
-            placeholder='Email'
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+  return (
+    <>
+      <Navbar isVisible={false} />
+      <div className="flex items-center justify-center h-screen bg-neutral-100 pb-20">
+        <div className="w-96 p-8 rounded-lg shadow-lg bg-white">
+          <form onSubmit={handleLogin}>
+            <h4 className="text-3xl font-semibold mb-7 text-center text-neutral-700">
+              Welcome Back
+            </h4>
+            <input
+              className="input-box border-neutral-300 focus:border-neutral-500"
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
 
-          <PasswordInput
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+            <PasswordInput
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
 
-          {error && <p className='text-red-500 text-xs pb-1'>{error}</p>}
+            {error && <p className="text-red-500 text-xs pb-1">{error}</p>}
 
-          <button className='btn-primary cursor-pointer' type='submit'>Login</button>
+            <button
+              className="w-full text-lg bg-neutral-600 text-white p-3 rounded-md my-4 hover:bg-neutral-700 transition-colors duration-300"
+              type="submit"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Logging in...' : 'Login'}
+            </button>
 
-          <p className='text-sm text-center mt-4'>
-            Not registered yet?{" "}
-            <Link to='/signup' className='text-primary font-medium underline'>Create an accout</Link>
-          </p>
-          <div className="mt-5 flex justify-center" id="google-login-btn"></div>
-        </form>
+            <p className="text-sm text-center mt-4 text-neutral-600">
+              Not registered yet?{' '}
+              <Link
+                to="/signup"
+                className="text-neutral-700 font-medium underline hover:text-neutral-800"
+              >
+                Create an account
+              </Link>
+            </p>
+            <div
+              className="mt-5 flex justify-center"
+              id="google-login-btn"
+            ></div>
+          </form>
+        </div>
       </div>
-    </div>
-  </>;
-}
+    </>
+  );
+};
 
-export default Login
+export default Login;

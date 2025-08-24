@@ -1,9 +1,11 @@
 // src/components/Sidebar/Sidebar.jsx
 import React, { forwardRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useUIStore } from '../../store/useUIStore';
 
-const Sidebar = forwardRef(({ isOpen }, ref) => {
+const Sidebar = forwardRef((props, ref) => {
   const navigate = useNavigate();
+  const { isSidebarOpen } = useUIStore();
 
   return (
     <div
@@ -11,7 +13,7 @@ const Sidebar = forwardRef(({ isOpen }, ref) => {
       className={`
         fixed top-0 left-0 h-full w-64 bg-white shadow-md z-30
         transform transition-transform duration-300 ease-in-out
-        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}
     >
       <div className="p-4 border-b">
