@@ -4,9 +4,10 @@ import Navbar from "../Navbar/Navbar";
 import { Outlet, useNavigate } from "react-router-dom";
 import { UserContext } from "../../context/UserContext";
 import axiosInstance from "../../utils/axiosInstance";
+import { useUIStore } from "../../store/useUIStore";
 
 const MainLayout = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { isSidebarOpen, toggleSidebar } = useUIStore();
   const sidebarRef = useRef(null);
   const [userInfo, setUserInfo] = useState(null);
   const [isSearch, setIsSearch] = useState(false);
@@ -63,19 +64,17 @@ const MainLayout = () => {
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (sidebarRef.current && !sidebarRef.current.contains(event.target)) {
-        setIsSidebarOpen(false);
+      if (isSidebarOpen && sidebarRef.current && !sidebarRef.current.contains(event.target)) {
+        toggleSidebar();
       }
     };
 
-    if (isSidebarOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
+    document.addEventListener("mousedown", handleClickOutside);
+    
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isSidebarOpen]);
+  }, [isSidebarOpen, toggleSidebar, sidebarRef]);
 
 
   return (
@@ -86,14 +85,11 @@ const MainLayout = () => {
           onLogout={() => { }}
           userInfo={userInfo}
           handleClearSearch={handleClearSearch}
-
-          onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-          isSidebarOpen={isSidebarOpen}
         />
         <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? "pl-64" : "pl-0"}`}>
           <Outlet context={{ userInfo, allNotes, setAllNotes, getAllNotes, getUserInfo }} />
         </div>
-        <Sidebar isOpen={isSidebarOpen} ref={sidebarRef} />
+        <Sidebar ref={sidebarRef} />
       </div>
     </UserContext.Provider>
   );
