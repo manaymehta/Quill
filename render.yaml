@@ -1,5 +1,25 @@
 services:
   - type: web
+    name: notes-app-backend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: "npm install"
+    startCommand: "node index.js"
+    envVars:
+      - key: FASTAPI_SUMMARIZE_URL
+        fromService:
+          type: web
+          name: fast-api-service
+          property: url
+      # IMPORTANT: You will need to add your secret environment variables
+      # in the Render dashboard for this service. For example:
+      # - ACCESS_TOKEN_SECRET
+      # - VITE_GOOGLE_CLIENT_ID
+      # - MONGODB_CONNECTION_STRING (from your config.json)
+
+  - type: web
     name: fast-api-service
     runtime: python
     region: oregon
@@ -8,3 +28,8 @@ services:
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: "/"
+    envVars:
+      # IMPORTANT: You will need to add your GROQ_API_KEY as a secret
+      # environment variable in the Render dashboard for this service.
+      - key: GROQ_API_KEY
+        sync: false
