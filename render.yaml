@@ -8,16 +8,20 @@ services:
     buildCommand: "npm install"
     startCommand: "node index.js"
     envVars:
-      - key: FASTAPI_SUMMARIZE_URL
-        fromService:
-          type: web
-          name: fast-api-service
-          property: url
-      # IMPORTANT: You will need to add your secret environment variables
-      # in the Render dashboard for this service. For example:
-      # - ACCESS_TOKEN_SECRET
-      # - VITE_GOOGLE_CLIENT_ID
-      # - MONGODB_CONNECTION_STRING (from your config.json)
+      # IMPORTANT: You will need to add the following environment variables
+      # in the Render dashboard for this service after the fast-api-service is live.
+      #
+      # - key: FASTAPI_SUMMARIZE_URL
+      #   value: "THE_LIVE_URL_OF_YOUR_FAST_API_SERVICE"
+      #
+      # - key: ACCESS_TOKEN_SECRET
+      #   value: "YOUR_SECRET"
+      #
+      # - key: VITE_GOOGLE_CLIENT_ID
+      #   value: "YOUR_GOOGLE_CLIENT_ID"
+      #
+      # - key: MONGODB_CONNECTION_STRING
+      #   value: "YOUR_MONGO_DB_CONNECTION_STRING"
 
   - type: web
     name: fast-api-service
@@ -29,7 +33,7 @@ services:
     startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: "/"
     envVars:
-      # IMPORTANT: You will need to add your GROQ_API_KEY as a secret
+      # IMPORTANT: You will need to add your GROQ_API_KEY as an
       # environment variable in the Render dashboard for this service.
       - key: GROQ_API_KEY
         sync: false
