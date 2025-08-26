@@ -10,7 +10,13 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
 
-  const { login, googleLogin, error, isLoading } = useAuthStore();
+  const { login, googleLogin, error, isLoading, isLoggedIn } = useAuthStore();
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      navigate('/dashboard');
+    }
+  }, [isLoggedIn, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -24,11 +30,11 @@ const Login = () => {
       return;
     }
     
-    await login(email, password, navigate);
+    await login(email, password);
   };
 
   const handleGoogleLogin = async (response) => {
-    await googleLogin(response, navigate);
+    await googleLogin(response);
   };
 
   useEffect(() => {

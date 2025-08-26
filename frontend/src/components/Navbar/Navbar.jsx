@@ -22,8 +22,8 @@ const Navbar = () => {
   }
 
   return (
-    <div className="bg-white px-5 py-2 drop-shadow flex items-center justify-between z-50 relative">
-      <div className="flex items-center gap-4">
+    <div className="bg-[#393939] border-b-[#6d6c6c] border-b-2 px-5 py-2 drop-shadow flex items-center justify-between z-50 relative">
+      <div className="flex items-center gap-4 text-[#dd5e57]">
         {isLoggedIn &&
           (isSidebarOpen ? (
             <IoClose
@@ -37,7 +37,7 @@ const Navbar = () => {
             />
           ))}
 
-        <h2 className="text-xl text-black font-bold cursor-pointer py-2.5">
+        <h2 className="text-3xl text-white font-bold cursor-pointer py-2">
           Quill
         </h2>
       </div>
@@ -48,7 +48,7 @@ const Navbar = () => {
 
       {isLoggedIn && (
         <div className="flex items-center">
-          <ProfileInfo userInfo={user} onLogout={onLogout} />
+          <ProfileInfo onLogout={onLogout} />
         </div>
       )}
     </div>

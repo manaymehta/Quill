@@ -1,21 +1,17 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import Navbar from '../../components/Navbar/Navbar'
 import NoteCard from '../../components/Cards/NoteCard'
 import { MdAdd } from 'react-icons/md'
 import AddEditNotes from './AddEditNotes'
 import Modal from 'react-modal';
 import axiosInstance from '../../utils/axiosInstance'
-import { useNavigate } from 'react-router-dom'
 import Toast from '../../components/ToastMessage/Toast'
 import EmptyCard from '../../components/Cards/EmptyCard'
-import Sidebar from '../../components/Sidebar/Sidebar'
 import { useOutletContext } from 'react-router-dom';
-import { useUser } from '../../context/UserContext'
 
 
 const Home = () => {
-  const userInfo = useUser();
-  const { allNotes, setAllNotes, getAllNotes, getUserInfo } = useOutletContext();
+  const { allNotes, getAllNotes } = useOutletContext();
   const [showToast, setShowToast] = useState(false);
   const [shouldCloseModal, setShouldCloseModal] = useState(false);
 
@@ -87,17 +83,13 @@ const Home = () => {
     }
   };
 
-  useEffect(() => {
-    getUserInfo();
-    getAllNotes();
-    return () => { };
-  }, []);
+  
 
   return (
-    <div className="h-screen bg-neutral-200 overflow-y-auto">
+    <div className="h-screen overflow-y-auto">
       <div className="p-4">
         {allNotes.length > 0 ? (
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-4 gap-2">
             {allNotes.map((note) => (
               <NoteCard
                 key={note._id}
@@ -118,7 +110,7 @@ const Home = () => {
       </div>
 
       <button
-        className="flex justify-center w-16 h-16 items-center rounded-4xl bg-neutral-400 hover:bg-neutral-500 absolute right-10 bottom-10 hover:rotate-45 hover:shadow-xl transition-all ease-in-out"
+        className="flex justify-center w-16 h-16 items-center rounded-4xl bg-[#dd5e57] hover:bg-[#fb6d65] absolute right-10 bottom-10 hover:rotate-45 hover:shadow-xl transition-all ease-in-out"
         onClick={() => {
           setOpenAddEditModal({ isShown: true, type: "add", data: null });
         }}

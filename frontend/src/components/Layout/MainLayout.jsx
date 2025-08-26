@@ -2,33 +2,18 @@ import React, { useState, useRef, useEffect } from "react";
 import Sidebar from "../Sidebar/Sidebar";
 import Navbar from "../Navbar/Navbar";
 import { Outlet, useNavigate } from "react-router-dom";
-import { UserContext } from "../../context/UserContext";
 import axiosInstance from "../../utils/axiosInstance";
 import { useUIStore } from "../../store/useUIStore";
+import { useAuthStore } from "../../store/useAuthStore";
 
 const MainLayout = () => {
   const { isSidebarOpen, toggleSidebar } = useUIStore();
+  const { getUser } = useAuthStore();
   const sidebarRef = useRef(null);
-  const [userInfo, setUserInfo] = useState(null);
   const [isSearch, setIsSearch] = useState(false);
   const [allNotes, setAllNotes] = useState([]);
 
   const navigate = useNavigate();
-
-  const getUserInfo = async () => {
-    try {
-      const response = await axiosInstance.get("/get-user");
-      if (response.data && response.data.user) {
-        setUserInfo(response.data.user);
-      }
-
-    } catch (error) {
-      if (error.response.status == 401) {
-        localStorage.clear();
-        navigate("/login");
-      }
-    }
-  };
 
   const onSearch = async (query) => {
     try {
@@ -63,6 +48,11 @@ const MainLayout = () => {
   }
 
   useEffect(() => {
+    getAllNotes();
+    getUser();
+  }, []);
+
+  useEffect(() => {
     const handleClickOutside = (event) => {
       if (isSidebarOpen && sidebarRef.current && !sidebarRef.current.contains(event.target)) {
         toggleSidebar();
@@ -78,20 +68,16 @@ const MainLayout = () => {
 
 
   return (
-    <UserContext.Provider value={userInfo}>
-      <div className="min-h-screen bg-neutral-200">
-        <Navbar
-          onSearch={onSearch}
-          onLogout={() => { }}
-          userInfo={userInfo}
-          handleClearSearch={handleClearSearch}
-        />
-        <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? "pl-64" : "pl-0"}`}>
-          <Outlet context={{ userInfo, allNotes, setAllNotes, getAllNotes, getUserInfo }} />
-        </div>
-        <Sidebar ref={sidebarRef} />
+    <div className="min-h-screen bg-[#494949]">
+      <Navbar
+        onSearch={onSearch}
+        handleClearSearch={handleClearSearch}
+      />
+      <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? "pl-64" : "pl-0"}`}>
+        <Outlet context={{ allNotes, setAllNotes, getAllNotes }} />
       </div>
-    </UserContext.Provider>
+      <Sidebar ref={sidebarRef} />
+    </div>
   );
 };
 

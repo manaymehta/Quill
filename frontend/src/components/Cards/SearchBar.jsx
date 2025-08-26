@@ -7,11 +7,11 @@ const SearchBar = () => {
   const { searchQuery, setSearchQuery, clearSearch, handleSearch } = useSearchStore();
 
   return (
-    <div className="flex w-70 items-center px-4 bg-slate-100 rounded-full">
+    <div className="flex w-70 items-center px-4 bg-[#9c9892] border-slate-500 rounded-full">
       <input
         type="text"
         value={searchQuery}
-        className="w-full bg-transparent py-[11px] outline-none"
+        className="w-full bg-transparent py-[11px] outline-none text-white"
         onChange={(e) => setSearchQuery(e.target.value)}
         placeholder="Search Notes"
       />
@@ -22,7 +22,7 @@ const SearchBar = () => {
         />
       )}
       <FaMagnifyingGlass
-        className="cursor-pointer text-slate-400 hover:text-black"
+        className="cursor-pointer text-[#ccc6bc] hover:text-black"
         onClick={handleSearch}
       />
     </div>

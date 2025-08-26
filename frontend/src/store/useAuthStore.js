@@ -8,14 +8,27 @@ export const useAuthStore = create((set) => ({
   isLoading: false,
   isLoggedIn: !!localStorage.getItem('token'),
 
-  login: async (email, password, navigate) => {
+  getUser: async () => {
+    try {
+      const response = await axiosInstance.get('/get-user');
+      if (response.data && response.data.user) {
+        set({ user: response.data.user });
+      }
+    } catch (error) {
+      console.error("Failed to fetch user", error);
+      if (error.response && error.response.status === 401) {
+        useAuthStore.getState().logout(); // Unauthorized, log out user
+      }
+    }
+  },
+
+  login: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
       const response = await axiosInstance.post('/login', { email, password });
       if (response.data && response.data.accessToken) {
         localStorage.setItem('token', response.data.accessToken);
         set({ token: response.data.accessToken, user: response.data.user, isLoading: false, isLoggedIn: true });
-        navigate('/dashboard');
       }
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Unexpected Error. Please try again';
@@ -23,14 +36,13 @@ export const useAuthStore = create((set) => ({
     }
   },
 
-  signup: async (name, email, password, navigate) => {
+  signup: async (name, email, password) => {
     set({ isLoading: true, error: null });
     try {
       const response = await axiosInstance.post('/create-account', { fullName: name, email, password });
       if (response.data && response.data.accessToken) {
         localStorage.setItem('token', response.data.accessToken);
         set({ token: response.data.accessToken, user: response.data.user, isLoading: false, isLoggedIn: true });
-        navigate('/dashboard');
       } else if (response.data && response.data.error) {
         set({ error: response.data.message, isLoading: false, isLoggedIn: false });
       }
@@ -40,14 +52,13 @@ export const useAuthStore = create((set) => ({
     }
   },
 
-  googleLogin: async (response, navigate) => {
+  googleLogin: async (response) => {
     set({ isLoading: true, error: null });
     try {
       const res = await axiosInstance.post('/auth/google', { token: response.credential });
       if (res.data && res.data.accessToken) {
         localStorage.setItem('token', res.data.accessToken);
         set({ token: res.data.accessToken, user: res.data.user, isLoading: false, isLoggedIn: true });
-        navigate('/dashboard');
       }
     } catch (err) {
       console.error('Google login failed', err);

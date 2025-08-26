@@ -9,24 +9,24 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
         if (e.target.closest('.no-card-click')) return;
         onEdit();
       }}
-      className='border-3 border-zinc-200 rounded-xl p-4 bg-stone-100 shadow-xs hover:shadow-xl transition-all ease-in-out cursor-pointer'
+      className='border max-w-sm border-gray-700 rounded-3xl p-4 bg-[#f8ecdc] shadow-xs hover:bg-[#d8cec1] hover:shadow-xl transition-all ease-in-out cursor-pointer'
     >
       <div className='flex flex-col'>
         <div className='flex justify-between items-start'>
-          <h4 className='text-xl font-semibold text-slate-700'>{title}</h4>
+          <h4 className='text-2xl font-semibold tracking-tight text-[#e85d56]'>{title}</h4>
           <MdOutlinePushPin
-            className={`icon-btn no-card-click ${isPinned ? 'text-primary' : 'text-slate-400'} hover:text-slate-600`}
+            className={`icon-btn no-card-click ${isPinned ? 'text-[#e85d56]' : 'text-[#a6a6a6]'} hover:text-slate-600`}
             onClick={onPinned}
           />
         </div>
-        <span className='font-medium text-xs text-slate-500 mt-1'>
+        <span className='font-medium text-xs text-[#9c9892] mt-1'>
           {moment(date).format("Do MMM YYYY")}
         </span>
       </div>
 
 
       <div>
-        <p className='font-medium mt-2 text-slate-700'>
+        <p className='font-medium mt-2 text-[#494949]'>
           {content?.slice(0, 60)}
         </p>
       </div>
@@ -41,7 +41,7 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
             onClick={onEdit}
           />*/}
           <MdDelete
-            className='icon-btn hover:text-red-500 no-card-click'
+            className='icon-btn hover:text-[#e85d56] no-card-click text-[#bdbdbd]'
             onClick={onDelete}
           />
         </div>
