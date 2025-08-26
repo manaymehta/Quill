@@ -31,6 +31,10 @@ app.use(
     origin: "*",
   })
 );
+app.get("/", (req, res) => {
+  res.json({ message: "Notes App API is running!" });
+});
+
 //User
 app.post("/create-account", async (req, res) => {
   const { fullName, email, password } = req.body;
