@@ -86,10 +86,10 @@ const Home = () => {
   
 
   return (
-    <div className="h-screen overflow-y-auto">
-      <div className="p-4">
+    <div>
+      <div className="p-2">
         {allNotes.length > 0 ? (
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {allNotes.map((note) => (
               <NoteCard
                 key={note._id}

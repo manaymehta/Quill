@@ -68,7 +68,7 @@ const MainLayout = () => {
 
 
   return (
-    <div className="min-h-screen bg-[#494949]">
+    <div className="min-h-screen">
       <Navbar
         onSearch={onSearch}
         handleClearSearch={handleClearSearch}
