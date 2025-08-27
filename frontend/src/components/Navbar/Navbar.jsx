@@ -37,7 +37,7 @@ const Navbar = ({ onSearch, handleClearSearch }) => {
             />
           ))}
 
-        <h2 className="text-3xl text-white font-bold cursor-pointer py-2">
+        <h2 className="hidden sm:block text-3xl text-white font-bold cursor-pointer py-2">
           Quill
         </h2>
       </div>

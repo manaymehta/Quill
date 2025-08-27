@@ -9,9 +9,9 @@ const ProfileInfo = ({ onLogout }) => {
 			<div className='w-12 h-12 flex items-center justify-center rounded-full text-white font-medium bg-[#e85d56]'>
 				<p className='font-bold'>{getInitials(user?.fullName)}</p>
 			</div>
-			<div className='text-sm text-white'>
-				<p className='font-semibold'>{user?.fullName}</p>
-				<button className="text-white cursor-pointer hover:text-[#e85d56]" onClick={onLogout}>Logout</button>
+			<div className=' text-sm text-white'>
+				{/*<p className='hidden sm:block font-semibold'>{user?.fullName}</p>*/}
+				<button className="text-white cursor-pointer hover:text-[#e85d56]" onClick={onLogout}>LOG<br></br>OUT</button>
 			</div>
 		</div>
 	)

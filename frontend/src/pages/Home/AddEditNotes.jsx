@@ -105,10 +105,10 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
   }, [shouldCloseModal]);
 
   return (
-    <div className=' '>
+    <div className='flex flex-col h-full'>
       <div className='relative'>
         <button
-          className='text-slate-400 hover:text-slate-600 flex items-center justify-center absolute -top-1 -right-1'
+          className=' text-2xl text-[#e85d56] hover:text-slate-600 flex items-center justify-center absolute -top-1 -right-1'
           onClick={onClose}
         >
           <MdClose />
@@ -119,7 +119,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
 
         <input
           type='text'
-          className='outline-none font-medium text-xl pl-1 pt-1'
+          className=' outline-none font-medium text-xl pl-1 pt-1'
           placeholder='Title '
           value={title}
           onChange={(e) => {
@@ -129,11 +129,11 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
         />
       </div>
 
-      <div className='flex flex-col gap-2 mt-4'>
+      <div className='flex flex-col gap-2 mt-4 flex-grow overflow-y-auto'>
 
         <textarea
           type='text'
-          className='text-sm bg-stone-100 outline-none p-2 h-100 rounded-xl'
+          className='text-sm bg-[#f8ecdc] outline-none p-2 h-100 rounded-xl'
           placeholder='Content '
           rows={10}
           value={content}
@@ -144,7 +144,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
         />
 
         {summarizedText && (
-          <div className='mt-4 p-3 bg-gray-100 rounded-xl'>
+          <div className='mt-2 p-3 bg-gray-100 rounded-xl'>
             <h4 className='font-medium text-lg mb-2'>Summary:</h4>
             <p className='text-sm text-gray-800'>{summarizedText}</p>
           </div>
@@ -162,7 +162,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
 
       <div className='flex'>
         <button
-          className='w-full text-sm bg-neutral-300 text-stone-500 p-2 my-3 mr-2 hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out'
+          className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 my-3 mr-2 hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out'
           onClick={handleAddNote}
         >
           {type === "edit" ? "EDIT" : "ADD"}

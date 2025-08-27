@@ -21,7 +21,7 @@ const SearchBar = ({ onSearch, handleClearSearch }) => {
   }, [searchQuery, onSearch, handleClearSearch]);
 
   return (
-    <div className="flex w-120 items-center px-4 bg-[#9c9892] border-slate-500 rounded-full">
+    <div className="flex w-full sm:w-120 items-center px-4 bg-[#9c9892] mx-2 border-slate-500 rounded-full">
       <input
         type="text"
         value={searchQuery}

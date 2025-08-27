@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Navbar from '../../components/Navbar/Navbar'
 import NoteCard from '../../components/Cards/NoteCard'
 import { MdAdd } from 'react-icons/md'
@@ -39,6 +39,14 @@ const Home = () => {
       setShowToast(false);
     }, 400); // match this with Toast's CSS fade duration (400ms)
   };
+
+  useEffect(() => {
+    if (toastMessageVisibility.isShown) {
+      setTimeout(() => {
+        handleCloseToast();
+      }, 3000);
+    }
+  }, [toastMessageVisibility.isShown]);
 
   const handleEdit = (note) => {  //Modal in edit mode
     setOpenAddEditModal({ isShown: true, type: "edit", data: note })
@@ -110,7 +118,7 @@ const Home = () => {
       </div>
 
       <button
-        className="flex justify-center w-16 h-16 items-center rounded-4xl bg-[#dd5e57] hover:bg-[#fb6d65] absolute right-10 bottom-10 hover:rotate-45 hover:shadow-xl transition-all ease-in-out"
+        className="flex justify-center w-16 h-16 items-center rounded-4xl bg-[#dd5e57] hover:bg-[#fb6d65] fixed right-10 bottom-10 hover:rotate-45 hover:shadow-xl transition-all ease-in-out"
         onClick={() => {
           setOpenAddEditModal({ isShown: true, type: "add", data: null });
         }}
@@ -124,9 +132,14 @@ const Home = () => {
         style={{
           overlay: {
             backgroundColor: "rgba(0,0,0,0.2)",
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflowY: 'auto',
+            zIndex: 50,
           },
         }}
-        className="mx-auto rounded-2xl bg-stone-100 w-150 mt-20 p-4"
+        className="mx-auto rounded-2xl bg-[#f8ecdc] w-full max-w-lg p-4 max-h-[90vh] flex flex-col"
       >
         <AddEditNotes
           type={openAddEditModal.type}

@@ -44,7 +44,7 @@ const TagInput = ({ tags, setTags }) => {
         </div>)}
       <div className='flex items-center gap-4 mt-3'>
         <input
-          className='text-sm bg-neutral-200 px-3 py-2 rounded-full outline-slate-200'
+          className='text-sm bg-[#e0d5c8] px-3 py-2 rounded-full outline-slate-200'
           type='text'
           placeholder='Tags'
           onChange={onInputChange}
@@ -53,7 +53,7 @@ const TagInput = ({ tags, setTags }) => {
         />
 
         <button
-          className='w-8 h-8 rounded-full flex items-center justify-center bg-neutral-300 text-stone-500 hover:bg-neutral-400 hover:text-white'
+          className='w-8 h-8 rounded-full flex items-center justify-center bg-[#cdc4b8] text-stone-500 hover:bg-neutral-400 hover:text-white'
           onClick={addNewTag}
         >
           <MdAdd className='' />
