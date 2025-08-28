@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+
+      import React, { useState, useEffect } from 'react'
 import Navbar from '../../components/Navbar/Navbar'
 import NoteCard from '../../components/Cards/NoteCard'
 import { MdAdd } from 'react-icons/md'
@@ -56,6 +57,7 @@ const Home = () => {
     const noteId = note._id;
     try {
       const response = await axiosInstance.delete("/delete-note/" + noteId);
+      
       if (response.data && !response.data.error) {
         getAllNotes();
         showToastMessage("Note deleted successfully", "delete");
@@ -66,6 +68,24 @@ const Home = () => {
       if (error.response && error.response.data && error.response.data.message) {
         console.log("Unexpected error. Please try again");
       }
+    }
+  };
+
+  const handleChecklistToggle = async (note, index) => {
+    const noteId = note._id;
+    const newChecklist = [...note.checklist];
+    newChecklist[index].completed = !newChecklist[index].completed;
+
+    try {
+      const response = await axiosInstance.put(`/edit-note/${noteId}`, {
+        checklist: newChecklist,
+      });
+
+      if (response.data && response.data.note) {
+        getAllNotes();
+      }
+    } catch (error) {
+      console.log(error);
     }
   };
 
@@ -106,9 +126,12 @@ const Home = () => {
                 content={note.content}
                 tags={note.tags}
                 isPinned={note.isPinned}
+                isChecklist={note.isChecklist}
+                checklist={note.checklist}
                 onEdit={() => handleEdit(note)}
                 onDelete={() => deleteNote(note)}
                 onPinned={() => updateIsPinned(note)}
+                onChecklistToggle={(index) => handleChecklistToggle(note, index)}
               />
             ))}
           </div>

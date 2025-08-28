@@ -8,6 +8,11 @@ const noteSchema = new Schema({
     isPinned: {type: Boolean, default: false},
     userId: {type: String, required: true},
     createdOn: { type: Date, default: () => new Date() },
+    isChecklist: { type: Boolean, default: false },
+    checklist: [{ 
+        text: { type: String }, 
+        completed: { type: Boolean, default: false } 
+    }],
 });
 
 module.exports = mongoose.model("Note", noteSchema);

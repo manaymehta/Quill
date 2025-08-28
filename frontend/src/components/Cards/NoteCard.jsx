@@ -1,8 +1,8 @@
 import moment from 'moment'
 import React from 'react'
-import { MdOutlinePushPin, MdCreate, MdDelete } from "react-icons/md"
+import { MdOutlinePushPin, MdCreate, MdDelete, MdCheckBoxOutlineBlank, MdCheckBox } from "react-icons/md"
 
-const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPinned }) => {
+const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPinned, isChecklist, checklist, onChecklistToggle }) => {
   return (
     <div
       onClick={(e) => {
@@ -24,11 +24,24 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
         </span>
       </div>
 
-
-      <div>
-        <p className='font-medium mt-2 text-[#494949]'>
-          {content?.slice(0, 60)}
-        </p>
+      <div className='mt-2'>
+        {isChecklist ? (
+          <div className="flex flex-col gap-2 mt-2">
+            {checklist.slice(0, 3).map((item, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <div className="no-card-click" onClick={(e) => { e.stopPropagation(); onChecklistToggle(index); }}>
+                    {item.completed ? <MdCheckBox /> : <MdCheckBoxOutlineBlank />}
+                </div>
+                <span className={`${item.completed ? 'line-through text-slate-500' : ''}`}>{item.text}</span>
+              </div>
+            ))}
+            {checklist.length > 3 && <span className="text-xs text-slate-500">...and {checklist.length - 3} more items.</span>}
+          </div>
+        ) : (
+          <p className='font-medium mt-2 text-[#494949]'>
+            {content?.slice(0, 60)}
+          </p>
+        )}
       </div>
 
       <div className='flex items-center justify-between gap-2 mt-2'>
@@ -36,10 +49,6 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
           {tags.map((item) => `#${item} `)}
         </div>
         <div className='flex items-center gap-2'>
-          {/*<MdCreate
-            className='icon-btn hover:text-green-400 no-card-click'
-            onClick={onEdit}
-          />*/}
           <MdDelete
             className='icon-btn hover:text-[#e85d56] no-card-click text-[#bdbdbd]'
             onClick={onDelete}

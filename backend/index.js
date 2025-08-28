@@ -213,11 +213,11 @@ app.get("/get-user", authenticateToken, async (req, res) => {
 });
 
 app.post("/add-note", authenticateToken, async (req, res) => {
-  const { title, content, tags } = req.body;
+  const { title, content, tags, isChecklist, checklist } = req.body;
   const userId = req.user._id;
 
   //error handling
-  if (!title && !content) {
+  if (!title && !content && (!checklist || checklist.length === 0)) {
     return res
       .status(400)
       .json({ error: true, message: "Content or Title is required", });
@@ -228,6 +228,8 @@ app.post("/add-note", authenticateToken, async (req, res) => {
       title: title || " ",
       content: content || " ",
       tags: tags || [],
+      isChecklist: isChecklist || false,
+      checklist: checklist || [],
       userId,
     })
 
@@ -250,15 +252,8 @@ app.post("/add-note", authenticateToken, async (req, res) => {
 //Note
 app.put("/edit-note/:noteId", authenticateToken, async (req, res) => {
   const noteId = req.params.noteId;
-  const { title, content, tags, isPinned } = req.body;
+  const { title, content, tags, isPinned, isChecklist, checklist } = req.body;
   const userId = req.user._id;
-
-  //error handling
-  if (!title && !content && !tags && !isPinned) {
-    return res
-      .status(400)
-      .json({ error: true, message: "No changes", });
-  }
 
   try {
     const note = await Note.findOne({ _id: noteId, userId: userId });
@@ -273,6 +268,10 @@ app.put("/edit-note/:noteId", authenticateToken, async (req, res) => {
     if (typeof isPinned !== "undefined") {
       note.isPinned = isPinned;
     }
+    if (typeof isChecklist !== "undefined") {
+      note.isChecklist = isChecklist;
+    }
+    if (checklist) note.checklist = checklist;
 
     await note.save();
 

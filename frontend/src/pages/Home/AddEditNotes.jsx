@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { MdAdd, MdClose } from 'react-icons/md'
+import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox } from 'react-icons/md'
 import TagInput from '../../components/Input/TagInput'
 import axiosInstance from '../../utils/axiosInstance';
 
@@ -9,18 +9,43 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
   const [title, setTitle] = useState(noteData?.title || "");
   const [error, setError] = useState("")
   const [summarizedText, setSummarizedText] = useState(""); // State for summarized text
-  const [isSummarizing, setIsSummarizing] = useState(false);; //State for Loading
+  const [isSummarizing, setIsSummarizing] = useState(false); //State for Loading
+  const [isChecklist, setIsChecklist] = useState(noteData?.isChecklist || false);
+  const [checklist, setChecklist] = useState(noteData?.checklist || []);
+
+  const handleChecklistItemChange = (index, newText) => {
+    const newChecklist = [...checklist];
+    newChecklist[index].text = newText;
+    setChecklist(newChecklist);
+  };
+
+  const toggleChecklistItem = (index) => {
+    const newChecklist = [...checklist];
+    newChecklist[index].completed = !newChecklist[index].completed;
+    setChecklist(newChecklist);
+  };
+
+  const addChecklistItem = () => {
+    setChecklist([...checklist, { text: '', completed: false }]);
+  };
+
+  const removeChecklistItem = (index) => {
+    const newChecklist = [...checklist];
+    newChecklist.splice(index, 1);
+    setChecklist(newChecklist);
+  };
 
   const editNote = async () => {
     const noteId = noteData._id;
     try {
       const response = await axiosInstance.put("/edit-note/" + noteId, {
         title,
-        content,
-        tags
+        content: isChecklist ? "" : content,
+        tags,
+        isChecklist,
+        checklist
       });
       if (response.data && response.data.note) {
-
         getAllNotes();
         onClose();
         showToastMessage("Note updated successfully", "edit");
@@ -38,10 +63,11 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
       const response = await axiosInstance.post("/add-note", {
         title,
         content,
-        tags
+        tags,
+        isChecklist,
+        checklist
       });
       if (response.data && response.data.note) {
-
         getAllNotes();
         onClose();
         showToastMessage("Note added successfully", "add");
@@ -55,9 +81,13 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
   }
   //error conditions for adding a note
   const handleAddNote = () => {
-    if (!content && !title) {
-      setError("Please enter content")
-      return;
+    if (!isChecklist && !content && !title) {
+        setError("Please enter content")
+        return;
+    }
+    if (isChecklist && checklist.length === 0 && !title) {
+        setError("Please add at least one checklist item")
+        return;
     }
     setError("");
     if (type === 'edit') {
@@ -129,21 +159,55 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
         />
       </div>
 
+      
+
       <div className='flex flex-col gap-2 mt-4 flex-grow overflow-y-auto'>
+        {isChecklist ? (
+            <div>
+                {checklist.length === 0 && (
+                    <button className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 my-3 hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out' onClick={addChecklistItem}>
+                        <MdAdd className="inline-block" /> Add Item
+                    </button>
+                )}
+                {checklist.map((item, index) => (
+                    <div key={index} className="flex items-center gap-2 mb-2">
+                        <button className='cursor-pointer' onClick={() => toggleChecklistItem(index)}>
+                            {item.completed ? <MdCheckBox /> : <MdCheckBoxOutlineBlank />}
+                        </button>
+                        <input
+                            type="text"
+                            value={item.text}
+                            onChange={(e) => handleChecklistItemChange(index, e.target.value)}
+                            className='text-sm bg-[#f8ecdc] outline-none p-2 rounded-xl w-full'
+                            placeholder='Checklist item'
+                        />
+                        <button className='cursor-pointer' onClick={() => removeChecklistItem(index)}>
+                            <MdClose />
+                        </button>
+                    </div>
+                ))}
+                {checklist.length > 0 && (
+                    <button className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 my-3 hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out' onClick={addChecklistItem}>
+                        <MdAdd className="inline-block" /> Add Item
+                    </button>
+                )}
+                
+            </div>
+        ) : (
+            <textarea
+                type='text'
+                className='text-sm bg-[#f8ecdc] outline-none p-2 h-100 rounded-xl'
+                placeholder='Content '
+                rows={10}
+                value={content}
+                onChange={(e) => {
+                    setContent(e.target.value)
+                    setError("");
+                }}
+            />
+        )}
 
-        <textarea
-          type='text'
-          className='text-sm bg-[#f8ecdc] outline-none p-2 h-100 rounded-xl'
-          placeholder='Content '
-          rows={10}
-          value={content}
-          onChange={(e) => {
-            setContent(e.target.value)
-            setError("");
-          }}
-        />
-
-        {summarizedText && (
+        {summarizedText && !isChecklist && (
           <div className='mt-2 p-3 bg-gray-100 rounded-xl'>
             <h4 className='font-medium text-lg mb-2'>Summary:</h4>
             <p className='text-sm text-gray-800'>{summarizedText}</p>
@@ -151,12 +215,9 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
         )}
       </div>
 
-      <div className='flex flex-row gap-2'>
-        <TagInput tags={tags} setTags={setTags} />
-
+      <div className='flex items-center justify-between gap-2'>
+        <TagInput tags={tags} setTags={setTags} isChecklist={isChecklist} setIsChecklist={setIsChecklist} />
       </div>
-
-
 
       {error && (<p className='text-xs pl-2 pt-2 text-red-500'>{error}</p>)}
 
@@ -167,13 +228,15 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
         >
           {type === "edit" ? "EDIT" : "ADD"}
         </button>
-        <button
-          className='w-auto text-sm opacity-85 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 text-white py-2.5 px-3 my-3 rounded-full hover:shadow-lg hover:opacity-70 transition-all ease-in-out duration-300'
-          onClick={handleSummarize}
-          disabled={isSummarizing}
-        >
-          {isSummarizing ? "Summarizing..." : "Summarize"}
-        </button>
+        {!isChecklist && (
+            <button
+            className='w-auto text-sm opacity-85 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 text-white py-2.5 px-3 my-3 rounded-full hover:shadow-lg hover:opacity-70 transition-all ease-in-out duration-300'
+            onClick={handleSummarize}
+            disabled={isSummarizing}
+            >
+            {isSummarizing ? "Summarizing..." : "Summarize"}
+            </button>
+        )}
       </div>
     </div>
   )
