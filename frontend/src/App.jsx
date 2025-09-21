@@ -22,7 +22,7 @@ const App = () => {
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={isLoggedIn ? <Home /> : <Navigate to="/" />} />
           <Route path="/pinned" element={isLoggedIn ? <Pinned /> : <Navigate to="/" />} />
-          <Route path="/trash" element={isLoggedIn ? <Trash /> : <Navigate to="/" />} />
+          <Route path="/trash" element={isLoggedIn ? <Trash /> : <Navigate to="/" />} />z
         </Route>
 
       </Routes>

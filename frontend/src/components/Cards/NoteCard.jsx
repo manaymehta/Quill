@@ -9,9 +9,9 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
         if (e.target.closest('.no-card-click')) return;
         onEdit();
       }}
-      className='border max-w-sm border-gray-700 rounded-3xl p-4 bg-[#f8ecdc] shadow-xs hover:bg-[#d8cec1] hover:shadow-xl transition-all ease-in-out cursor-pointer'
+      className=' border max-w-sm border-gray-700 rounded-3xl p-4 bg-[#f8ecdc] shadow-xs hover:bg-[#d8cec1] hover:shadow-xl transition-all ease-in-out cursor-pointer '
     >
-      <div className='flex flex-col'>
+      <div className='flex flex-col '>
         <div className='flex justify-between items-start'>
           <h4 className='text-2xl font-semibold tracking-tight text-[#e85d56]'>{title}</h4>
           <MdOutlinePushPin
