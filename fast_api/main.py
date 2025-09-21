@@ -34,7 +34,7 @@ class SummarizeResponse(BaseModel):
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to the Groq FastAPI Summarization Microservice! Use /summarize for text summarization."}
+    return {"message": "Welcome to the Groq FastAPI Summarization Microservice! Use /summarize-note for text summarization."}
 
 @app.post("/summarize", response_model=SummarizeResponse)
 async def summarize_text(request: SummarizeRequest):

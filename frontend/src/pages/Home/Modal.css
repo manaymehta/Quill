@@ -1,10 +1,12 @@
 .ReactModal__Overlay {
+  
   opacity: 1;
   transform: scale(0);
-  transition:transform 100ms ease-in-out;
 }
 
 .ReactModal__Overlay--after-open {
+  backdrop-filter: blur(3px);
+
   opacity: 1;
   transform: scale(1);
 }

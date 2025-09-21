@@ -194,11 +194,10 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
                 
             </div>
         ) : (
-            <textarea
+                        <textarea
                 type='text'
-                className='text-sm bg-[#f8ecdc] outline-none p-2 h-100 rounded-xl'
+                className={`text-sm bg-[#f8ecdc] outline-none p-2 rounded-xl transition-all duration-150 ${summarizedText ? 'h-64' : 'h-120'}`}
                 placeholder='Content '
-                rows={10}
                 value={content}
                 onChange={(e) => {
                     setContent(e.target.value)

@@ -41,47 +41,54 @@ const MainLayout = () => {
     const ctx = canvas.getContext('2d');
     let animationFrameId;
 
-    const DENSITY = 50; // Adjusted for a larger area
     const MAX_DISTANCE = 120;
     const SPEED = 0.5;
 
     let nodes = [];
+    let density;
 
     const resizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      canvas.style.width = `${window.innerWidth}px`;
+      canvas.style.height = `${window.innerHeight}px`;
+      ctx.scale(dpr, dpr);
+
+      density = Math.floor((window.innerWidth * window.innerHeight) / 8000);
       nodes = [];
       initNodes();
     };
 
     const initNodes = () => {
-      for (let i = 0; i < DENSITY; i++) {
+      for (let i = 0; i < density; i++) {
         nodes.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
+          x: Math.random() * window.innerWidth,
+          y: Math.random() * window.innerHeight,
           vx: (Math.random() - 0.5) * SPEED,
           vy: (Math.random() - 0.5) * SPEED,
-          radius: Math.random() * 2 + 1,
+          radius: Math.random() * 1.5 + 0.5,
         });
       }
     };
 
     const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
       for (const node of nodes) {
-        if (node.x + node.radius > canvas.width || node.x - node.radius < 0) {
-          node.vx *= -1;
-        }
-        if (node.y + node.radius > canvas.height || node.y - node.radius < 0) {
-          node.vy *= -1;
-        }
         node.x += node.vx;
         node.y += node.vy;
 
+        if (node.x - node.radius < 0 || node.x + node.radius > window.innerWidth) {
+          node.vx *= -1;
+        }
+        if (node.y - node.radius < 0 || node.y + node.radius > window.innerHeight) {
+          node.vy *= -1;
+        }
+
         ctx.beginPath();
         ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'; // More subtle nodes
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.fill();
       }
 
@@ -89,8 +96,8 @@ const MainLayout = () => {
         for (let b = a + 1; b < nodes.length; b++) {
           const dist = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y);
           if (dist < MAX_DISTANCE) {
-            ctx.strokeStyle = `rgba(255, 255, 255, ${1 - (dist / MAX_DISTANCE)})`; // More subtle lines
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = `rgba(255, 255, 255, ${1 - (dist / MAX_DISTANCE)})`;
+            ctx.lineWidth = 0.5;
             ctx.beginPath();
             ctx.moveTo(nodes[a].x, nodes[a].y);
             ctx.lineTo(nodes[b].x, nodes[b].y);
@@ -102,8 +109,7 @@ const MainLayout = () => {
       animationFrameId = requestAnimationFrame(animate);
     };
 
-    // Use a timeout to ensure layout is stable before sizing canvas
-    setTimeout(resizeCanvas, 0);
+    resizeCanvas();
     animate();
 
     window.addEventListener('resize', resizeCanvas);
@@ -115,7 +121,7 @@ const MainLayout = () => {
 
   return (
     <div className="relative min-h-screen">
-      <canvas ref={canvasRef} className="fixed top-0 left-0 w-full h-screen z-[-1]"></canvas>
+      <canvas ref={canvasRef} className="fixed top-0 left-0 w-full h-screen "></canvas>
       <div className="relative z-10">
         <Navbar
           onSearch={onSearch}
