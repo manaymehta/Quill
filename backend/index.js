@@ -35,6 +35,10 @@ app.get("/", (req, res) => {
   res.json({ message: "Notes App API is running!" });
 });
 
+app.get("/health-check", (req, res) => {
+  res.status(200).json({ message: "Server is awake and running." });
+});
+
 //User
 app.post("/create-account", async (req, res) => {
   const { fullName, email, password } = req.body;

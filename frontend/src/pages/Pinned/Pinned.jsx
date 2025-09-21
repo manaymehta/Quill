@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react'
 import NoteCard from '../../components/Cards/NoteCard'
 import EmptyCard from '../../components/Cards/EmptyCard'
 import axiosInstance from '../../utils/axiosInstance';
-import { useOutletContext } from 'react-router-dom';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const Pinned = () => {
 
-  const {getUserInfo } = useOutletContext();
   const [allPinnedNotes, setAllPinnedNotes] = useState([]);
+  const { getUser } = useAuthStore();
 
   const getAllPinnedNotes = async () => {
     try {
@@ -23,11 +23,11 @@ const Pinned = () => {
 
   useEffect(()=>{
     getAllPinnedNotes();
-    getUserInfo();
-  },[])
+    getUser();
+  },[getUser])
 
   return (
-    <div className="min-h-screen bg-neutral-200">
+    <div className="min-h-screen">
       <div className="p-4">
         {allPinnedNotes.length > 0 ? (
           <div className="grid grid-cols-4 gap-4">

@@ -22,7 +22,7 @@ const Navbar = ({ onSearch, handleClearSearch }) => {
   }
 
   return (
-    <div className="bg-[#202124] border-b-[#6d6c6c]  px-5 py-2 drop-shadow flex items-center justify-between z-50 relative ">
+    <div className="bg-[#202124]/80 backdrop-blur-sm border-b-[#6d6c6c]  px-5 py-2 drop-shadow flex items-center justify-between z-50 sticky top-0 ">
       <div className="flex items-center gap-4 text-[#dd5e57]">
         {isLoggedIn &&
           (isSidebarOpen ? (
