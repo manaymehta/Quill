@@ -24,6 +24,7 @@ const Sidebar = forwardRef((props, ref) => {
         <li className="cursor-pointer "><button className='cursor-pointer' onClick={() => navigate("/dashboard")}>All Notes</button></li>
         <li className="cursor-pointer "><button className='cursor-pointer' onClick={() => navigate("/pinned")}>Pinned</button></li>
         <li className="cursor-pointer "><button className='cursor-pointer' onClick={() => navigate("/trash")}>Trash</button></li>
+        <li className="cursor-pointer "><button className='cursor-pointer' onClick={() => navigate("/graph")}>Graph</button></li>
       </ul>
     </div>
   );

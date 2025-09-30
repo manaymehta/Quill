@@ -30,7 +30,7 @@ const Pinned = () => {
     <div className="min-h-screen">
       <div className="p-4">
         {allPinnedNotes.length > 0 ? (
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {allPinnedNotes.map((note) => (
               <NoteCard
                 key={note._id}

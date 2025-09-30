@@ -55,7 +55,7 @@ const MainLayout = () => {
       canvas.style.height = `${window.innerHeight}px`;
       ctx.scale(dpr, dpr);
 
-      density = Math.floor((window.innerWidth * window.innerHeight) / 8000);
+      density = Math.floor((window.innerWidth * window.innerHeight) / 11000);
       nodes = [];
       initNodes();
     };
@@ -67,7 +67,7 @@ const MainLayout = () => {
           y: Math.random() * window.innerHeight,
           vx: (Math.random() - 0.5) * SPEED,
           vy: (Math.random() - 0.5) * SPEED,
-          radius: Math.random() * 1.5 + 0.5,
+          radius: Math.random() * 1.5 + 1,
         });
       }
     };

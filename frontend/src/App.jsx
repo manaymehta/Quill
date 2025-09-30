@@ -7,6 +7,7 @@ import MainLayout from './components/Layout/MainLayout';
 import Pinned from './pages/Pinned/Pinned';
 import Trash from './pages/Trash/Trash';
 import { useAuthStore } from './store/useAuthStore';
+import Graph from './pages/Graph/Graph';
 
 const App = () => {
   const{ isLoggedIn } = useAuthStore();
@@ -22,7 +23,8 @@ const App = () => {
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={isLoggedIn ? <Home /> : <Navigate to="/" />} />
           <Route path="/pinned" element={isLoggedIn ? <Pinned /> : <Navigate to="/" />} />
-          <Route path="/trash" element={isLoggedIn ? <Trash /> : <Navigate to="/" />} />z
+          <Route path="/trash" element={isLoggedIn ? <Trash /> : <Navigate to="/" />} />
+          <Route path="/graph" element={isLoggedIn ? <Graph /> : <Navigate to="/" />} />
         </Route>
 
       </Routes>
