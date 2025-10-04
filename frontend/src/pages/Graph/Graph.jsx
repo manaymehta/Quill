@@ -19,6 +19,7 @@ const Graph = () => {
   const [hoveredNode, setHoveredNode] = useState(null);
   const [highlightedNodes, setHighlightedNodes] = useState(new Set());
   const [highlightedLinks, setHighlightedLinks] = useState(new Set());
+  const [selectedTag, setSelectedTag] = useState(null);
 
   // unique tags from all notes
   const uniqueTags = useMemo(() => {
@@ -81,7 +82,40 @@ const Graph = () => {
     setGraphData({ nodes, links });
   }, [allNotes]); // runs when allNotes changes
 
+  const handleTagClick = (tag) => {
+    setSelectedTag(prevSelectedTag => (prevSelectedTag === tag ? null : tag));
+  };
+
+  useEffect(() => {
+    if (selectedTag) {
+      const newHighlightedNodes = new Set();
+      const newHighlightedLinks = new Set();
+
+      graphData.nodes.forEach(node => {
+        if (node.tags.includes(selectedTag)) {
+          newHighlightedNodes.add(node);
+        }
+      });
+
+      graphData.links.forEach(link => {
+        const sourceNode = graphData.nodes.find(n => n.id === link.source.id);
+        const targetNode = graphData.nodes.find(n => n.id === link.target.id);
+        if (sourceNode && targetNode && sourceNode.tags.includes(selectedTag) && targetNode.tags.includes(selectedTag)) {
+          newHighlightedLinks.add(link);
+        }
+      });
+
+      setHighlightedNodes(newHighlightedNodes);
+      setHighlightedLinks(newHighlightedLinks);
+    } else {
+      setHighlightedNodes(new Set());
+      setHighlightedLinks(new Set());
+    }
+  }, [selectedTag, graphData]);
+
   const handleNodeHover = (node) => {
+    if (selectedTag) return; // Disable hover effect if a tag is selected
+
     if (hoveredNode !== node) {
       setHoveredNode(node);
       if (node) {
@@ -145,8 +179,8 @@ const Graph = () => {
             {uniqueTags.map(tag => (
                 <button 
                   key={tag} 
-                  onClick={() => {}} 
-                  className="bg-[#333] border border-[#424242] text-[#EAEAEA] rounded-full px-3 py-1.5 text-sm cursor-pointer transition-colors hover:bg-[#444] text-left"
+                  onClick={() => handleTagClick(tag)} 
+                  className={`border text-[#EAEAEA] rounded-full px-3 py-1.5 text-sm cursor-pointer transition-colors text-left ${selectedTag === tag ? 'bg-white/20 border-white/40' : 'bg-[#333] border-[#424242] hover:bg-[#444]'}`}
                 >
                     {tag}
                 </button>
