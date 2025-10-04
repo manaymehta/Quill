@@ -41,7 +41,11 @@ const MainLayout = () => {
     const ctx = canvas.getContext('2d');
     let animationFrameId;
 
-    const MAX_DISTANCE = 120;
+    // used for fixed resolution for the animation.
+    const LOGICAL_WIDTH = 1920;
+    const LOGICAL_HEIGHT = 1080;
+
+    const MAX_DISTANCE = 180;
     const SPEED = 0.5;
 
     let nodes = [];
@@ -49,13 +53,18 @@ const MainLayout = () => {
 
     const resizeCanvas = () => {
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
+
+      // Set the canvas to fixed logical size.
+      canvas.width = LOGICAL_WIDTH * dpr;
+      canvas.height = LOGICAL_HEIGHT * dpr;
+      
+      // Scale canvas to fill the window, but run the animation at a fixed resolution.
       canvas.style.width = `${window.innerWidth}px`;
       canvas.style.height = `${window.innerHeight}px`;
       ctx.scale(dpr, dpr);
 
-      density = Math.floor((window.innerWidth * window.innerHeight) / 11000);
+      density = Math.floor((LOGICAL_WIDTH * LOGICAL_HEIGHT) / 45000);
+
       nodes = [];
       initNodes();
     };
@@ -63,26 +72,29 @@ const MainLayout = () => {
     const initNodes = () => {
       for (let i = 0; i < density; i++) {
         nodes.push({
-          x: Math.random() * window.innerWidth,
-          y: Math.random() * window.innerHeight,
+          // Place nodes within the space.
+          x: Math.random() * LOGICAL_WIDTH,
+          y: Math.random() * LOGICAL_HEIGHT,
           vx: (Math.random() - 0.5) * SPEED,
           vy: (Math.random() - 0.5) * SPEED,
-          radius: Math.random() * 1.5 + 1,
+          radius: Math.random() * 3 + 1,
         });
       }
     };
 
     const animate = () => {
-      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      // Clear the logical canvas
+      ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
       for (const node of nodes) {
         node.x += node.vx;
         node.y += node.vy;
 
-        if (node.x - node.radius < 0 || node.x + node.radius > window.innerWidth) {
+        // Perform boundary checks
+        if (node.x - node.radius < 0 || node.x + node.radius > LOGICAL_WIDTH) {
           node.vx *= -1;
         }
-        if (node.y - node.radius < 0 || node.y + node.radius > window.innerHeight) {
+        if (node.y - node.radius < 0 || node.y + node.radius > LOGICAL_HEIGHT) {
           node.vy *= -1;
         }
 
@@ -97,7 +109,7 @@ const MainLayout = () => {
           const dist = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y);
           if (dist < MAX_DISTANCE) {
             ctx.strokeStyle = `rgba(255, 255, 255, ${1 - (dist / MAX_DISTANCE)})`;
-            ctx.lineWidth = 0.5;
+            ctx.lineWidth = 0.9;
             ctx.beginPath();
             ctx.moveTo(nodes[a].x, nodes[a].y);
             ctx.lineTo(nodes[b].x, nodes[b].y);
