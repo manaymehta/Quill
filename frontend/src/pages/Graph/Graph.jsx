@@ -143,8 +143,8 @@ const Graph = () => {
       <ForceGraph2D
         graphData={graphData}
         nodeLabel={node => node.connectingTags.join(', ')}
-        linkColor={link => highlightedLinks.has(link) ? 'white' : 'rgba(255, 255, 255, 0.3)'}
-        linkWidth={link => highlightedLinks.has(link) ? 6 : 3}
+        linkColor={link => highlightedLinks.has(link) ? '#e7aeab' : 'rgba(255, 255, 255, 0.6)'}
+        linkWidth={link => highlightedLinks.has(link) ? 6 : 1}
         onNodeHover={handleNodeHover}
         nodePointerAreaPaint={(node, color, ctx) => {
           ctx.fillStyle = color;
@@ -155,8 +155,8 @@ const Graph = () => {
         nodeCanvasObject={(node, ctx) => {
           // node circle
           ctx.beginPath();
-          ctx.arc(node.x, node.y, 7, 0, 2 * Math.PI, false);
-          ctx.fillStyle = highlightedNodes.has(node) ? 'white' : 'gray';
+          ctx.arc(node.x, node.y, 9, 0, 2 * Math.PI, false);
+          ctx.fillStyle = highlightedNodes.has(node) ? '#e85d56' : '#f8ecdc';
           ctx.fill();
 
           // node name below the circle

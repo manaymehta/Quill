@@ -432,9 +432,7 @@ app.post("/summarize-note", authenticateToken, async (req, res) => {
   }
 
   try {
-    // IMPORTANT: Set this in your .env file
     // For local development, this might be 'http://localhost:8001/summarize'
-    // For deployment on Render, it would be your deployed FastAPI service URL
     const FASTAPI_SUMMARIZE_URL = process.env.FASTAPI_SUMMARIZE_URL;
 
     if (!FASTAPI_SUMMARIZE_URL) {

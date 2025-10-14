@@ -11,7 +11,6 @@ import './Modal.css';
 
 
 const Home = () => {
-  // --- Your Existing State and Logic (Unchanged) --- //
   const { allNotes, getAllNotes } = useNotesStore();
   const [showToast, setShowToast] = useState(false);
   const [shouldCloseModal, setShouldCloseModal] = useState(false);
@@ -110,9 +109,10 @@ const Home = () => {
 
   return (
     <>
-        <div className="p-2">
+        <div className=" p-2">
+          <div className=''>
           {allNotes.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:pr-10">
               {allNotes.map((note) => (
                 <NoteCard
                   key={note._id}
@@ -133,10 +133,11 @@ const Home = () => {
           ) : (
             <EmptyCard message={"It’s quiet here… Start by adding a note."} />
           )}
+          </div>
         </div>
 
         <button
-          className="flex justify-center w-16 h-16 items-center rounded-4xl bg-[#dd5e57] hover:bg-[#fb6d65] fixed right-10 bottom-10 hover:rotate-45 hover:shadow-xl transition-all ease-in-out"
+          className="flex justify-center w-16 h-16 items-center rounded-4xl bg-[#dd5e57] hover:bg-[#fb6d65] fixed right-8 bottom-8 hover:rotate-45 hover:shadow-xl transition-all ease-in-out"
           onClick={() => {
             setOpenAddEditModal({ isShown: true, type: "add", data: null });
           }}

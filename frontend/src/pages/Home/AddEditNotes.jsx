@@ -138,7 +138,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
     <div className='flex flex-col h-full'>
       <div className='relative'>
         <button
-          className=' text-2xl text-[#e85d56] hover:text-slate-600 flex items-center justify-center absolute -top-1 -right-1'
+          className=' text-2xl text-[#e85d56] cursor-pointer hover:text-slate-600 flex items-center justify-center absolute -top-1 -right-1'
           onClick={onClose}
         >
           <MdClose />
@@ -165,7 +165,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
         {isChecklist ? (
             <div>
                 {checklist.length === 0 && (
-                    <button className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 my-3 hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out' onClick={addChecklistItem}>
+                    <button className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 mt-3 cursor-pointer hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out' onClick={addChecklistItem}>
                         <MdAdd className="inline-block" /> Add Item
                     </button>
                 )}
@@ -187,16 +187,16 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
                     </div>
                 ))}
                 {checklist.length > 0 && (
-                    <button className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 my-3 hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out' onClick={addChecklistItem}>
+                    <button className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 my-3 cursor-pointer hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out' onClick={addChecklistItem}>
                         <MdAdd className="inline-block" /> Add Item
                     </button>
                 )}
                 
             </div>
         ) : (
-                        <textarea
+              <textarea
                 type='text'
-                className={`text-sm bg-[#f8ecdc] outline-none p-2 rounded-xl transition-all duration-150 ${summarizedText ? 'h-64' : 'h-120'}`}
+                className={`text-sm bg-[#f8ecdc] outline-none p-2 rounded-xl ${summarizedText ? 'h-51' : 'h-100'}`}
                 placeholder='Content '
                 value={content}
                 onChange={(e) => {
@@ -208,28 +208,38 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
 
         {summarizedText && !isChecklist && (
           <div className='mt-2 p-3 bg-gray-100 rounded-xl'>
+            
+            <div className='relative'>
+              <button
+                className=' text-xl text-[#919191] cursor-pointer hover:text-slate-600 flex items-center justify-center absolute -top-1 -right-1'
+                onClick={() =>setSummarizedText("")}
+              >
+                <MdClose />
+              </button>
+            </div>
+
             <h4 className='font-medium text-lg mb-2'>Summary:</h4>
             <p className='text-sm text-gray-800'>{summarizedText}</p>
           </div>
         )}
-      </div>
 
-      <div className='flex items-center justify-between gap-2'>
-        <TagInput tags={tags} setTags={setTags} isChecklist={isChecklist} setIsChecklist={setIsChecklist} />
-      </div>
+        <div className='flex items-center justify-between gap-2 '>
+          <TagInput tags={tags} setTags={setTags} isChecklist={isChecklist} setIsChecklist={setIsChecklist} />
+        </div>
 
-      {error && (<p className='text-xs pl-2 pt-2 text-red-500'>{error}</p>)}
+        {error && (<p className='text-xs pl-2 pt-2 text-red-500'>{error}</p>)}
+      </div>
 
       <div className='flex'>
         <button
-          className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 my-3 mr-2 hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out'
+          className='w-full text-sm bg-[#cdc4b8] cursor-pointer text-stone-500 p-2 my-3 mr-2 hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out'
           onClick={handleAddNote}
         >
           {type === "edit" ? "EDIT" : "ADD"}
         </button>
         {!isChecklist && (
             <button
-            className='w-auto text-sm opacity-85 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 text-white py-2.5 px-3 my-3 rounded-full hover:shadow-lg hover:opacity-70 transition-all ease-in-out duration-300'
+            className='w-auto text-sm cursor-pointer opacity-85 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 text-white py-2.5 px-3 my-3 rounded-full hover:shadow-lg hover:opacity-70 transition-all ease-in-out duration-50'
             onClick={handleSummarize}
             disabled={isSummarizing}
             >

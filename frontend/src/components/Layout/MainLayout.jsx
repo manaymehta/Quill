@@ -139,7 +139,7 @@ const MainLayout = () => {
           onSearch={onSearch}
           handleClearSearch={handleClearSearch}
         />
-        <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? "pl-64" : "pl-0"}`}>
+        <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? "pl-0 sm:pl-55" : "pl-0 sm:pl-16"}`}>
           <Outlet />
         </div>
         <Sidebar ref={sidebarRef} />

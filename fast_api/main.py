@@ -6,7 +6,6 @@ import uvicorn
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 app = FastAPI(
@@ -15,16 +14,13 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# --- Groq Client Initialization ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
     raise RuntimeError("GROQ_API_KEY environment variable not set.")
 
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Define the Groq model to use for summarization
-GROQ_MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
-
+GROQ_MODEL_NAME = "llama-3.1-8b-instant"
 
 class SummarizeRequest(BaseModel):
     text: str
@@ -42,10 +38,10 @@ async def summarize_text(request: SummarizeRequest):
         raise HTTPException(status_code=400, detail="Text content cannot be empty for summarization.")
 
     try:
-        # --- MODIFIED PROMPT ENGINEERING ---
-        # Explicitly instruct the model to summarize in 3 to 4 lines.
-        # Adding a few-shot example (even a generic one) can sometimes help.
-        prompt = f"""Summarize the following text concisely and accurately into 3 to 4 lines. Focus on the main points and key information.
+        if len(request.text.strip()) < 8:
+            prompt = "only and only return : 'Too short to summarize.'"
+        else:
+            prompt = f"""Summarize the following text concisely and accurately if large, depending on the size of the content keep it around 3 to 4 lines . Focus on the main points and key information.
 
 Text to summarize:
 ---
@@ -67,9 +63,8 @@ Concise Summary (3-4 lines):"""
             ],
             model=GROQ_MODEL_NAME,
             temperature=0.3, # Lower temperature makes the output more deterministic and less "creative"
-            max_tokens=150,  # --- ADJUSTED max_tokens ---
+            max_tokens=150,  # max_tokens 
                              # This is a general upper bound. 3-4 lines typically fit within 50-150 tokens.
-                             # You might need to fine-tune this value based on your actual content and desired line length.
                              # It's better to overestimate slightly than to cut off a summary mid-sentence.
         )
 
@@ -89,5 +84,12 @@ Concise Summary (3-4 lines):"""
         raise HTTPException(status_code=500, detail=detail_message)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("FASTAPI_PORT", 8001))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    is_production = "PORT" in os.environ
+
+    if is_production:
+        # In production use the port provided by the environment
+        port = int(os.environ.get("PORT"))
+        uvicorn.run(app, host="0.0.0.0", port=port)
+    else:
+        # In development, run with reload on a fixed port
+        uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
