@@ -77,6 +77,9 @@ app.post("/create-account", async (req, res) => {
   });
   await user.save();
 
+  // Create pre-made notes for the new user
+  await createInitialNotes(user._id);
+
   //signing new user info with token
   //const accesToken = jwt.sign({ user }, process.env.ACCESS_TOKEN_SECRET, {expiresIn: "36000m",});
   const accessToken = jwt.sign({
@@ -487,6 +490,40 @@ app.post("/summarize-note", authenticateToken, async (req, res) => {
   }
 });
 
+
+const createInitialNotes = async (userId) => {
+  const initialNotes = [
+    {
+      title: "Welcome to Quill! 🪶",
+      content: "This is your first note. Feel free to edit or delete it. You can create new notes, add tags, and even make checklists. Enjoy organizing your thoughts! 🚀",
+      tags: ["welcome", "getting-started"],
+      userId,
+    },
+    {
+      title: "How to Use Checklists ✅",
+      isChecklist: true,
+      checklist: [
+        { content: "Create a new note.", isCompleted: true },
+        { content: "Click the checklist icon.", isCompleted: false },
+        { content: "Add your to-do items!", isCompleted: false },
+      ],
+      tags: ["welcome"],
+      userId,
+    },
+    {
+      title: "Visualize your notes via Graph 📈",
+      content: "Check out the the graph section to see your notes organized as nodes by matching tags.",
+      tags: ["tags", "click a tag"],
+      userId,
+    },
+  ];
+
+  try {
+    await Note.insertMany(initialNotes);
+  } catch (error) {
+    console.error("Error creating initial notes:", error);
+  }
+};
 
 app.listen(8000);
 

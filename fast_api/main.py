@@ -37,17 +37,15 @@ async def summarize_text(request: SummarizeRequest):
     if not request.text or len(request.text.strip()) == 0:
         raise HTTPException(status_code=400, detail="Text content cannot be empty for summarization.")
 
-    try:
-        if len(request.text.strip()) < 8:
-            prompt = "only and only return : 'Too short to summarize.'"
-        else:
-            prompt = f"""Summarize the following text concisely and accurately if large, depending on the size of the content keep it around 3 to 4 lines . Focus on the main points and key information.
+    if len(request.text.strip()) < 50:
+        return {"summary": "Too short to summarize."}
 
+    try:
+        prompt = f"""Summarize the following text concisely and accurately if large, depending on the size of the content keep it around 3 to 4 lines . Focus on the main points and key information.
 Text to summarize:
 ---
 {request.text}
 ---
-
 Concise Summary (3-4 lines):"""
 
         chat_completion = groq_client.chat.completions.create(
