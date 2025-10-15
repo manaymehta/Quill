@@ -446,7 +446,7 @@ app.post("/summarize-note", authenticateToken, async (req, res) => {
         });
     }
 
-    const fastapiResponse = await axios.post(FASTAPI_SUMMARIZE_URL, {
+    const fastapiResponse = await axios.post(`${FASTAPI_SUMMARIZE_URL}/summarize`, {
       text: text,
     });
 
