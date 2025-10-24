@@ -15,10 +15,17 @@ app = FastAPI(
 )
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY environment variable not set.")
-
-groq_client = Groq(api_key=GROQ_API_KEY)
+# Create the Groq client only if the key is available. Don't raise at import-time
+# so the app can respond to healthchecks even when the env var is missing.
+groq_client = None
+if GROQ_API_KEY:
+    try:
+        groq_client = Groq(api_key=GROQ_API_KEY)
+    except Exception as e:
+        # Log but allow the app to start — summarization endpoint will return 503 if used.
+        print(f"Warning: failed to initialize Groq client: {e}")
+else:
+    print("Warning: GROQ_API_KEY not set. Summarization endpoint will be unavailable until configured.")
 
 GROQ_MODEL_NAME = "llama-3.1-8b-instant"
 
@@ -32,6 +39,12 @@ class SummarizeResponse(BaseModel):
 async def root():
     return {"message": "Welcome to the Groq FastAPI Summarization Microservice! Use /summarize-note for text summarization."}
 
+
+@app.get("/health")
+async def health():
+    """Lightweight health endpoint used by uptime monitors and Render health checks."""
+    return {"status": "ok"}
+
 @app.post("/summarize", response_model=SummarizeResponse)
 async def summarize_text(request: SummarizeRequest):
     if not request.text or len(request.text.strip()) == 0:
@@ -41,6 +54,9 @@ async def summarize_text(request: SummarizeRequest):
         return {"summary": "Too short to summarize."}
 
     try:
+        if groq_client is None:
+            raise HTTPException(status_code=503, detail="Summarization service not configured (GROQ_API_KEY missing).")
+
         prompt = f"""Summarize the following text concisely and accurately if large, depending on the size of the content keep it around 3 to 4 lines . Focus on the main points and key information.
 Text to summarize:
 ---
