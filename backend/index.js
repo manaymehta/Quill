@@ -35,6 +35,10 @@ app.get("/", (req, res) => {
   res.json({ message: "Notes App API is running!" });
 });
 
+app.get("/health-check", (req, res) => {
+  res.status(200).json({ message: "Server is awake and running." });
+});
+
 //User
 app.post("/create-account", async (req, res) => {
   const { fullName, email, password } = req.body;
@@ -418,10 +422,6 @@ app.get("/search-notes/", authenticateToken, async (req, res) => {
   } catch (error) {
     return res.status(500).json({error: true, message: "Internal Server Error"});
   }
-});
-
-app.get("/health-check", authenticateToken, async (req, res) => {
-  return  res.status(200).json({ message: "Server is awake and running." });
 });
 
 app.post("/summarize-note", authenticateToken, async (req, res) => {
