@@ -45,6 +45,16 @@ async def health():
     """Lightweight health endpoint used by uptime monitors and Render health checks."""
     return {"status": "ok"}
 
+
+@app.head("/health")
+async def health_head():
+    """Accept HEAD requests for health checks (UptimeRobot often uses HEAD).
+    Return an empty 200 response to satisfy HEAD checks.
+    """
+    # Import Response locally to avoid changing global imports
+    from fastapi import Response
+    return Response(status_code=200)
+
 @app.post("/summarize", response_model=SummarizeResponse)
 async def summarize_text(request: SummarizeRequest):
     if not request.text or len(request.text.strip()) == 0:
