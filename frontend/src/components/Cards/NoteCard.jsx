@@ -1,8 +1,8 @@
 import moment from 'moment'
 import React from 'react'
-import { MdOutlinePushPin, MdCreate, MdDelete, MdCheckBoxOutlineBlank, MdCheckBox } from "react-icons/md"
+import { MdOutlinePushPin, MdCreate, MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever } from "react-icons/md"
 
-const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPinned, isChecklist, checklist, onChecklistToggle }) => {
+const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPinned, isChecklist, checklist, onChecklistToggle, isTrash, onRestore }) => {
   return (
     <div
       onClick={(e) => {
@@ -15,7 +15,7 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
         <div className='flex justify-between items-start'>
           <h4 className='text-2xl font-semibold tracking-tight text-[#e85d56]'>{title}</h4>
           <MdOutlinePushPin
-            className={`icon-btn no-card-click ${isPinned ? 'text-[#e85d56]' : 'text-[#a6a6a6]'} hover:text-slate-600`}
+            className={`icon-btn no-card-click ${isPinned ? 'text-[#e85d56]' : 'text-[#a6a6a6]'} ${isTrash ? 'hidden' : ''} hover:text-slate-600`}
             onClick={onPinned}
           />
         </div>
@@ -30,7 +30,7 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
             {checklist.slice(0, 3).map((item, index) => (
               <div key={index} className="flex items-center gap-2">
                 <div className="no-card-click" onClick={(e) => { e.stopPropagation(); onChecklistToggle(index); }}>
-                    {item.completed ? <MdCheckBox /> : <MdCheckBoxOutlineBlank />}
+                  {item.completed ? <MdCheckBox /> : <MdCheckBoxOutlineBlank />}
                 </div>
                 <span className={`${item.completed ? 'line-through text-slate-500' : ''}`}>{item.text}</span>
               </div>
@@ -45,14 +45,33 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
       </div>
 
       <div className='flex items-center justify-between gap-2 mt-2'>
-        <div className='text-slate-500 text-sm'>
-          {tags.map((item) => `#${item} `)}
+        <div className='flex items-center gap-1 flex-wrap'>
+          {tags.map((item) => (
+            <span key={item} className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-[#e3d7c9] text-gray-700 font-medium">
+              #{item}
+            </span>
+          ))}
         </div>
         <div className='flex items-center gap-2'>
-          <MdDelete
-            className='icon-btn hover:text-[#e85d56] no-card-click text-[#bdbdbd]'
-            onClick={onDelete}
-          />
+          {isTrash ? (
+            <>
+              <MdRestore
+                className='icon-btn hover:text-green-600 no-card-click text-[#bdbdbd]'
+                onClick={onRestore}
+                title="Restore"
+              />
+              <MdDeleteForever
+                className='icon-btn hover:text-red-600 no-card-click text-[#bdbdbd]'
+                onClick={onDelete}
+                title="Delete Forever"
+              />
+            </>
+          ) : (
+            <MdDelete
+              className='icon-btn hover:text-[#e85d56] no-card-click text-[#bdbdbd]'
+              onClick={onDelete}
+            />
+          )}
         </div>
       </div>
     </div>

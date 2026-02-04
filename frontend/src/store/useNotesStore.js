@@ -3,6 +3,7 @@ import axiosInstance from '../utils/axiosInstance';
 
 export const useNotesStore = create((set, get) => ({
   allNotes: [],
+  trashNotes: [],
   isSearch: false,
 
   getAllNotes: async () => {
@@ -32,7 +33,7 @@ export const useNotesStore = create((set, get) => ({
 
   handleClearSearch: () => {
     if (get().isSearch) {
-        get().getAllNotes();
+      get().getAllNotes();
     }
   },
 
@@ -59,6 +60,40 @@ export const useNotesStore = create((set, get) => ({
       }
     } catch (error) {
       console.log(error);
+    }
+  },
+
+  getTrashNotes: async () => {
+    try {
+      const response = await axiosInstance.get("/get-trash-notes");
+      if (response.data && response.data.notes) {
+        set({ trashNotes: response.data.notes });
+      }
+    } catch (error) {
+      console.log("Unexpected error. Please try again");
+    }
+  },
+
+  restoreNote: async (noteId) => {
+    try {
+      const response = await axiosInstance.put("/restore-note/" + noteId);
+      if (response.data && !response.data.error) {
+        get().getTrashNotes();
+        get().getAllNotes(); // Refresh main list too
+      }
+    } catch (error) {
+      console.log("Unexpected error during restore.");
+    }
+  },
+
+  deleteTrashNote: async (noteId) => {
+    try {
+      const response = await axiosInstance.delete("/delete-trash-note/" + noteId);
+      if (response.data && !response.data.error) {
+        get().getTrashNotes();
+      }
+    } catch (error) {
+      console.log("Unexpected error during permanent delete.");
     }
   },
 }));
