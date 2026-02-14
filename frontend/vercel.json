@@ -18,6 +18,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://notes-app-backend-rmny.onrender.com/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

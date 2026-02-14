@@ -42,7 +42,7 @@ const Navbar = ({ onSearch, handleClearSearch }) => {
         </h2>
       </div>
 
-      {isLoggedIn &&( <div className="flex-1 flex justify-center">
+      {isLoggedIn && (<div className="flex-1 flex justify-center">
         <SearchBar onSearch={onSearch} handleClearSearch={handleClearSearch} />
       </div>)}
 

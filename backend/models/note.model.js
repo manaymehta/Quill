@@ -7,6 +7,7 @@ const noteSchema = new Schema({
     content: { type: String, default: "" },
     tags: { type: [String], default: [] },
     isPinned: { type: Boolean, default: false },
+    isArchived: { type: Boolean, default: false },
     createdOn: { type: Date, default: () => new Date() },
     isChecklist: { type: Boolean, default: false },
     checklist: [{

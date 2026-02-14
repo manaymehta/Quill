@@ -55,7 +55,7 @@ const Home = () => {
     const noteId = note._id;
     try {
       const response = await axiosInstance.delete("/delete-note/" + noteId);
-      
+
       if (response.data && !response.data.error) {
         getAllNotes();
         showToastMessage("Note deleted successfully", "delete");
@@ -99,6 +99,20 @@ const Home = () => {
     }
   };
 
+  const updateNoteArchive = async (noteData) => {
+    const noteId = noteData._id;
+    try {
+      const response = await axiosInstance.put("/update-note-archive/" + noteId, { isArchived: !noteData.isArchived });
+
+      if (response.data && response.data.note) {
+        getAllNotes();
+        showToastMessage(`Note ${!noteData.isArchived ? "archived" : "unarchived"}`);
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
   const handleModalClose = () => {
     if (openAddEditModal.type === "edit") {
       setShouldCloseModal(true);
@@ -109,8 +123,8 @@ const Home = () => {
 
   return (
     <>
-        <div className=" p-2">
-          <div className=''>
+      <div className=" p-2">
+        <div className=''>
           {allNotes.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:pr-10">
               {allNotes.map((note) => (
@@ -126,6 +140,8 @@ const Home = () => {
                   onEdit={() => handleEdit(note)}
                   onDelete={() => deleteNote(note)}
                   onPinned={() => updateIsPinned(note)}
+                  isArchived={note.isArchived}
+                  onArchive={() => updateNoteArchive(note)}
                   onChecklistToggle={(index) => handleChecklistToggle(note, index)}
                 />
               ))}
@@ -133,61 +149,61 @@ const Home = () => {
           ) : (
             <EmptyCard message={"It’s quiet here… Start by adding a note."} />
           )}
-          </div>
         </div>
+      </div>
 
-        <button
-          className="flex justify-center w-16 h-16 items-center rounded-4xl bg-[#dd5e57] hover:bg-[#fb6d65] fixed right-8 bottom-8 hover:rotate-45 hover:shadow-xl transition-all ease-in-out"
-          onClick={() => {
-            setOpenAddEditModal({ isShown: true, type: "add", data: null });
+      <button
+        className="flex justify-center w-16 h-16 items-center rounded-4xl bg-[#dd5e57] hover:bg-[#fb6d65] fixed right-8 bottom-8 hover:rotate-45 hover:shadow-xl transition-all ease-in-out"
+        onClick={() => {
+          setOpenAddEditModal({ isShown: true, type: "add", data: null });
+        }}
+      >
+        <MdAdd className="text-[35px] text-white" />
+      </button>
+
+      <Modal
+        isOpen={openAddEditModal.isShown}
+        onRequestClose={handleModalClose}
+        closeTimeoutMS={200}
+        style={{
+          overlay: {
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.2)",
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflowY: 'auto',
+            zIndex: 50,
+          },
+        }}
+        className="mx-auto rounded-2xl bg-[#f8ecdc] w-full max-w-lg p-4 max-h-[90vh] flex flex-col"
+        overlayClassName="ReactModal__Overlay"
+      >
+        <AddEditNotes
+          type={openAddEditModal.type}
+          noteData={openAddEditModal.data}
+          getAllNotes={getAllNotes}
+          onClose={() => {
+            setOpenAddEditModal({ isShown: false, type: "add", data: null });
+            setShouldCloseModal(false);
           }}
-        >
-          <MdAdd className="text-[35px] text-white" />
-        </button>
+          showToastMessage={showToastMessage}
+          shouldCloseModal={shouldCloseModal}
+        />
+      </Modal>
 
-        <Modal
-          isOpen={openAddEditModal.isShown}
-          onRequestClose={handleModalClose}
-          closeTimeoutMS={200}
-          style={{
-            overlay: {
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0,0,0,0.2)",
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              overflowY: 'auto',
-              zIndex: 50,
-            },
-          }}
-          className="mx-auto rounded-2xl bg-[#f8ecdc] w-full max-w-lg p-4 max-h-[90vh] flex flex-col"
-          overlayClassName="ReactModal__Overlay"
-        >
-          <AddEditNotes
-            type={openAddEditModal.type}
-            noteData={openAddEditModal.data}
-            getAllNotes={getAllNotes}
-            onClose={() => {
-              setOpenAddEditModal({ isShown: false, type: "add", data: null });
-              setShouldCloseModal(false);
-            }}
-            showToastMessage={showToastMessage}
-            shouldCloseModal={shouldCloseModal}
-          />
-        </Modal>
-
-        {showToast && (
-          <Toast
-            isShown={toastMessageVisibility.isShown}
-            message={toastMessageVisibility.message}
-            type={toastMessageVisibility.type}
-            onClose={handleCloseToast}
-          />
-        )}
+      {showToast && (
+        <Toast
+          isShown={toastMessageVisibility.isShown}
+          message={toastMessageVisibility.message}
+          type={toastMessageVisibility.type}
+          onClose={handleCloseToast}
+        />
+      )}
     </>
   );
 };

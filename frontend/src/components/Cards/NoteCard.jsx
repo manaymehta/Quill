@@ -1,8 +1,8 @@
 import moment from 'moment'
 import React from 'react'
-import { MdOutlinePushPin, MdCreate, MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever } from "react-icons/md"
+import { MdOutlinePushPin, MdCreate, MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever, MdOutlineArchive, MdOutlineUnarchive } from "react-icons/md"
 
-const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPinned, isChecklist, checklist, onChecklistToggle, isTrash, onRestore }) => {
+const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPinned, isChecklist, checklist, onChecklistToggle, isTrash, onRestore, isArchived, onArchive }) => {
   return (
     <div
       onClick={(e) => {
@@ -15,7 +15,7 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
         <div className='flex justify-between items-start'>
           <h4 className='text-2xl font-semibold tracking-tight text-[#e85d56]'>{title}</h4>
           <MdOutlinePushPin
-            className={`icon-btn no-card-click ${isPinned ? 'text-[#e85d56]' : 'text-[#a6a6a6]'} ${isTrash ? 'hidden' : ''} hover:text-slate-600`}
+            className={`icon-btn no-card-click ${isPinned ? 'text-[#e85d56]' : 'text-[#a6a6a6]'} ${isTrash || isArchived ? 'hidden' : ''} hover:text-slate-600`}
             onClick={onPinned}
           />
         </div>
@@ -67,10 +67,20 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
               />
             </>
           ) : (
-            <MdDelete
-              className='icon-btn hover:text-[#e85d56] no-card-click text-[#bdbdbd]'
-              onClick={onDelete}
-            />
+            <>
+              <div
+                className='icon-btn hover:text-blue-600 no-card-click text-[#bdbdbd]'
+                onClick={onArchive}
+                title={isArchived ? "Unarchive" : "Archive"}
+              >
+                {isArchived ? <MdOutlineUnarchive size={22} /> : <MdOutlineArchive size={22} />}
+              </div>
+
+              <MdDelete
+                className='icon-btn hover:text-[#e85d56] no-card-click text-[#bdbdbd]'
+                onClick={onDelete}
+              />
+            </>
           )}
         </div>
       </div>

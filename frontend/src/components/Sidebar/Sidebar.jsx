@@ -1,7 +1,7 @@
 import React, { forwardRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useUIStore } from '../../store/useUIStore';
-import { MdOutlineStickyNote2, MdOutlinePushPin, MdOutlineDelete, MdOutlineAutoGraph } from 'react-icons/md';
+import { MdOutlineStickyNote2, MdOutlinePushPin, MdOutlineDelete, MdOutlineAutoGraph, MdOutlineArchive } from 'react-icons/md';
 
 const Sidebar = forwardRef((props, ref) => {
   const navigate = useNavigate();
@@ -11,6 +11,7 @@ const Sidebar = forwardRef((props, ref) => {
   const menuItems = [
     { icon: <MdOutlineStickyNote2 size={24} />, text: 'All Notes', path: '/dashboard' },
     { icon: <MdOutlinePushPin size={24} />, text: 'Pinned', path: '/pinned' },
+    { icon: <MdOutlineArchive size={24} />, text: 'Archive', path: '/archive' },
     { icon: <MdOutlineAutoGraph size={24} />, text: 'Graph', path: '/graph' },
     { icon: <MdOutlineDelete size={24} />, text: 'Trash', path: '/trash' },
   ];

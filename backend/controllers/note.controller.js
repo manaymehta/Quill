@@ -76,7 +76,7 @@ const getAllNotes = async (req, res) => {
     const userId = req.user._id;
 
     try {
-        const notes = await Note.find({ userId: userId, isDeleted: { $ne: true } }).sort({
+        const notes = await Note.find({ userId: userId, isDeleted: { $ne: true }, isArchived: { $ne: true } }).sort({
             isPinned: -1,
         });
 
@@ -97,11 +97,32 @@ const getPinnedNotes = async (req, res) => {
     const userId = req.user._id;
 
     try {
-        const notes = await Note.find({ userId: userId, isPinned: true, isDeleted: { $ne: true } });
+        const notes = await Note.find({ userId: userId, isPinned: true, isDeleted: { $ne: true }, isArchived: { $ne: true } });
 
         return res.json({
             error: false,
             message: "All notes retrieved successfully",
+            notes,
+        });
+    } catch (error) {
+        res.status(500).json({
+            error: true,
+            message: "Internal Server Error",
+        });
+    }
+};
+
+const getArchivedNotes = async (req, res) => {
+    const userId = req.user._id;
+
+    try {
+        const notes = await Note.find({ userId: userId, isArchived: true, isDeleted: { $ne: true } }).sort({
+            isPinned: -1,
+        });
+
+        return res.json({
+            error: false,
+            message: "Archived notes retrieved successfully",
             notes,
         });
     } catch (error) {
@@ -228,6 +249,34 @@ const updateNotePinned = async (req, res) => {
     }
 };
 
+const updateNoteArchive = async (req, res) => {
+    const noteId = req.params.noteId;
+    const { isArchived } = req.body;
+    const userId = req.user._id;
+
+    try {
+        const note = await Note.findOne({ userId: userId, _id: noteId });
+
+        if (!note) {
+            return res.status(404).json({ error: true, message: "Note not found" });
+        }
+
+        note.isArchived = isArchived;
+        if (isArchived) {
+            note.isPinned = false;
+        }
+        await note.save();
+
+        return res.json({
+            error: false,
+            message: isArchived ? "Note archived" : "Note unarchived",
+            note,
+        });
+    } catch (error) {
+        res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
 const searchNotes = async (req, res) => {
     const userId = req.user._id;
     const { query } = req.query;
@@ -325,4 +374,6 @@ module.exports = {
     updateNotePinned,
     searchNotes,
     summarizeNote,
+    updateNoteArchive,
+    getArchivedNotes,
 };
