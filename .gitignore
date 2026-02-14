@@ -7,6 +7,12 @@ dist/
 
 # ====== Environment Variables ======
 .env
+.env.*
+!.env.example
+
+# ====== Configuration Files with Credentials ======
+config.json
+backend/config.json
 
 # ====== Logs ======
 *.log
@@ -28,3 +34,5 @@ Thumbs.db
 # ====== Others ======
 *.local
 *.env.local
+
+*.code-workspace
