@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import NoteCard from '../../components/Cards/NoteCard';
-import EmptyCard from '../../components/Cards/EmptyCard';
+import NotesGrid from '../../components/Cards/NotesGrid';
+import useNoteOperations from '../../hooks/useNoteOperations';
 import axiosInstance from '../../utils/axiosInstance';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useNotesStore } from '../../store/useNotesStore'; // Import if needed for global state, but Pinned seems local? Actually standardizing is good.
@@ -65,67 +65,12 @@ const Pinned = () => {
     setOpenAddEditModal({ isShown: true, type: "edit", data: note })
   };
 
-  const deleteNote = async (note) => {
-    const noteId = note._id;
-    try {
-      const response = await axiosInstance.delete("/delete-note/" + noteId);
-
-      if (response.data && !response.data.error) {
-        showToastMessage("Note deleted successfully", "delete");
-        getAllPinnedNotes(); // Refresh list
-      }
-    } catch (error) {
-      if (error.response && error.response.data && error.response.data.message) {
-        console.log("Unexpected error. Please try again");
-      }
-    }
-  };
-
-  const updateIsPinned = async (noteData) => {
-    const noteId = noteData._id;
-    try {
-      const response = await axiosInstance.put("/update-note-pinned/" + noteId, { isPinned: !noteData.isPinned });
-
-      if (response.data && response.data.note) {
-        showToastMessage(`Note ${!noteData.isPinned ? "pinned" : "unpinned"}`);
-        getAllPinnedNotes(); // Refresh list
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const updateNoteArchive = async (noteData) => {
-    const noteId = noteData._id;
-    try {
-      const response = await axiosInstance.put("/update-note-archive/" + noteId, { isArchived: !noteData.isArchived });
-
-      if (response.data && response.data.note) {
-        showToastMessage(`Note ${!noteData.isArchived ? "archived" : "unarchived"}`);
-        getAllPinnedNotes(); // Refresh list
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const handleChecklistToggle = async (note, index) => {
-    const noteId = note._id;
-    const newChecklist = [...note.checklist];
-    newChecklist[index].completed = !newChecklist[index].completed;
-
-    try {
-      const response = await axiosInstance.put(`/edit-note/${noteId}`, {
-        checklist: newChecklist,
-      });
-
-      if (response.data && response.data.note) {
-        getAllPinnedNotes();
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
+  const {
+    deleteNote,
+    updateIsPinned,
+    updateNoteArchive,
+    handleChecklistToggle
+  } = useNoteOperations(getAllPinnedNotes, showToastMessage);
 
   const handleModalClose = () => {
     if (openAddEditModal.type === "edit") {
@@ -143,31 +88,15 @@ const Pinned = () => {
   return (
     <>
       <div className="p-2">
-        {/* Removed min-h-screen wrapper to match Home.jsx structure and fix layout inconsistency */}
-        {allPinnedNotes.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:pr-10">
-            {allPinnedNotes.map((note) => (
-              <NoteCard
-                key={note._id}
-                title={note.title}
-                date={note.createdOn}
-                content={note.content}
-                tags={note.tags}
-                isPinned={note.isPinned}
-                isChecklist={note.isChecklist}
-                checklist={note.checklist}
-                onEdit={() => handleEdit(note)}
-                onDelete={() => deleteNote(note)}
-                onPinned={() => updateIsPinned(note)}
-                isArchived={note.isArchived}
-                onArchive={() => updateNoteArchive(note)}
-                onChecklistToggle={(index) => handleChecklistToggle(note, index)}
-              />
-            ))}
-          </div>
-        ) : (
-          <EmptyCard message={"No Pinned Notes..."} />
-        )}
+        <NotesGrid
+          notes={allPinnedNotes}
+          emptyMessage={"No Pinned Notes..."}
+          onEdit={handleEdit}
+          onDelete={deleteNote}
+          onPin={updateIsPinned}
+          onArchive={updateNoteArchive}
+          onChecklistToggle={handleChecklistToggle}
+        />
       </div>
 
       <Modal

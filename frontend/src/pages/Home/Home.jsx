@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import NoteCard from '../../components/Cards/NoteCard';
+import NotesGrid from '../../components/Cards/NotesGrid';
+import useNoteOperations from '../../hooks/useNoteOperations';
 import { MdAdd } from 'react-icons/md';
 import AddEditNotes from './AddEditNotes';
 import Modal from 'react-modal';
-import axiosInstance from '../../utils/axiosInstance';
 import Toast from '../../components/ToastMessage/Toast';
 import EmptyCard from '../../components/Cards/EmptyCard';
 import { useNotesStore } from '../../store/useNotesStore';
@@ -51,67 +51,12 @@ const Home = () => {
     setOpenAddEditModal({ isShown: true, type: "edit", data: note })
   };
 
-  const deleteNote = async (note) => {
-    const noteId = note._id;
-    try {
-      const response = await axiosInstance.delete("/delete-note/" + noteId);
-
-      if (response.data && !response.data.error) {
-        getAllNotes();
-        showToastMessage("Note deleted successfully", "delete");
-      }
-    } catch (error) {
-      if (error.response && error.response.data && error.response.data.message) {
-        console.log("Unexpected error. Please try again");
-      }
-    }
-  };
-
-  const handleChecklistToggle = async (note, index) => {
-    const noteId = note._id;
-    const newChecklist = [...note.checklist];
-    newChecklist[index].completed = !newChecklist[index].completed;
-
-    try {
-      const response = await axiosInstance.put(`/edit-note/${noteId}`, {
-        checklist: newChecklist,
-      });
-
-      if (response.data && response.data.note) {
-        getAllNotes();
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const updateIsPinned = async (noteData) => {
-    const noteId = noteData._id;
-    try {
-      const response = await axiosInstance.put("/update-note-pinned/" + noteId, { isPinned: !noteData.isPinned });
-
-      if (response.data && response.data.note) {
-        getAllNotes();
-        showToastMessage(`Note ${!noteData.isPinned ? "pinned" : "unpinned"}`);
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const updateNoteArchive = async (noteData) => {
-    const noteId = noteData._id;
-    try {
-      const response = await axiosInstance.put("/update-note-archive/" + noteId, { isArchived: !noteData.isArchived });
-
-      if (response.data && response.data.note) {
-        getAllNotes();
-        showToastMessage(`Note ${!noteData.isArchived ? "archived" : "unarchived"}`);
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
+  const {
+    deleteNote,
+    updateIsPinned,
+    updateNoteArchive,
+    handleChecklistToggle
+  } = useNoteOperations(getAllNotes, showToastMessage);
 
   const handleModalClose = () => {
     if (openAddEditModal.type === "edit") {
@@ -124,32 +69,15 @@ const Home = () => {
   return (
     <>
       <div className=" p-2">
-        <div className=''>
-          {allNotes.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:pr-10">
-              {allNotes.map((note) => (
-                <NoteCard
-                  key={note._id}
-                  title={note.title}
-                  date={note.createdOn}
-                  content={note.content}
-                  tags={note.tags}
-                  isPinned={note.isPinned}
-                  isChecklist={note.isChecklist}
-                  checklist={note.checklist}
-                  onEdit={() => handleEdit(note)}
-                  onDelete={() => deleteNote(note)}
-                  onPinned={() => updateIsPinned(note)}
-                  isArchived={note.isArchived}
-                  onArchive={() => updateNoteArchive(note)}
-                  onChecklistToggle={(index) => handleChecklistToggle(note, index)}
-                />
-              ))}
-            </div>
-          ) : (
-            <EmptyCard message={"It’s quiet here… Start by adding a note."} />
-          )}
-        </div>
+        <NotesGrid
+          notes={allNotes}
+          emptyMessage={"It’s quiet here… Start by adding a note."}
+          onEdit={handleEdit}
+          onDelete={deleteNote}
+          onPin={updateIsPinned}
+          onArchive={updateNoteArchive}
+          onChecklistToggle={handleChecklistToggle}
+        />
       </div>
 
       <button

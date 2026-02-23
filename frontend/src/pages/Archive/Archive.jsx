@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import NoteCard from '../../components/Cards/NoteCard'
-import EmptyCard from '../../components/Cards/EmptyCard'
+import NotesGrid from '../../components/Cards/NotesGrid';
+import useNoteOperations from '../../hooks/useNoteOperations';
 import axiosInstance from '../../utils/axiosInstance';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useNotesStore } from '../../store/useNotesStore';
@@ -65,56 +65,11 @@ const Archive = () => {
         setOpenAddEditModal({ isShown: true, type: "edit", data: note })
     };
 
-    const deleteNote = async (note) => {
-        const noteId = note._id;
-        try {
-            const response = await axiosInstance.delete("/delete-note/" + noteId);
-
-            if (response.data && !response.data.error) {
-                showToastMessage("Note deleted successfully", "delete");
-                getArchivedNotes();
-            }
-        } catch (error) {
-            if (error.response && error.response.data && error.response.data.message) {
-                console.log("Unexpected error. Please try again");
-            }
-        }
-    };
-
-    const updateIsArchived = async (noteData) => {
-        const noteId = noteData._id;
-        try {
-            const response = await axiosInstance.put("/update-note-archive/" + noteId, { isArchived: !noteData.isArchived });
-
-            if (response.data && response.data.note) {
-                showToastMessage(`Note ${!noteData.isArchived ? "archived" : "unarchived"}`);
-                getArchivedNotes();
-                getAllNotes(); // Update global store just in case
-            }
-        } catch (error) {
-            console.log(error);
-        }
-    };
-
-    const handleChecklistToggle = async (note, index) => {
-        // Basic implementation for now, ideally this should be shared or just disable toggle in archive?
-        // Usually archived notes are read-only or fully functional. Let's make them functional.
-        const noteId = note._id;
-        const newChecklist = [...note.checklist];
-        newChecklist[index].completed = !newChecklist[index].completed;
-
-        try {
-            const response = await axiosInstance.put(`/edit-note/${noteId}`, {
-                checklist: newChecklist,
-            });
-
-            if (response.data && response.data.note) {
-                getArchivedNotes();
-            }
-        } catch (error) {
-            console.log(error);
-        }
-    };
+    const {
+        deleteNote,
+        updateNoteArchive,
+        handleChecklistToggle
+    } = useNoteOperations(getArchivedNotes, showToastMessage, getAllNotes);
 
     const handleModalClose = () => {
         if (openAddEditModal.type === "edit") {
@@ -132,30 +87,15 @@ const Archive = () => {
     return (
         <>
             <div className="p-2">
-                {archivedNotes.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:pr-10">
-                        {archivedNotes.map((note) => (
-                            <NoteCard
-                                key={note._id}
-                                title={note.title}
-                                date={note.createdOn}
-                                content={note.content}
-                                tags={note.tags}
-                                isPinned={note.isPinned} // Should be false if archived logic holds
-                                isArchived={true}
-                                isChecklist={note.isChecklist}
-                                checklist={note.checklist}
-                                onEdit={() => handleEdit(note)}
-                                onDelete={() => deleteNote(note)}
-                                onPinned={() => { }} // Can't pin archived notes usually, or it unarchives them? For now, disable.
-                                onArchive={() => updateIsArchived(note)}
-                                onChecklistToggle={(index) => handleChecklistToggle(note, index)}
-                            />
-                        ))}
-                    </div>
-                ) : (
-                    <EmptyCard message={"No Archived Notes..."} />
-                )}
+                <NotesGrid
+                    notes={archivedNotes}
+                    emptyMessage={"No Archived Notes..."}
+                    onEdit={handleEdit}
+                    onDelete={deleteNote}
+                    onArchive={updateNoteArchive}
+                    onChecklistToggle={handleChecklistToggle}
+                // onPin not passed because archived notes typically aren't pinned, or it unarchives them (handled in backend/hook)
+                />
             </div>
 
             <Modal

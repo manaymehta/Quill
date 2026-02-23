@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { forceCollide } from 'd3-force';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useNotesStore } from '../../store/useNotesStore';
 
 // Mock data representing user notes with tags
 const mockNotes = [
-  { id: '1', name: 'Intro to React', tags: ['a', ] },
+  { id: '1', name: 'Intro to React', tags: ['a',] },
   { id: '2', name: 'State Management', tags: ['a', 'b'] },
   { id: '3', name: 'JS Fundamentals', tags: ['a'] },
   { id: '4', name: 'Advanced Hooks', tags: ['c'] },
@@ -14,6 +15,7 @@ const mockNotes = [
 ];
 
 const Graph = () => {
+  const fgRef = useRef();
   const { allNotes } = useNotesStore();
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [hoveredNode, setHoveredNode] = useState(null);
@@ -28,7 +30,7 @@ const Graph = () => {
   }, [allNotes]);
 
   useEffect(() => {
-    // 1. Calculate tag frequencies to find connecting tags
+    // calculate tag frequencies to find connecting tags
     const tagFrequencies = allNotes.flatMap(note => note.tags).reduce((acc, tag) => {
       acc[tag] = (acc[tag] || 0) + 1;
       return acc;
@@ -36,7 +38,7 @@ const Graph = () => {
 
     const connectingTagsSet = new Set(Object.keys(tagFrequencies).filter(tag => tagFrequencies[tag] > 1));
 
-    // 2. Transform notes into graph nodes
+    // transform notes into graph nodes
     const nodes = allNotes.map(note => ({
       id: note._id,
       name: note.title,
@@ -44,11 +46,11 @@ const Graph = () => {
       connectingTags: note.tags.filter(tag => connectingTagsSet.has(tag)),
     }));
 
-    // 3. Generate links based on shared tags
+    // generate links based on shared tags
     const tagMap = {};
     allNotes.forEach(note => {
       note.tags.forEach(tag => {
-        if (connectingTagsSet.has(tag)) { // Only consider connecting tags for links
+        if (connectingTagsSet.has(tag)) { // only consider connecting tags for links
           if (!tagMap[tag]) {
             tagMap[tag] = [];
           }
@@ -69,7 +71,7 @@ const Graph = () => {
             const target = noteIds[j];
             //unique key for each link pair to avoid duplicates
             const linkKey = source < target ? `${source}-${target}` : `${target}-${source}`;
-            
+
             if (!linkSet.has(linkKey)) {
               links.push({ source, target });
               linkSet.add(linkKey);
@@ -113,6 +115,13 @@ const Graph = () => {
     }
   }, [selectedTag, graphData]);
 
+  useEffect(() => {
+    if (fgRef.current) {
+      fgRef.current.d3Force('charge').strength(-12);
+      fgRef.current.d3Force('collide', forceCollide(19));
+    }
+  }, []);
+
   const handleNodeHover = (node) => {
     if (selectedTag) return; // Disable hover effect if a tag is selected
 
@@ -141,6 +150,7 @@ const Graph = () => {
   return (
     <div className={'bg-[#202124b5]'} style={{ width: '100%', height: 'calc(100vh - 70px)', overflow: 'hidden', position: 'relative' }}>
       <ForceGraph2D
+        ref={fgRef}
         graphData={graphData}
         nodeLabel={node => node.connectingTags.join(', ')}
         linkColor={link => highlightedLinks.has(link) ? '#e7aeab' : 'rgba(255, 255, 255, 0.6)'}
@@ -170,21 +180,21 @@ const Graph = () => {
         }}
       />
 
-      {/* Tags Display Box */}
+      {/* tags display box */}
       <div className="absolute top-5 right-5 z-10 bg-[#202124]/80 backdrop-blur-lg rounded-xl border border-white/20 p-4 max-w-xs text-white max-h-[calc(100%-2.5rem)] overflow-y-auto">
         <h3 className="font-semibold text-lg mb-3 border-b border-white/20 pb-2">
-            Tags
+          Tags
         </h3>
         <div className="flex flex-col gap-2">
-            {uniqueTags.map(tag => (
-                <button 
-                  key={tag} 
-                  onClick={() => handleTagClick(tag)} 
-                  className={`border text-[#EAEAEA] rounded-full px-3 py-1.5 text-sm cursor-pointer transition-colors text-left ${selectedTag === tag ? 'bg-white/20 border-white/40' : 'bg-[#333] border-[#424242] hover:bg-[#444]'}`}
-                >
-                    {tag}
-                </button>
-            ))}
+          {uniqueTags.map(tag => (
+            <button
+              key={tag}
+              onClick={() => handleTagClick(tag)}
+              className={`border text-[#EAEAEA] rounded-full px-3 py-1.5 text-sm cursor-pointer transition-colors text-left ${selectedTag === tag ? 'bg-white/20 border-white/40' : 'bg-[#333] border-[#424242] hover:bg-[#444]'}`}
+            >
+              {tag}
+            </button>
+          ))}
         </div>
       </div>
     </div>
