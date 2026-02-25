@@ -9,7 +9,7 @@ import { useNotesStore } from "../../store/useNotesStore";
 const MainLayout = () => {
   const { isSidebarOpen, toggleSidebar } = useUIStore();
   const { getUser } = useAuthStore();
-  const { getAllNotes, onSearch, handleClearSearch } = useNotesStore();
+  const { getAllNotes, onSearch, handleClearSearch, onAiSearch } = useNotesStore();
   const location = useLocation();
 
   const sidebarRef = useRef(null);
@@ -57,7 +57,7 @@ const MainLayout = () => {
       // Set the canvas to fixed logical size.
       canvas.width = LOGICAL_WIDTH * dpr;
       canvas.height = LOGICAL_HEIGHT * dpr;
-      
+
       // Scale canvas to fill the window, but run the animation at a fixed resolution.
       canvas.style.width = `${window.innerWidth}px`;
       canvas.style.height = `${window.innerHeight}px`;
@@ -138,6 +138,7 @@ const MainLayout = () => {
         <Navbar
           onSearch={onSearch}
           handleClearSearch={handleClearSearch}
+          onAiSearch={onAiSearch}
         />
         <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? "pl-0 sm:pl-55" : "pl-0 sm:pl-16"}`}>
           <Outlet />

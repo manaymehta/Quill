@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import axiosInstance from '../utils/axiosInstance';
+import { useSearchStore } from './useSearchStore';
+
 
 export const useNotesStore = create((set, get) => ({
   allNotes: [],
@@ -96,4 +98,24 @@ export const useNotesStore = create((set, get) => ({
       console.log("Unexpected error during permanent delete.");
     }
   },
+
+  onAiSearch: async (query) => {
+    const { setIsSearchingAI, setSemanticResult } = useSearchStore.getState();
+    setIsSearchingAI(true);
+    try {
+      const response = await axiosInstance.get("/semantic-search", { params: { query } });
+      if (response.data && !response.data.error) {
+        setSemanticResult({
+          answer: response.data.answer,
+          sourceNotes: response.data.sourceNotes || [],
+        });
+      }
+    } catch (error) {
+      console.log("AI search error:", error);
+    } finally {
+      setIsSearchingAI(false);
+    }
+  },
 }));
+
+

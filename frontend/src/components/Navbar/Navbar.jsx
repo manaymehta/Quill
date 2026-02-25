@@ -7,7 +7,7 @@ import { IoClose } from 'react-icons/io5';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
 
-const Navbar = ({ onSearch, handleClearSearch }) => {
+const Navbar = ({ onSearch, handleClearSearch, onAiSearch }) => {
   const navigate = useNavigate();
   const { user, logout, isLoggedIn } = useAuthStore();
   const { isNavbarVisible, isSidebarOpen, toggleSidebar } = useUIStore();
@@ -43,7 +43,7 @@ const Navbar = ({ onSearch, handleClearSearch }) => {
       </div>
 
       {isLoggedIn && (<div className="flex-1 flex justify-center">
-        <SearchBar onSearch={onSearch} handleClearSearch={handleClearSearch} />
+        <SearchBar onSearch={onSearch} handleClearSearch={handleClearSearch} onAiSearch={onAiSearch} />
       </div>)}
 
       {isLoggedIn && (

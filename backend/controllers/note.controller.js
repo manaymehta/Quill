@@ -1,6 +1,14 @@
 const Note = require("../models/note.model");
 const axios = require("axios");
 
+// even if qdrant is down, it should not affect the saving of notes
+const triggerEmbed = (noteId, text) => {
+    const url = process.env.FASTAPI_SUMMARIZE_URL;
+    if (!url) return;
+    axios.post(`${url}/embed-note`, { noteId: String(noteId), text })
+        .catch((err) => console.error(`embedding process failed for note ${noteId}:`, err.message));
+};
+
 const addNote = async (req, res) => {
     const { title, content, tags, isChecklist, checklist } = req.body;
     const userId = req.user._id;
@@ -20,6 +28,8 @@ const addNote = async (req, res) => {
         });
 
         await note.save();
+
+        triggerEmbed(note._id, `${note.title} ${note.content}`);
 
         return res.json({
             error: false,
@@ -58,6 +68,8 @@ const editNote = async (req, res) => {
         if (checklist) note.checklist = checklist;
 
         await note.save();
+
+        triggerEmbed(note._id, `${note.title} ${note.content}`);
 
         return res.json({
             error: false,
@@ -215,12 +227,59 @@ const permanentDeleteNote = async (req, res) => {
 
         await Note.deleteOne({ _id: noteId, userId: userId });
 
+        const url = process.env.FASTAPI_SUMMARIZE_URL;
+        if (url) {
+            axios
+                .delete(`${url}/delete-embedding/${noteId}`)
+                .catch((err) => console.error(`Delete embedding failed for ${noteId}:`, err.message));
+        }
+
         return res.json({
             error: false,
             message: "Note permanently deleted",
         });
     } catch (error) {
         res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
+const semanticSearch = async (req, res) => {
+    const userId = req.user._id;
+    const { query } = req.query;
+
+    if (!query || !query.trim()) {
+        return res.status(400).json({ error: true, message: "Query is required" });
+    }
+
+    const FASTAPI_URL = process.env.FASTAPI_SUMMARIZE_URL;
+    if (!FASTAPI_URL) {
+        return res.status(500).json({ error: true, message: "AI service URL not configured" });
+    }
+
+    try {
+        const notes = await Note.find({
+            userId,
+            isDeleted: { $ne: true },
+            isArchived: { $ne: true },
+        })
+
+        const response = await axios.post(`${FASTAPI_URL}/semantic-search`, {
+            query: query.trim(),
+            userId: String(userId),
+            notes,
+        });
+
+        const { answer, sourceNoteIds } = response.data;
+
+        const sourceNotes = notes.filter((n) => sourceNoteIds.includes(String(n._id)));
+        return res.json({
+            error: false,
+            answer,
+            sourceNotes,
+        });
+    } catch (error) {
+        console.error("Semantic search error:", error.message);
+        return res.status(500).json({ error: true, message: "Semantic search failed" });
     }
 };
 
@@ -376,4 +435,5 @@ module.exports = {
     summarizeNote,
     updateNoteArchive,
     getArchivedNotes,
+    semanticSearch,
 };

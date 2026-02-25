@@ -13,6 +13,7 @@ const {
     searchNotes,
     summarizeNote,
     getArchivedNotes,
+    semanticSearch,
 } = require("../controllers/note.controller");
 const { authenticateToken } = require("../middleware/auth.middleware");
 
@@ -30,6 +31,7 @@ router.delete("/delete-trash-note/:noteId", authenticateToken, permanentDeleteNo
 router.put("/update-note-pinned/:noteId", authenticateToken, updateNotePinned);
 router.put("/update-note-archive/:noteId", authenticateToken, updateNoteArchive);
 router.get("/search-notes", authenticateToken, searchNotes);
+router.get("/semantic-search", authenticateToken, semanticSearch);
 router.post("/summarize-note", authenticateToken, summarizeNote);
 
 module.exports = router;
