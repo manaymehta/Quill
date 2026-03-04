@@ -3,16 +3,7 @@ import { forceCollide } from 'd3-force';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useNotesStore } from '../../store/useNotesStore';
 
-// Mock data representing user notes with tags
-const mockNotes = [
-  { id: '1', name: 'Intro to React', tags: ['a',] },
-  { id: '2', name: 'State Management', tags: ['a', 'b'] },
-  { id: '3', name: 'JS Fundamentals', tags: ['a'] },
-  { id: '4', name: 'Advanced Hooks', tags: ['c'] },
-  { id: '5', name: 'Backend with Node.js', tags: ['c', 'b'] },
-  { id: '6', name: 'CSS Styling', tags: ['d'] },
-  { id: '7', name: 'Redux vs. Context', tags: ['d'] },
-];
+// Mock data removed
 
 const Graph = () => {
   const fgRef = useRef();

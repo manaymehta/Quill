@@ -12,8 +12,7 @@ const NotesGrid = ({
     onArchive,
     onChecklistToggle,
     onRestore,
-    isTrash,
-    isArchiveView
+    isTrash
 }) => {
     if (loading) {
         return <div className="p-4">Loading...</div>; // Simple loading state

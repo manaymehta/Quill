@@ -66,14 +66,11 @@ const Home = () => {
 
   // in AI mode: show source notes + answer panel side by side
   const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
-  const notesToShow = isAIMode && semanticResult ? semanticResult.sourceNotes : allNotes;
 
   return (
     <>
       {isAIMode ? (
-        // split layout: source notes left, AI answer right
         <div className="flex gap-4 p-2 pr-4">
-          {/* source notes via standard NoteCard grid */}
           <div className="flex-1 min-w-0">
             <NotesGrid
               notes={semanticResult?.sourceNotes || []}
@@ -86,7 +83,6 @@ const Home = () => {
             />
           </div>
 
-          {/* AI answer panel — sticky on the right */}
           <div className="w-72 shrink-0">
             <AiSearchPanel />
           </div>

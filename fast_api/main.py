@@ -49,6 +49,11 @@ async def lifespan(app: FastAPI):
                     collection_name=COLLECTION_NAME,
                     vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
                 )
+                qdrant_client.create_payload_index(
+                    collection_name=COLLECTION_NAME,
+                    field_name="userId",
+                    field_schema="keyword",
+                )
                 print(f"Qdrant collection '{COLLECTION_NAME}' created ({EMBEDDING_DIM} dims)")
             else:
                 print(f"Qdrant collection '{COLLECTION_NAME}' found")
@@ -150,7 +155,7 @@ async def embed_note(request: EmbedNoteRequest):
     try:
         result = gemini_client.models.embed_content(model=EMBEDDING_MODEL, contents=text, config=types.EmbedContentConfig(
         output_dimensionality=EMBEDDING_DIM)) 
-        vector = result.embeddings[0].values  # 768-dim float list
+        vector = list(result.embeddings[0].values)  # 768-dim float list
         qdrant_client.upsert( # update or insert
             collection_name=COLLECTION_NAME,
             points=[PointStruct(    # pointstruct is a class that is used to create a point in Qdrant
@@ -195,7 +200,7 @@ async def semantic_search(request: SemanticSearchRequest):
         result = gemini_client.models.embed_content(model=EMBEDDING_MODEL, contents=request.query, config=types.EmbedContentConfig(
         output_dimensionality=EMBEDDING_DIM
     ))
-        query_vector = result.embeddings[0].values  # 768-dim float list
+        query_vector = list(result.embeddings[0].values)  # 768-dim float list
 
         # search qdrant, filtered to current users notes as only one cluster is being used
         results = qdrant_client.query_points(

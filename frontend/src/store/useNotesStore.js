@@ -15,7 +15,7 @@ export const useNotesStore = create((set, get) => ({
         set({ allNotes: response.data.notes, isSearch: false });
       }
     } catch (error) {
-      console.log("Unexpected error. Please try again");
+      console.log("Unexpected error. Please try again", error);
     }
   },
 
@@ -48,7 +48,7 @@ export const useNotesStore = create((set, get) => ({
       }
     } catch (error) {
       if (error.response && error.response.data && error.response.data.message) {
-        console.log("Unexpected error. Please try again");
+        console.log("Unexpected error. Please try again", error);
       }
     }
   },
@@ -72,7 +72,7 @@ export const useNotesStore = create((set, get) => ({
         set({ trashNotes: response.data.notes });
       }
     } catch (error) {
-      console.log("Unexpected error. Please try again");
+      console.log("Unexpected error. Please try again", error);
     }
   },
 
@@ -84,7 +84,7 @@ export const useNotesStore = create((set, get) => ({
         get().getAllNotes(); // Refresh main list too
       }
     } catch (error) {
-      console.log("Unexpected error during restore.");
+      console.log("Unexpected error during restore.", error);
     }
   },
 
@@ -95,7 +95,7 @@ export const useNotesStore = create((set, get) => ({
         get().getTrashNotes();
       }
     } catch (error) {
-      console.log("Unexpected error during permanent delete.");
+      console.log("Unexpected error during permanent delete.", error);
     }
   },
 

@@ -57,7 +57,7 @@ const Pinned = () => {
       }
     }
     catch (error) {
-      console.log("Unexpected error. Please try again");
+      console.log("Unexpected error. Please try again", error);
     }
   }
 

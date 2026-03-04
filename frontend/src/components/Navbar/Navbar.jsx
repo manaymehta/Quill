@@ -9,7 +9,7 @@ import { useUIStore } from '../../store/useUIStore';
 
 const Navbar = ({ onSearch, handleClearSearch, onAiSearch }) => {
   const navigate = useNavigate();
-  const { user, logout, isLoggedIn } = useAuthStore();
+  const { logout, isLoggedIn } = useAuthStore();
   const { isNavbarVisible, isSidebarOpen, toggleSidebar } = useUIStore();
 
   const onLogout = () => {

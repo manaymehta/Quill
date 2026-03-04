@@ -1,4 +1,3 @@
-import { useState, useCallback } from "react";
 import axiosInstance from "../utils/axiosInstance";
 import { useNotesStore } from "../store/useNotesStore";
 
@@ -95,7 +94,7 @@ const useNoteOperations = (refreshData, showToastMessage) => {
                 getAllNotes();
             }
         } catch (error) {
-            console.log("Unexpected error. Please try again");
+            console.log("Unexpected error. Please try again", error);
         }
     };
 
@@ -108,7 +107,7 @@ const useNoteOperations = (refreshData, showToastMessage) => {
                 refreshData();
             }
         } catch (error) {
-            console.log("Unexpected error. Please try again");
+            console.log("Unexpected error. Please try again", error);
         }
     }
 

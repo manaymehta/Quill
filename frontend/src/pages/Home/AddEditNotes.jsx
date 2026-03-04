@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox } from 'react-icons/md'
 import TagInput from '../../components/Input/TagInput'
 import axiosInstance from '../../utils/axiosInstance';
@@ -35,7 +35,8 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
     setChecklist(newChecklist);
   };
 
-  const editNote = async () => {
+
+  const editNote = useCallback(async () => {
     const noteId = noteData._id;
     try {
       const response = await axiosInstance.put("/edit-note/" + noteId, {
@@ -56,9 +57,9 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
         setError(error.response.data.message);
       }
     }
-  }
+  }, [noteData, title, content, isChecklist, tags, checklist, getAllNotes, onClose, showToastMessage]);
 
-  const addNewNote = async () => {
+  const addNewNote = useCallback(async () => {
     try {
       const response = await axiosInstance.post("/add-note", {
         title,
@@ -78,16 +79,16 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
         setError(error.response.data.message);
       }
     }
-  }
+  }, [title, content, tags, isChecklist, checklist, getAllNotes, onClose, showToastMessage]);
   //error conditions for adding a note
-  const handleAddNote = () => {
+  const handleAddNote = useCallback(() => {
     if (!isChecklist && !content && !title) {
-        setError("Please enter content")
-        return;
+      setError("Please enter content")
+      return;
     }
     if (isChecklist && checklist.length === 0 && !title) {
-        setError("Please add at least one checklist item")
-        return;
+      setError("Please add at least one checklist item")
+      return;
     }
     setError("");
     if (type === 'edit') {
@@ -95,7 +96,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
     } else {
       addNewNote();
     }
-  }
+  }, [isChecklist, content, title, checklist, type, editNote, addNewNote]);
 
   // New function to handle summarization
   const handleSummarize = async () => {
@@ -132,7 +133,7 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
     if (shouldCloseModal && type === "edit") {
       handleAddNote();
     }
-  }, [shouldCloseModal]);
+  }, [shouldCloseModal, handleAddNote, type]);
 
   return (
     <div className='flex flex-col h-full'>
@@ -159,60 +160,60 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
         />
       </div>
 
-      
+
 
       <div className='flex flex-col gap-2 mt-4 flex-grow overflow-y-auto'>
         {isChecklist ? (
-            <div>
-                {checklist.length === 0 && (
-                    <button className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 mt-3 cursor-pointer hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out' onClick={addChecklistItem}>
-                        <MdAdd className="inline-block" /> Add Item
-                    </button>
-                )}
-                {checklist.map((item, index) => (
-                    <div key={index} className="flex items-center gap-2 mb-2">
-                        <button className='cursor-pointer' onClick={() => toggleChecklistItem(index)}>
-                            {item.completed ? <MdCheckBox /> : <MdCheckBoxOutlineBlank />}
-                        </button>
-                        <input
-                            type="text"
-                            value={item.text}
-                            onChange={(e) => handleChecklistItemChange(index, e.target.value)}
-                            className='text-sm bg-[#f8ecdc] outline-none p-2 rounded-xl w-full'
-                            placeholder='Checklist item'
-                        />
-                        <button className='cursor-pointer' onClick={() => removeChecklistItem(index)}>
-                            <MdClose />
-                        </button>
-                    </div>
-                ))}
-                {checklist.length > 0 && (
-                    <button className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 my-3 cursor-pointer hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out' onClick={addChecklistItem}>
-                        <MdAdd className="inline-block" /> Add Item
-                    </button>
-                )}
-                
-            </div>
+          <div>
+            {checklist.length === 0 && (
+              <button className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 mt-3 cursor-pointer hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out' onClick={addChecklistItem}>
+                <MdAdd className="inline-block" /> Add Item
+              </button>
+            )}
+            {checklist.map((item, index) => (
+              <div key={index} className="flex items-center gap-2 mb-2">
+                <button className='cursor-pointer' onClick={() => toggleChecklistItem(index)}>
+                  {item.completed ? <MdCheckBox /> : <MdCheckBoxOutlineBlank />}
+                </button>
+                <input
+                  type="text"
+                  value={item.text}
+                  onChange={(e) => handleChecklistItemChange(index, e.target.value)}
+                  className='text-sm bg-[#f8ecdc] outline-none p-2 rounded-xl w-full'
+                  placeholder='Checklist item'
+                />
+                <button className='cursor-pointer' onClick={() => removeChecklistItem(index)}>
+                  <MdClose />
+                </button>
+              </div>
+            ))}
+            {checklist.length > 0 && (
+              <button className='w-full text-sm bg-[#cdc4b8] text-stone-500 p-2 my-3 cursor-pointer hover:bg-neutral-400 hover:text-white rounded-full transition-all ease-in-out' onClick={addChecklistItem}>
+                <MdAdd className="inline-block" /> Add Item
+              </button>
+            )}
+
+          </div>
         ) : (
-              <textarea
-                type='text'
-                className={`text-sm bg-[#f8ecdc] outline-none p-2 rounded-xl ${summarizedText ? 'h-51' : 'h-100'}`}
-                placeholder='Content '
-                value={content}
-                onChange={(e) => {
-                    setContent(e.target.value)
-                    setError("");
-                }}
-            />
+          <textarea
+            type='text'
+            className={`text-sm bg-[#f8ecdc] outline-none p-2 rounded-xl ${summarizedText ? 'h-51' : 'h-100'}`}
+            placeholder='Content '
+            value={content}
+            onChange={(e) => {
+              setContent(e.target.value)
+              setError("");
+            }}
+          />
         )}
 
         {summarizedText && !isChecklist && (
           <div className='mt-2 p-3 bg-gray-100 rounded-xl'>
-            
+
             <div className='relative'>
               <button
                 className=' text-xl text-[#919191] cursor-pointer hover:text-slate-600 flex items-center justify-center absolute -top-1 -right-1'
-                onClick={() =>setSummarizedText("")}
+                onClick={() => setSummarizedText("")}
               >
                 <MdClose />
               </button>
@@ -238,13 +239,13 @@ const AddEditNotes = ({ type, noteData, onClose, getAllNotes, showToastMessage, 
           {type === "edit" ? "EDIT" : "ADD"}
         </button>
         {!isChecklist && (
-            <button
+          <button
             className='w-auto text-sm cursor-pointer opacity-85 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 text-white py-2.5 px-3 my-3 rounded-full hover:shadow-lg hover:opacity-70 transition-all ease-in-out duration-50'
             onClick={handleSummarize}
             disabled={isSummarizing}
-            >
+          >
             {isSummarizing ? "Summarizing..." : "Summarize"}
-            </button>
+          </button>
         )}
       </div>
     </div>

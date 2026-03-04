@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Navbar from '../../components/Navbar/Navbar';
 import { Link, useNavigate } from 'react-router-dom';
 import { validateEmail } from '../../utils/helper';
@@ -6,9 +6,9 @@ import PasswordInput from '../../components/Input/PasswordInput';
 import { useAuthStore } from '../../store/useAuthStore';
 
 const QuillIcon = ({ className }) => (
-  <svg 
+  <svg
     className={className}
-    width="48" height="48" viewBox="0 0 24 24" 
+    width="48" height="48" viewBox="0 0 24 24"
     fill="none" xmlns="http://www.w3.org/2000/svg"
   >
     <path d="M4.75 19.25L9 18.25L18.2929 8.95711C18.6834 8.56658 18.6834 7.93342 18.2929 7.54289L16.4571 5.70711C16.0666 5.31658 15.4334 5.31658 15.0429 5.70711L5.75 15L4.75 19.25Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"></path>
@@ -35,13 +35,13 @@ const Login = () => {
       useAuthStore.setState({ error: 'Please enter password' });
       return;
     }
-    
+
     await login(email, password);
   };
 
-  const handleGoogleLogin = async (response) => {
+  const handleGoogleLogin = useCallback(async (response) => {
     await googleLogin(response);
-  };
+  }, [googleLogin]);
 
   useEffect(() => {
     if (window.google) {
@@ -55,7 +55,7 @@ const Login = () => {
         { theme: 'filled_white', size: 'large', shape: 'pill', width: '352', text: 'signin_with', logo_alignment: 'left' }
       );
     }
-  }, []);
+  }, [handleGoogleLogin]);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -105,7 +105,7 @@ const Login = () => {
 
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
+
       for (const node of nodes) {
         if (node.x + node.radius > canvas.width || node.x - node.radius < 0) {
           node.vx *= -1;
@@ -121,7 +121,7 @@ const Login = () => {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.fill();
       }
-      
+
       for (let a = 0; a < nodes.length; a++) {
         for (let b = a + 1; b < nodes.length; b++) {
           const dist = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y);
@@ -157,23 +157,23 @@ const Login = () => {
         <canvas ref={canvasRef} className="absolute inset-0 z-0"></canvas>
         <div className="relative z-10 flex flex-col items-center justify-center w-full h-full ">
           <div className="bg-[#212121]/80 backdrop-blur-sm border border-white/10 text-[#EAEAEA] p-8 md:p-12 rounded-2xl w-full max-w-md text-center shadow-md flex flex-col items-center">
-            
+
             <QuillIcon className="text-[#FF6B6B] mb-4" />
             <h2 className="w-full text-3xl font-semibold text-white mb-6">Welcome Back to <h className='text-[#FF6B6B]'>Quill</h></h2>
-            
+
             <form onSubmit={handleLogin} className="w-full">
               <div className="w-full text-left mb-5">
                 <label htmlFor="email" className="block mb-2 font-medium text-[#A0A0A0]">Email</label>
-                <input 
+                <input
                   id="email"
-                  type="email" 
-                  placeholder="you@example.com" 
+                  type="email"
+                  placeholder="you@example.com"
                   className="w-full p-3 rounded-lg border border-[#424242] bg-[#333] text-[#EAEAEA] focus:outline-none focus:border-[#FF6B6B] focus:ring-2 focus:ring-[#FF6B6B]/30 transition-all"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
               </div>
-              
+
               <div className="w-full text-left mb-5">
                 <label className="block mb-2 font-medium text-[#A0A0A0]">Password</label>
                 <PasswordInput
@@ -183,10 +183,10 @@ const Login = () => {
                   eyeIconClassName="text-[#A0A0A0] hover:text-white"
                 />
               </div>
-              
+
               {error && <p className="text-red-500 text-sm text-left w-full mb-4">{error}</p>}
-              
-              <button 
+
+              <button
                 type="submit"
                 className="w-full mt-2 py-3 px-6 bg-[#FF6B6B] text-white font-semibold rounded-xl transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isLoading}
