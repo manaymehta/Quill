@@ -9,12 +9,12 @@ const createInitialNotes = async (userId) => {
     const initialNotes = [
         {
             title: "Welcome to Quill! 🪶",
-            content: "This is your first note. Feel free to edit or delete it. You can create new notes, add tags, and even make checklists. Enjoy organizing your thoughts! 🚀",
+            content: "This is your first note. Feel free to edit or delete it. You can create new notes, add tags, and even make checklists. Enjoy organizing your thoughts!",
             tags: ["welcome", "getting-started"],
             userId,
         },
         {
-            title: "How to Use Checklists ✅",
+            title: "How to Use Checklists",
             isChecklist: true,
             checklist: [
                 { content: "Create a new note.", isCompleted: true },
@@ -25,7 +25,7 @@ const createInitialNotes = async (userId) => {
             userId,
         },
         {
-            title: "Visualize your notes via Graph 📈",
+            title: "Visualize your notes via Graph",
             content: "Check out the the graph section to see your notes organized as nodes by matching tags.",
             tags: ["tags", "click a tag"],
             userId,
@@ -36,7 +36,6 @@ const createInitialNotes = async (userId) => {
         await Note.insertMany(initialNotes);
     } catch (error) {
         console.error("Error creating initial notes:", error);
-        // Do not throw here, as we want account creation specifically to succeed even if notes fail
     }
 };
 
@@ -82,9 +81,11 @@ const createAccount = async (req, res) => {
             }
         );
 
+        const { password: _pw, ...safeUser } = user.toObject(); // intentionally ignoring the password and store it as _pw to never use it and avoid linting errors 
+
         return res.json({
             error: false,
-            user,
+            user: safeUser,
             accessToken,
             message: "Registration Successful",
         });
@@ -95,7 +96,7 @@ const createAccount = async (req, res) => {
 };
 
 const login = async (req, res) => {
-    const { fullName, email, password } = req.body;
+    const { email, password } = req.body;
 
     if (!email) {
         return res.status(400).json({ error: true, message: "Email is required" });
@@ -111,7 +112,15 @@ const login = async (req, res) => {
             return res.json({ error: true, message: "User not found" });
         }
 
-        if (userInfo.email == email && userInfo.password == password) {
+        // reject google auth users from this route
+        if (!userInfo.password) {
+            return res.status(400).json({ error: true, message: "This account uses Google Sign-In. Please login with Google." });
+        }
+
+        // Use bcrypt to compare the plain password with the stored hash
+        const isPasswordValid = await userInfo.comparePassword(password);
+
+        if (isPasswordValid) {
             const accessToken = jwt.sign(
                 {
                     _id: userInfo._id,
@@ -122,10 +131,12 @@ const login = async (req, res) => {
                 { expiresIn: "36000m" }
             );
 
+            const { password: _pw, ...safeUser } = userInfo.toObject();
+
             return res.json({
                 error: false,
                 message: "Login successful",
-                user: userInfo,
+                user: safeUser,
                 accessToken,
             });
         } else {
@@ -215,4 +226,3 @@ module.exports = {
     googleAuth,
     getUser,
 };
-

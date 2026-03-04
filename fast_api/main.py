@@ -23,7 +23,7 @@ qdrant_client: QdrantClient | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # heavy clients are initialized at startup and cleaned up at shutdown
+    # clients initialized at startup, cleaned up at shutdown
     global gemini_client, qdrant_client
 
     api_key = os.getenv("GEMINI_API_KEY")
@@ -83,6 +83,7 @@ class SummarizeResponse(BaseModel):
 
 class EmbedNoteRequest(BaseModel): # title and content
     noteId: str
+    userId: str
     text: str   
 
 class SemanticSearchRequest(BaseModel): # question, user id and notes
@@ -152,12 +153,12 @@ async def embed_note(request: EmbedNoteRequest):
         vector = result.embeddings[0].values  # 768-dim float list
         qdrant_client.upsert( # update or insert
             collection_name=COLLECTION_NAME,
-            points=[PointStruct(
+            points=[PointStruct(    # pointstruct is a class that is used to create a point in Qdrant
                 id=note_id_to_uuid(request.noteId),
                 vector=vector,
-                payload={"noteId": request.noteId},  # store original MongoDB ID for lookup
+                payload={"noteId": request.noteId, "userId": request.userId},  # mongodb ID and owner for isolating notes by user in cluster
             )],
-        )# pointstruct is a class that is used to create a point in Qdrant
+        )
         return {"status": "ok", "noteId": request.noteId}
     except Exception as e:
         print(f"Embedding error: {e}")
@@ -196,10 +197,13 @@ async def semantic_search(request: SemanticSearchRequest):
     ))
         query_vector = result.embeddings[0].values  # 768-dim float list
 
-        # search qdrant for matches
+        # search qdrant, filtered to current users notes as only one cluster is being used
         results = qdrant_client.query_points(
             collection_name=COLLECTION_NAME,
             query=query_vector,
+            query_filter=Filter(
+                must=[FieldCondition(key="userId", match=MatchValue(value=request.userId))]
+            ),
             limit=5,
         )
 
@@ -211,7 +215,7 @@ async def semantic_search(request: SemanticSearchRequest):
 
         matched_ids = {r.payload["noteId"] for r in results.points if r.payload and "noteId" in r.payload}
 
-        # filter the full note objects sent from Express to those that matched
+        # filter full matched notes sent from express
         source_notes = [n for n in request.notes if str(n.get("_id", "")) in matched_ids]
 
         if not source_notes:
@@ -220,7 +224,7 @@ async def semantic_search(request: SemanticSearchRequest):
                 sourceNoteIds=list(matched_ids),
             )
 
-        # build context for model
+        # context
         context_blocks = []
         for note in source_notes:
             block = f"Note Title: {note.get('title', 'Untitled')}\n{note.get('content', '')}"

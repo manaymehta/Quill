@@ -2,10 +2,10 @@ const Note = require("../models/note.model");
 const axios = require("axios");
 
 // even if qdrant is down, it should not affect the saving of notes
-const triggerEmbed = (noteId, text) => {
+const triggerEmbed = (noteId, userId, text) => {
     const url = process.env.FASTAPI_SUMMARIZE_URL;
     if (!url) return;
-    axios.post(`${url}/embed-note`, { noteId: String(noteId), text })
+    axios.post(`${url}/embed-note`, { noteId: String(noteId), userId: String(userId), text })
         .catch((err) => console.error(`embedding process failed for note ${noteId}:`, err.message));
 };
 
@@ -29,7 +29,7 @@ const addNote = async (req, res) => {
 
         await note.save();
 
-        triggerEmbed(note._id, `${note.title} ${note.content}`);
+        triggerEmbed(note._id, userId, `${note.title} ${note.content}`);
 
         return res.json({
             error: false,
@@ -69,7 +69,8 @@ const editNote = async (req, res) => {
 
         await note.save();
 
-        triggerEmbed(note._id, `${note.title} ${note.content}`);
+        triggerEmbed(note._id, userId, `${note.title} ${note.content}`);
+
 
         return res.json({
             error: false,
@@ -401,7 +402,7 @@ const summarizeNote = async (req, res) => {
     } catch (error) {
         console.error("Error calling FastAPI summarization service:", error.message);
 
-        let errorMessage = "Internal Server Error during summarization.";
+        let errorMessage;
         if (error.response) {
             if (error.response.data && error.response.data.detail) {
                 errorMessage = "FastAPI Error: " + error.response.data.detail;
