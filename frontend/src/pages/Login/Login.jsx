@@ -18,6 +18,7 @@ const QuillIcon = ({ className }) => (
 
 
 const Login = () => {
+  const [isMounted, setIsMounted] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
@@ -62,6 +63,10 @@ const Login = () => {
       navigate('/dashboard');
     }
   }, [isLoggedIn, navigate]);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
@@ -156,7 +161,7 @@ const Login = () => {
       <div className="font-sans relative flex flex-col items-center justify-center min-h-screen w-full bg-[#212121] overflow-hidden p-4">
         <canvas ref={canvasRef} className="absolute inset-0 z-0"></canvas>
         <div className="relative z-10 flex flex-col items-center justify-center w-full h-full ">
-          <div className="bg-[#212121]/80 backdrop-blur-sm border border-white/10 text-[#EAEAEA] p-8 md:p-12 rounded-2xl w-full max-w-md text-center shadow-md flex flex-col items-center">
+          <div className={`bg-[#212121]/80 backdrop-blur-sm border border-white/10 text-[#EAEAEA] p-8 md:p-12 rounded-2xl w-full max-w-md text-center shadow-md flex flex-col items-center transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-95'}`}>
 
             <QuillIcon className="text-[#FF6B6B] mb-4" />
             <h2 className="w-full text-3xl font-semibold text-white mb-6">Welcome Back to <h className='text-[#FF6B6B]'>Quill</h></h2>

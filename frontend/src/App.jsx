@@ -9,6 +9,7 @@ import Archive from './pages/Archive/Archive';
 import Trash from './pages/Trash/Trash';
 import { useAuthStore } from './store/useAuthStore';
 import Graph from './pages/Graph/Graph';
+import LandingPage from './pages/LandingPage/LandingPage';
 
 const App = () => {
   const { isLoggedIn } = useAuthStore();
@@ -17,7 +18,8 @@ const App = () => {
       <Routes>
 
         {/* Public Routes*/}
-        <Route path="/" element={!isLoggedIn ? <Login /> : <Navigate to="/dashboard" />} />
+        <Route path="/" element={!isLoggedIn ? <LandingPage /> : <Navigate to="/dashboard" />} />
+        <Route path="/login" element={!isLoggedIn ? <Login /> : <Navigate to="/dashboard" />} />
         <Route path="/signup" element={!isLoggedIn ? <SignUp /> : <Navigate to="/dashboard" />} />
 
         {/* Protected Routes*/}
