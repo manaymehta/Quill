@@ -24,6 +24,49 @@
   .icon-btn {
     @apply text-xl text-slate-300 cursor-pointer hover:text-primary
   }
+
+  .animate-scale-up {
+    animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes scale-up {
+  0% { opacity: 0; transform: scale(0.95) translateY(10px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Elegant Scrollbar for the editor */
+.editor-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.editor-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.editor-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+}
+.editor-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.25);
+}
+
+/* Force dark cursor and selection targeting the light cream editor */
+::selection {
+  background: rgba(0, 0, 0, 0.2);
+  color: #000;
+}
+::-moz-selection {
+  background: rgba(0, 0, 0, 0.2);
+  color: #000;
+}
+
+/* Fix light cursor when hovering over empty space in the cream editor */
+.editor-wrapper {
+  cursor: default;
+}
+.editor-wrapper textarea,
+.editor-wrapper input {
+  cursor: text;
 }
 
 @theme {

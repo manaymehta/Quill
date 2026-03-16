@@ -1,5 +1,4 @@
 import moment from 'moment'
-import React from 'react'
 import { MdOutlinePushPin, MdCreate, MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever, MdOutlineArchive, MdOutlineUnarchive } from "react-icons/md"
 
 const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPinned, isChecklist, checklist, onChecklistToggle, isTrash, onRestore, isArchived, onArchive }) => {
@@ -9,13 +8,13 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
         if (e.target.closest('.no-card-click')) return;
         onEdit();
       }}
-      className=' border max-w-sm border-gray-700 rounded-3xl p-4 bg-[#f8ecdc] shadow-xs hover:bg-[#d8cec1] hover:shadow-xl transition-all ease-in-out cursor-pointer '
+      className='group border max-w-sm border-gray-700 rounded-3xl p-4 bg-[#f8ecdc] shadow-xs hover:bg-[#d8cec1] hover:shadow-xl transition-all ease-in-out cursor-pointer'
     >
       <div className='flex flex-col '>
         <div className='flex justify-between items-start'>
           <h4 className='text-2xl font-semibold tracking-tight text-[#e85d56]'>{title}</h4>
           <MdOutlinePushPin
-            className={`icon-btn no-card-click ${isPinned ? 'text-[#e85d56]' : 'text-[#a6a6a6]'} ${isTrash || isArchived ? 'hidden' : ''} hover:text-slate-600`}
+            className={`icon-btn no-card-click transition-opacity duration-200 ${isPinned ? 'text-[#e85d56] opacity-100' : 'text-[#a6a6a6] opacity-0 group-hover:opacity-100'} ${isTrash || isArchived ? 'hidden' : ''} hover:text-slate-600`}
             onClick={onPinned}
           />
         </div>
@@ -52,7 +51,7 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
             </span>
           ))}
         </div>
-        <div className='flex items-center gap-2'>
+        <div className='flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200'>
           {isTrash ? (
             <>
               <MdRestore

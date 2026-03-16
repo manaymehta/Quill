@@ -1,30 +1,25 @@
-import React from 'react';
 import { RiSparkling2Fill } from 'react-icons/ri';
 import { IoMdClose } from 'react-icons/io';
 import { useSearchStore } from '../../store/useSearchStore';
 
-/**
- * Right-side AI answer panel shown in the split layout when searchMode === 'semantic'.
- * Rendered inside Home.jsx, not MainLayout.
- */
 const AiSearchPanel = () => {
     const { semanticResult, clearSemanticResult, isSearchingAI, searchQuery } = useSearchStore();
 
     if (isSearchingAI) {
         return (
-            <div className="flex flex-col gap-3 p-5 rounded-2xl bg-[#1e1e21] border border-[#dd5e57]/30 h-fit sticky top-20">
+            <div className="flex flex-col gap-3 p-6 rounded-3xl bg-[#f8ecdc] border border-gray-700 shadow-sm h-fit sticky top-8 animate-scale-up">
                 <div className="flex items-center gap-2">
-                    <RiSparkling2Fill className="text-[#dd5e57] text-lg animate-pulse" />
-                    <span className="text-sm font-semibold text-white">Ask AI</span>
+                    <RiSparkling2Fill className="text-[#e85d56] text-xl animate-pulse" />
+                    <span className="text-base font-bold text-[#e85d56]">Ask AI</span>
                 </div>
-                <p className="text-slate-400 text-sm leading-relaxed">
-                    Searching for <span className="text-white font-medium">"{searchQuery}"</span>…
+                <p className="text-[#494949] text-sm leading-relaxed font-medium">
+                    Searching for <span className="text-[#e85d56] font-semibold">"{searchQuery}"</span>…
                 </p>
-                <div className="flex gap-1 mt-1">
+                <div className="flex gap-1.5 mt-2">
                     {[0, 1, 2].map(i => (
                         <span
                             key={i}
-                            className="w-2 h-2 rounded-full bg-[#dd5e57] animate-bounce"
+                            className="w-2 h-2 rounded-full bg-[#e85d56] animate-bounce"
                             style={{ animationDelay: `${i * 0.15}s` }}
                         />
                     ))}
@@ -36,31 +31,33 @@ const AiSearchPanel = () => {
     if (!semanticResult) return null;
 
     return (
-        <div className="flex flex-col gap-4 p-5 rounded-2xl bg-[#1e1e21] border border-[#dd5e57]/30 h-fit sticky top-20">
+        <div className="flex flex-col gap-4 p-6 rounded-3xl bg-[#f8ecdc] border border-gray-700 shadow-sm h-fit sticky top-8 animate-scale-up">
             {/* header */}
             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <RiSparkling2Fill className="text-[#dd5e57] text-lg" />
-                    <span className="text-sm font-semibold text-white">AI Answer</span>
+                <div className="flex items-center gap-2 title-area">
+                    <RiSparkling2Fill className="text-[#e85d56] text-xl" />
+                    <span className="text-base font-bold text-[#e85d56]">AI Answer</span>
                 </div>
                 <button
                     onClick={clearSemanticResult}
-                    className="text-slate-500 hover:text-white transition-colors"
+                    className="text-stone-400 hover:text-red-500 hover:bg-red-50 p-1 rounded-full transition-colors cursor-pointer"
                 >
-                    <IoMdClose className="text-lg" />
+                    <IoMdClose className="text-xl" />
                 </button>
             </div>
 
             {/* answer */}
-            <p className="text-slate-200 text-sm leading-relaxed border-l-2 border-[#dd5e57]/50 pl-3">
+            <p className="text-[#494949] text-sm leading-relaxed border-l-[3px] border-[#e85d56]/50 pl-4 font-medium">
                 {semanticResult.answer}
             </p>
 
             {/* source count */}
             {semanticResult.sourceNotes?.length > 0 && (
-                <p className="text-xs text-slate-500">
-                    Based on {semanticResult.sourceNotes.length} note{semanticResult.sourceNotes.length > 1 ? 's' : ''} from your knowledge base
-                </p>
+                <div className="mt-2 pt-4 border-t border-black/5">
+                    <p className="text-xs text-stone-500 font-medium">
+                        Based on {semanticResult.sourceNotes.length} note{semanticResult.sourceNotes.length > 1 ? 's' : ''} from your knowledge base
+                    </p>
+                </div>
             )}
         </div>
     );

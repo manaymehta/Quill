@@ -1,10 +1,11 @@
-import React, { useRef, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import Sidebar from "../Sidebar/Sidebar";
 import Navbar from "../Navbar/Navbar";
 import { Outlet } from "react-router-dom";
 import { useUIStore } from "../../store/useUIStore";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useNotesStore } from "../../store/useNotesStore";
+import TabDock from "../TabDock/TabDock";
 
 const MainLayout = () => {
     const { isSidebarOpen, toggleSidebar } = useUIStore();
@@ -144,6 +145,8 @@ const MainLayout = () => {
                 </div>
                 <Sidebar ref={sidebarRef} />
             </div>
+
+            <TabDock />
         </div>
     );
 };
