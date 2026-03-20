@@ -17,7 +17,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://notes-app-backend-rmny.onrender.com/:path*"
+      "destination": "https://quill-express-backend.onrender.com/:path*"
     },
     {
       "source": "/(.*)",
