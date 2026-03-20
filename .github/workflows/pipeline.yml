@@ -1,4 +1,4 @@
-name: Lint
+name: CI/CD Pipeline
 
 on:
   push:
@@ -43,3 +43,29 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [lint-frontend, lint-backend]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Trigger Render Backend Deploy
+        env:
+          HOOK_URL: ${{ secrets.RENDER_BACKEND_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$HOOK_URL" ]; then
+            curl -s -X POST "$HOOK_URL"
+            echo "Triggered backend deployment"
+          else
+            echo "RENDER_BACKEND_DEPLOY_HOOK_URL is not set. Skipping."
+          fi
+
+      - name: Trigger Render FastAPI Deploy
+        env:
+          HOOK_URL: ${{ secrets.RENDER_FASTAPI_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$HOOK_URL" ]; then
+            curl -s -X POST "$HOOK_URL"
+            echo "Triggered FastAPI deployment"
+          else
+            echo "RENDER_FASTAPI_DEPLOY_HOOK_URL is not set. Skipping."
+          fi
