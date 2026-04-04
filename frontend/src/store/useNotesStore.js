@@ -54,6 +54,8 @@ export const useNotesStore = create((set, get) => ({
   },
 
   updateIsPinned: async (noteData) => {
+    // We update the backend, but since Option B is "visual only pin" we just refresh
+    // Wait, pinning no longer forces sort to top. It's just a boolean update.
     const noteId = noteData._id;
     try {
       const response = await axiosInstance.put("/update-note-pinned/" + noteId, { isPinned: !noteData.isPinned });
@@ -62,6 +64,26 @@ export const useNotesStore = create((set, get) => ({
       }
     } catch (error) {
       console.log(error);
+    }
+  },
+
+  reorderNotes: async (reorderedNotes) => {
+    // 1. Optimistic UI update instantly
+    set({ allNotes: reorderedNotes });
+
+    // 2. Prepare payload of [{_id, orderIndex}]
+    const updates = reorderedNotes.map((note, index) => ({
+      _id: note._id,
+      orderIndex: index
+    }));
+
+    // 3. Persist in background
+    try {
+      await axiosInstance.put("/reorder-notes", { updates });
+    } catch (error) {
+      console.log("Failed to persist order", error);
+      // If it fails, we fall back to truth
+      get().getAllNotes();
     }
   },
 

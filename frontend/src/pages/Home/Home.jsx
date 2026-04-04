@@ -51,7 +51,7 @@ const Home = () => {
   const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
 
   return (
-    <div className="relative min-h-[calc(100vh-80px)] overflow-hidden">
+    <div className="relative min-h-[calc(100vh-80px)]">
       {/* Editor */}
       {activeTabId !== 'home' && activeTabNote ? (
         <div key={activeTabId} className="w-full h-[calc(100vh-80px)] pl-2 pr-4 pt-4 pb-12 md:pl-4 md:pr-8 md:pt-6 md:pb-14 animate-scale-up">

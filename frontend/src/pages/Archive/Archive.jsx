@@ -4,24 +4,18 @@ import useNoteOperations from '../../hooks/useNoteOperations';
 import axiosInstance from '../../utils/axiosInstance';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useNotesStore } from '../../store/useNotesStore';
+import { useTabsStore } from '../../store/useTabsStore';
+import { useNavigate } from 'react-router-dom';
 import Toast from '../../components/ToastMessage/Toast';
-import AddEditNotes from '../Home/AddEditNotes';
-import Modal from 'react-modal';
-import '../Home/Modal.css';
 
 const Archive = () => {
     const [archivedNotes, setArchivedNotes] = useState([]);
     const [showToast, setShowToast] = useState(false);
-    const [shouldCloseModal, setShouldCloseModal] = useState(false);
 
     const { getUser } = useAuthStore();
     const { getAllNotes } = useNotesStore();
-
-    const [openAddEditModal, setOpenAddEditModal] = useState({
-        isShown: false,
-        type: "add",
-        data: null,
-    });
+    const { openTab } = useTabsStore();
+    const navigate = useNavigate();
 
     const [toastMessageVisibility, setToastMessageVisibility] = useState({
         isShown: false,
@@ -62,7 +56,8 @@ const Archive = () => {
     }
 
     const handleEdit = (note) => {
-        setOpenAddEditModal({ isShown: true, type: "edit", data: note })
+        openTab(note);
+        navigate('/dashboard');
     };
 
     const {
@@ -70,14 +65,6 @@ const Archive = () => {
         updateNoteArchive,
         handleChecklistToggle
     } = useNoteOperations(getArchivedNotes, showToastMessage, getAllNotes);
-
-    const handleModalClose = () => {
-        if (openAddEditModal.type === "edit") {
-            setShouldCloseModal(true);
-        } else {
-            setOpenAddEditModal({ isShown: false, type: "add", data: null });
-        }
-    };
 
     useEffect(() => {
         getArchivedNotes();
@@ -98,43 +85,7 @@ const Archive = () => {
                 />
             </div>
 
-            <Modal
-                isOpen={openAddEditModal.isShown}
-                onRequestClose={handleModalClose}
-                closeTimeoutMS={200}
-                style={{
-                    overlay: {
-                        position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        backgroundColor: "rgba(0,0,0,0.2)",
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflowY: 'auto',
-                        zIndex: 50,
-                    },
-                }}
-                className="mx-auto rounded-2xl bg-[#f8ecdc] w-full max-w-lg p-4 max-h-[90vh] flex flex-col"
-                overlayClassName="ReactModal__Overlay"
-            >
-                <AddEditNotes
-                    type={openAddEditModal.type}
-                    noteData={openAddEditModal.data}
-                    getAllNotes={() => {
-                        getArchivedNotes();
-                        getAllNotes();
-                    }}
-                    onClose={() => {
-                        setOpenAddEditModal({ isShown: false, type: "add", data: null });
-                        setShouldCloseModal(false);
-                    }}
-                    showToastMessage={showToastMessage}
-                    shouldCloseModal={shouldCloseModal}
-                />
-            </Modal>
+
 
             {showToast && (
                 <Toast

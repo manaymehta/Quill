@@ -16,6 +16,7 @@ const noteSchema = new Schema({
     }],
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
+    orderIndex: { type: Number, default: 0 },
 }, {
     timestamps: true
 });

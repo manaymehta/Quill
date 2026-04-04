@@ -1,14 +1,38 @@
 import moment from 'moment'
 import { MdOutlinePushPin, MdCreate, MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever, MdOutlineArchive, MdOutlineUnarchive } from "react-icons/md"
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
-const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPinned, isChecklist, checklist, onChecklistToggle, isTrash, onRestore, isArchived, onArchive }) => {
+const NoteCard = ({ id, title, date, content, tags, isPinned, onEdit, onDelete, onPinned, isChecklist, checklist, onChecklistToggle, isTrash, onRestore, isArchived, onArchive, isOverlay }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    // Translate instead of Transform preserves exact dimensions without squishing over lines of text
+    transform: CSS.Translate.toString(transform),
+    transition,
+    zIndex: isOverlay ? 100 : (isDragging ? 0 : 'auto'),
+    opacity: isOverlay ? 1 : (isDragging ? 0.3 : 1), // Only dim the original placeholder, keep overlay opaque
+  };
+
   return (
     <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
       onClick={(e) => {
-        if (e.target.closest('.no-card-click')) return;
+        if (e.target.closest('.no-card-click') || isDragging || isOverlay) return;
         onEdit();
       }}
-      className='group border max-w-sm border-gray-700 rounded-3xl p-4 bg-[#f8ecdc] shadow-xs hover:bg-[#d8cec1] hover:shadow-xl transition-all ease-in-out cursor-pointer'
+      className={`group border w-full border-gray-700 rounded-3xl p-4 bg-[#f8ecdc] hover:bg-[#d8cec1] transition-transform transition-shadow duration-200 ease-in-out cursor-grab active:cursor-grabbing 
+        ${isOverlay ? 'shadow-2xl scale-105 opacity-95' : (isDragging ? '' : 'shadow-xs hover:shadow-xl hover:-translate-y-1')}`}
     >
       <div className='flex flex-col '>
         <div className='flex justify-between items-start'>
@@ -38,7 +62,8 @@ const NoteCard = ({ title, date, content, tags, isPinned, onEdit, onDelete, onPi
           </div>
         ) : (
           <p className='font-medium mt-2 text-[#494949]'>
-            {content?.slice(0, 60)}
+            {content?.slice(0, 200)}
+            {content?.length > 200 && '...'}
           </p>
         )}
       </div>

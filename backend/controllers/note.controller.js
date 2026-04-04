@@ -90,7 +90,8 @@ const getAllNotes = async (req, res) => {
 
     try {
         const notes = await Note.find({ userId: userId, isDeleted: { $ne: true }, isArchived: { $ne: true } }).sort({
-            isPinned: -1,
+            orderIndex: 1,
+            createdOn: -1,
         });
 
         return res.json({
@@ -130,7 +131,8 @@ const getArchivedNotes = async (req, res) => {
 
     try {
         const notes = await Note.find({ userId: userId, isArchived: true, isDeleted: { $ne: true } }).sort({
-            isPinned: -1,
+            orderIndex: 1,
+            createdOn: -1,
         });
 
         return res.json({
@@ -422,6 +424,33 @@ const summarizeNote = async (req, res) => {
     }
 };
 
+const reorderNotes = async (req, res) => {
+    const { updates } = req.body;
+    const userId = req.user._id;
+
+    if (!updates || !Array.isArray(updates)) {
+        return res.status(400).json({ error: true, message: "Updates array is required" });
+    }
+
+    try {
+        // Bulk write for optimal performance
+        const bulkOps = updates.map((update) => ({
+            updateOne: {
+                filter: { _id: update._id, userId },
+                update: { $set: { orderIndex: update.orderIndex } }
+            }
+        }));
+
+        if (bulkOps.length > 0) {
+            await Note.bulkWrite(bulkOps);
+        }
+
+        return res.json({ error: false, message: "Notes reordered successfully" });
+    } catch (error) {
+        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
 module.exports = {
     addNote,
     editNote,
@@ -437,4 +466,5 @@ module.exports = {
     updateNoteArchive,
     getArchivedNotes,
     semanticSearch,
+    reorderNotes,
 };

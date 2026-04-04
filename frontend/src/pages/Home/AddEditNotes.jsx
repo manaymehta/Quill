@@ -1,7 +1,46 @@
-import { useEffect, useState, useCallback } from 'react'
-import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes } from 'react-icons/md'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import axiosInstance from '../../utils/axiosInstance';
+import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
+import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChecklistItemChange, removeChecklistItem }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const style = {
+    // Translate instead of Transform preserves exact dimensions without squishing over lines of text
+    transform: CSS.Translate.toString(transform),
+    transition,
+    zIndex: isDragging ? 0 : 'auto',
+    opacity: isDragging ? 0.3 : 1, // Dim the original item during drag
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex flex-col gap-1 relative w-full group">
+      <div className={`flex items-center gap-3 mb-3 transition-colors ${isDragging ? '' : ''}`}>
+        <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-stone-300 hover:text-stone-500 transition-colors">
+          <MdOutlineDragIndicator className="text-xl" />
+        </button>
+        <button className='cursor-pointer text-stone-500 hover:text-[#e85d56] transition-colors text-xl' onClick={() => toggleChecklistItem(index)}>
+          {item.completed ? <MdCheckBox className="text-[#e85d56]" /> : <MdCheckBoxOutlineBlank />}
+        </button>
+        <input
+          type="text"
+          value={item.text}
+          onChange={(e) => handleChecklistItemChange(index, e.target.value)}
+          className={`text-base bg-transparent outline-none w-full border-b border-transparent focus:border-black/10 transition-colors py-1 caret-[#333] cursor-text ${item.completed ? 'line-through text-stone-400' : 'text-[#333]'}`}
+          placeholder='Checklist item'
+        />
+        <button className='cursor-pointer text-stone-400 opacity-0 group-hover:opacity-100 transition-opacity hover:text-[#e85d56]' onClick={() => removeChecklistItem(index)}>
+          <MdClose className="text-xl" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
 
 
 const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess, showToastMessage, shouldCloseModal }) => {
@@ -14,6 +53,25 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const [isChecklist, setIsChecklist] = useState(noteData?.isChecklist || false);
   const [checklist, setChecklist] = useState(noteData?.checklist || []);
   const [tagInputValue, setTagInputValue] = useState("");
+  const textareaRef = useRef(null);
+  const [activeChecklistId, setActiveChecklistId] = useState(null);
+
+  // Ensure all checklist items have a unique ID for dnd-kit sorting
+  useEffect(() => {
+    if (checklist.length > 0 && !checklist[0].id) {
+      setChecklist(prev => prev.map((item, i) => ({ ...item, id: `item-${Date.now()}-${i}` })));
+    }
+  }, []);
+
+  // Auto-focus the text area securely when the modal opens or content swaps
+  useEffect(() => {
+    if (!isChecklist && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [isChecklist, noteData]);
+
+  const charCount = content.length;
+  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
 
   // sync state to home whenever anything changes, this preserves unsaved changes when switching tabs
   useEffect(() => {
@@ -58,7 +116,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   };
 
   const addChecklistItem = () => {
-    setChecklist([...checklist, { text: '', completed: false }]);
+    setChecklist([...checklist, { id: `item-${Date.now()}`, text: '', completed: false }]);
   };
 
   const removeChecklistItem = (index) => {
@@ -72,13 +130,15 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     const noteId = noteData._id;
     try {
       // POST for temp draft ID, PUT for existing note
+      const cleanedChecklist = checklist.map(({ ...rest }) => rest);
+
       if (noteData.isDraft) {
         const response = await axiosInstance.post("/add-note", {
           title,
           content: isChecklist ? "" : content,
           tags,
           isChecklist,
-          checklist
+          checklist: cleanedChecklist
         });
         if (response.data && response.data.note) {
           onSaveSuccess();
@@ -90,7 +150,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           content: isChecklist ? "" : content,
           tags,
           isChecklist,
-          checklist
+          checklist: cleanedChecklist
         });
         if (response.data && response.data.note) {
           onSaveSuccess();
@@ -107,12 +167,13 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
   const addNewNote = useCallback(async () => {
     try {
+      const cleanedChecklist = checklist.map(({ ...rest }) => rest);
       const response = await axiosInstance.post("/add-note", {
         title,
         content,
         tags,
         isChecklist,
-        checklist
+        checklist: cleanedChecklist
       });
       if (response.data && response.data.note) {
         onSaveSuccess();
@@ -178,6 +239,27 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     }
   }, [shouldCloseModal, handleAddNote, type]);
 
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+  );
+
+  const handleDragStart = (event) => {
+    setActiveChecklistId(event.active.id);
+  };
+
+  const handleDragEnd = (event) => {
+    setActiveChecklistId(null);
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = checklist.findIndex(item => item.id === active.id);
+      const newIndex = checklist.findIndex(item => item.id === over.id);
+      setChecklist(arrayMove(checklist, oldIndex, newIndex));
+    }
+  };
+
+  const activeChecklistItem = activeChecklistId ? checklist.find(i => i.id === activeChecklistId) : null;
+
   return (
     <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] rounded-2xl shadow-sm border border-[#e8dcc8] overflow-hidden relative'>
 
@@ -207,23 +289,40 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                   <MdAdd className="inline-block text-lg align-text-bottom mr-1" /> Add your first item...
                 </button>
               )}
-              {checklist.map((item, index) => (
-                <div key={index} className="flex items-center gap-3 mb-3 group">
-                  <button className='cursor-pointer text-stone-500 hover:text-[#e85d56] transition-colors text-xl' onClick={() => toggleChecklistItem(index)}>
-                    {item.completed ? <MdCheckBox className="text-[#e85d56]" /> : <MdCheckBoxOutlineBlank />}
-                  </button>
-                  <input
-                    type="text"
-                    value={item.text}
-                    onChange={(e) => handleChecklistItemChange(index, e.target.value)}
-                    className={`text-base bg-transparent outline-none w-full border-b border-transparent focus:border-black/10 transition-colors py-1 caret-[#333] cursor-text ${item.completed ? 'line-through text-stone-400' : 'text-[#333]'}`}
-                    placeholder='Checklist item'
-                  />
-                  <button className='cursor-pointer text-stone-400 opacity-0 group-hover:opacity-100 transition-opacity hover:text-[#e85d56]' onClick={() => removeChecklistItem(index)}>
-                    <MdClose className="text-xl" />
-                  </button>
-                </div>
-              ))}
+
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                <SortableContext items={checklist.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                  {checklist.map((item, index) => (
+                    <SortableChecklistItem
+                      key={item.id}
+                      id={item.id}
+                      item={item}
+                      index={index}
+                      toggleChecklistItem={toggleChecklistItem}
+                      handleChecklistItemChange={handleChecklistItemChange}
+                      removeChecklistItem={removeChecklistItem}
+                    />
+                  ))}
+                </SortableContext>
+                <DragOverlay>
+                  {activeChecklistItem ? (
+                    <div className="flex items-center gap-3 bg-[#f8f1e6] border border-[#e8dcc8] p-2 rounded-lg shadow-xl opacity-100 origin-center w-full">                      <button className="text-stone-300">
+                      <MdOutlineDragIndicator className="text-xl" />
+                    </button>
+                      <button className='text-stone-500 text-xl'>
+                        {activeChecklistItem.completed ? <MdCheckBox className="text-[#e85d56]" /> : <MdCheckBoxOutlineBlank />}
+                      </button>
+                      <input
+                        type="text"
+                        value={activeChecklistItem.text}
+                        readOnly
+                        className={`text-base bg-transparent outline-none w-full border-b border-transparent py-1 ${activeChecklistItem.completed ? 'line-through text-stone-400' : 'text-[#333]'}`}
+                      />
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+
               {checklist.length > 0 && (
                 <button className='text-sm text-stone-500 p-2 mt-2 cursor-pointer hover:text-[#333] transition-colors ease-in-out text-left' onClick={addChecklistItem}>
                   <MdAdd className="inline-block text-lg align-text-bottom" /> Add another item
@@ -232,6 +331,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             </div>
           ) : (
             <textarea
+              ref={textareaRef}
               className='text-lg font-sans bg-transparent text-[#333] outline-none flex-grow resize-none leading-relaxed placeholder-stone-400 caret-[#333] cursor-text overflow-y-auto editor-scrollbar pr-2'
               placeholder='Start typing...'
               value={content}
@@ -319,6 +419,13 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
         {/* actions */}
         <div className="flex items-center gap-3">
+
+          {!isChecklist && (
+            <span className="text-[12px] text-stone-400 font-medium tracking-wide mr-2">
+              {wordCount} words &middot; {charCount} chars
+            </span>
+          )}
+
           <button
             onClick={onClose}
             className="px-5 py-2 rounded-lg text-sm text-stone-500 font-medium hover:text-[#ef4444] cursor-pointer hover:bg-red-50 transition-colors"

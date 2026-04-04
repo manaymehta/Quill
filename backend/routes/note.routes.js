@@ -14,6 +14,7 @@ const {
     summarizeNote,
     getArchivedNotes,
     semanticSearch,
+    reorderNotes,
 } = require("../controllers/note.controller");
 const { authenticateToken } = require("../middleware/auth.middleware");
 
@@ -33,5 +34,6 @@ router.put("/update-note-archive/:noteId", authenticateToken, updateNoteArchive)
 router.get("/search-notes", authenticateToken, searchNotes);
 router.get("/semantic-search", authenticateToken, semanticSearch);
 router.post("/summarize-note", authenticateToken, summarizeNote);
+router.put("/reorder-notes", authenticateToken, reorderNotes);
 
 module.exports = router;
