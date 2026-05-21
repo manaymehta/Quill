@@ -1,10 +1,24 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { memo, useEffect, useState, useCallback, useRef } from 'react'
 import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import axiosInstance from '../../utils/axiosInstance';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import CodeMirror from '@uiw/react-codemirror';
+import { markdown } from '@codemirror/lang-markdown';
+import { quillTheme, quillMarkdownHighlight, hideMarkdownSyntax, lineWrap } from '../../utils/markdownEditor';
+
+// ── Module-level constant: stable reference, never recreated on re-render. ───
+// Defined here (not inside the component) so CodeMirror sees the exact same
+// array reference on every render and never needlessly reconfigures its editor.
+const EDITOR_EXTENSIONS = [
+  markdown(),
+  quillTheme,
+  quillMarkdownHighlight,
+  hideMarkdownSyntax,
+  lineWrap,
+];
 
 const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChecklistItemChange, removeChecklistItem }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
@@ -43,7 +57,7 @@ const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChe
 
 
 
-const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess, showToastMessage, shouldCloseModal }) => {
+const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess, showToastMessage, isActive }) => {
   const [tags, setTags] = useState(noteData?.tags || []);
   const [content, setContent] = useState(noteData?.content || "");
   const [title, setTitle] = useState(noteData?.title || "");
@@ -53,8 +67,11 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const [isChecklist, setIsChecklist] = useState(noteData?.isChecklist || false);
   const [checklist, setChecklist] = useState(noteData?.checklist || []);
   const [tagInputValue, setTagInputValue] = useState("");
-  const textareaRef = useRef(null);
   const [activeChecklistId, setActiveChecklistId] = useState(null);
+
+  // Ref to the CodeMirror editor view for programmatic focus
+  const cmViewRef = useRef(null);
+
 
   // Ensure all checklist items have a unique ID for dnd-kit sorting
   useEffect(() => {
@@ -63,29 +80,34 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     }
   }, []);
 
-  // Auto-focus the text area securely when the modal opens or content swaps
+  // Auto-focus the CodeMirror editor when this tab becomes the active tab
   useEffect(() => {
-    if (!isChecklist && textareaRef.current) {
-      textareaRef.current.focus();
+    if (isActive && !isChecklist && cmViewRef.current) {
+      // Small delay lets the display:none → display:block paint happen first
+      const t = setTimeout(() => cmViewRef.current?.focus(), 50);
+      return () => clearTimeout(t);
     }
-  }, [isChecklist, noteData]);
+  }, [isActive, isChecklist]);
 
   const charCount = content.length;
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
 
-  // sync state to home whenever anything changes, this preserves unsaved changes when switching tabs
+  // ── Zustand sync ────────────────────────────────────────────────────────────
+  // Title is synced immediately so the TabDock pill shows up-to-date text live.
   useEffect(() => {
-    if (onUpdateTabState) {
-      // parent will manage the temporary draft ID
-      onUpdateTabState({
-        title,
-        content,
-        tags,
-        isChecklist,
-        checklist
-      });
-    }
-  }, [title, content, tags, isChecklist, checklist]);
+    if (onUpdateTabState) onUpdateTabState({ title });
+  }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Content, tags, and checklist are debounced (250 ms) to avoid a Zustand
+  // write — and subsequent full re-render cascade — on every single keystroke.
+  // 250 ms is imperceptible to the user but eliminates ~98 % of intermediate writes.
+  useEffect(() => {
+    if (!onUpdateTabState) return;
+    const timer = setTimeout(() => {
+      onUpdateTabState({ content, tags, isChecklist, checklist });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [content, tags, isChecklist, checklist]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const handleAddTag = () => {
@@ -130,7 +152,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     const noteId = noteData._id;
     try {
       // POST for temp draft ID, PUT for existing note
-      const cleanedChecklist = checklist.map(({ ...rest }) => rest);
+      const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
 
       if (noteData.isDraft) {
         const response = await axiosInstance.post("/add-note", {
@@ -167,7 +189,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
   const addNewNote = useCallback(async () => {
     try {
-      const cleanedChecklist = checklist.map(({ ...rest }) => rest);
+      const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
       const response = await axiosInstance.post("/add-note", {
         title,
         content,
@@ -186,6 +208,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       }
     }
   }, [title, content, tags, isChecklist, checklist, onSaveSuccess, showToastMessage]);
+
   const handleAddNote = useCallback(() => {
     if (!isChecklist && !content && !title) {
       setError("Please enter content")
@@ -233,12 +256,6 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     }
   };
 
-  useEffect(() => {
-    if (shouldCloseModal && type === "edit") {
-      handleAddNote();
-    }
-  }, [shouldCloseModal, handleAddNote, type]);
-
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
@@ -264,7 +281,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] rounded-2xl shadow-sm border border-[#e8dcc8] overflow-hidden relative'>
 
       {/* editor content area */}
-      <div className='flex-grow flex flex-col pt-4 md:pt-8 pr-8 md:pr-12 pb-2 pl-6 md:pl-8 overflow-hidden'>
+      <div className='flex-grow flex flex-col pt-4 md:pt-6 pr-8 md:pr-12 pb-2 pl-6 md:pl-8 overflow-hidden'>
 
         {/* title area */}
         <input
@@ -306,9 +323,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                 </SortableContext>
                 <DragOverlay>
                   {activeChecklistItem ? (
-                    <div className="flex items-center gap-3 bg-[#f8f1e6] border border-[#e8dcc8] p-2 rounded-lg shadow-xl opacity-100 origin-center w-full">                      <button className="text-stone-300">
-                      <MdOutlineDragIndicator className="text-xl" />
-                    </button>
+                    <div className="flex items-center gap-3 bg-[#f8f1e6] border border-[#e8dcc8] p-2 rounded-lg shadow-xl opacity-100 origin-center w-full">
+                      <button className="text-stone-300">
+                        <MdOutlineDragIndicator className="text-xl" />
+                      </button>
                       <button className='text-stone-500 text-xl'>
                         {activeChecklistItem.completed ? <MdCheckBox className="text-[#e85d56]" /> : <MdCheckBoxOutlineBlank />}
                       </button>
@@ -330,16 +348,32 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
               )}
             </div>
           ) : (
-            <textarea
-              ref={textareaRef}
-              className='text-lg font-sans bg-transparent text-[#333] outline-none flex-grow resize-none leading-relaxed placeholder-stone-400 caret-[#333] cursor-text overflow-y-auto editor-scrollbar pr-2'
-              placeholder='Start typing...'
-              value={content}
-              onChange={(e) => {
-                setContent(e.target.value)
-                setError("");
-              }}
-            />
+            /* ── CodeMirror live-preview markdown editor ── */
+            <div className="flex-grow min-h-0 overflow-y-auto editor-scrollbar pr-2">
+              <CodeMirror
+                value={content}
+                onChange={(val) => {
+                  setContent(val);
+                  setError("");
+                }}
+                onCreateEditor={(view) => { cmViewRef.current = view; }}
+                extensions={EDITOR_EXTENSIONS}
+                placeholder="Start typing..."
+                basicSetup={{
+                  lineNumbers: false,
+                  foldGutter: false,
+                  dropCursor: false,
+                  allowMultipleSelections: false,
+                  indentOnInput: false,
+                  bracketMatching: false,
+                  closeBrackets: false,
+                  autocompletion: false,
+                  highlightActiveLine: true,
+                  highlightSelectionMatches: false,
+                  searchKeymap: false,
+                }}
+              />
+            </div>
           )}
 
           {summarizedText && !isChecklist && (
@@ -377,7 +411,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       </div>
 
 
-      <div className="bg-[#f8f1e6] border-t border-[#e8dcc8] px-8 py-4 flex items-center justify-between">
+      <div className="bg-[#f8f1e6] border-t border-[#e8dcc8] px-8 py-1.5 flex items-center justify-between">
 
         {/* tools */}
         <div className="flex items-center gap-3">
@@ -447,7 +481,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   )
 }
 
-
-
-
-export default AddEditNotes
+// Only re-render when the tab's data or active state actually changes.
+// Inactive tabs whose noteData reference is the same (Zustand's immutable
+// map preserves non-touched entries) are completely skipped.
+export default memo(AddEditNotes, (prev, next) =>
+  prev.noteData === next.noteData &&
+  prev.isActive === next.isActive
+);

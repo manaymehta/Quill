@@ -44,13 +44,15 @@ const Login = () => {
     await googleLogin(response);
   }, [googleLogin]);
 
+  const googleInitialized = useRef(false);
+
   useEffect(() => {
-    if (window.google) {
+    if (window.google && !googleInitialized.current) {
+      googleInitialized.current = true;
       window.google.accounts.id.initialize({
         client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
         callback: handleGoogleLogin,
       });
-
       window.google.accounts.id.renderButton(
         document.getElementById('google-login-btn'),
         { theme: 'filled_white', size: 'large', shape: 'pill', width: '352', text: 'signin_with', logo_alignment: 'left' }
@@ -164,7 +166,7 @@ const Login = () => {
           <div className={`bg-[#212121]/80 backdrop-blur-sm border border-white/10 text-[#EAEAEA] p-8 md:p-12 rounded-2xl w-full max-w-md text-center shadow-md flex flex-col items-center transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-95'}`}>
 
             <QuillIcon className="text-[#FF6B6B] mb-4" />
-            <h2 className="w-full text-3xl font-semibold text-white mb-6">Welcome Back to <h className='text-[#FF6B6B]'>Quill</h></h2>
+            <h2 className="w-full text-3xl font-semibold text-white mb-6">Welcome Back to <span className='text-[#FF6B6B]'>Quill</span></h2>
 
             <form onSubmit={handleLogin} className="w-full">
               <div className="w-full text-left mb-5">

@@ -5,12 +5,16 @@ import { Outlet } from "react-router-dom";
 import { useUIStore } from "../../store/useUIStore";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useNotesStore } from "../../store/useNotesStore";
+import { useTabsStore } from "../../store/useTabsStore";
 import TabDock from "../TabDock/TabDock";
 
 const MainLayout = () => {
     const { isSidebarOpen, toggleSidebar } = useUIStore();
     const { getUser } = useAuthStore();
     const { getAllNotes, onSearch, handleClearSearch, onAiSearch } = useNotesStore();
+    const { activeTabId } = useTabsStore();
+
+    const isEditorActive = activeTabId !== 'home';
 
     const sidebarRef = useRef(null);
     const canvasRef = useRef(null);
@@ -106,8 +110,12 @@ const MainLayout = () => {
 
             for (let a = 0; a < nodes.length; a++) {
                 for (let b = a + 1; b < nodes.length; b++) {
-                    const dist = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y);
-                    if (dist < MAX_DISTANCE) {
+                    const dx = nodes[a].x - nodes[b].x;
+                    const dy = nodes[a].y - nodes[b].y;
+                    const distSq = dx * dx + dy * dy;
+
+                    if (distSq < MAX_DISTANCE * MAX_DISTANCE) {
+                        const dist = Math.sqrt(distSq); // Only calc true distance if rendering
                         ctx.strokeStyle = `rgba(255, 255, 255, ${1 - (dist / MAX_DISTANCE)})`;
                         ctx.lineWidth = 0.9;
                         ctx.beginPath();
@@ -135,11 +143,13 @@ const MainLayout = () => {
         <div className="relative min-h-screen">
             <canvas ref={canvasRef} className="fixed top-0 left-0 w-full h-screen "></canvas>
             <div className="relative z-10">
-                <Navbar
-                    onSearch={onSearch}
-                    handleClearSearch={handleClearSearch}
-                    onAiSearch={onAiSearch}
-                />
+                {!isEditorActive && (
+                    <Navbar
+                        onSearch={onSearch}
+                        handleClearSearch={handleClearSearch}
+                        onAiSearch={onAiSearch}
+                    />
+                )}
                 <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? "pl-0 sm:pl-55" : "pl-0 sm:pl-16"}`}>
                     <Outlet />
                 </div>

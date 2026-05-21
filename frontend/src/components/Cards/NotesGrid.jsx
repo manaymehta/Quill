@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import NoteCard from './NoteCard';
 import EmptyCard from './EmptyCard';
 import { useNotesStore } from '../../store/useNotesStore';
@@ -65,9 +65,7 @@ const NotesGrid = ({
 
     // Distribute notes left-to-right into columns
     const columns = Array.from({ length: cols }, () => []);
-    notes.forEach((note) => {
-        // Distribute based strictly on the current array order index so layout reflects state 1:1
-        const index = notes.findIndex(n => n._id === note._id);
+    notes.forEach((note, index) => {
         columns[index % cols].push(note);
     });
 

@@ -60,37 +60,37 @@ const TabDock = () => {
         <div className="flex items-center gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden max-w-[45vw] sm:max-w-[50vw] md:max-w-[60vw] lg:max-w-[700px] min-w-0 px-1 py-0.5" style={{ WebkitOverflowScrolling: 'touch' }}>
           {openTabs.map((tab) => {
             const isActive = activeTabId === tab._id;
-          return (
-            <div
-              key={tab._id}
-              onClick={() => handleTabClick(tab._id)}
-              className={`
+            return (
+              <div
+                key={tab._id}
+                onClick={() => handleTabClick(tab._id)}
+                className={`
                 shrink-0 group flex items-center rounded-full cursor-pointer transition-all duration-200 border
                 ${isEditorActive ? 'pl-3.5 pr-2.5 py-1.5 max-w-[130px]' : 'pl-4 pr-3 py-2 max-w-[160px]'}
                 ${isActive
-                  ? 'bg-[#f4eadc] text-[#333] shadow-sm border-transparent'
-                  : 'bg-white/5 text-stone-300 border-white/5 hover:bg-white/10'
-                }
+                    ? 'bg-[#f4eadc] text-[#333] shadow-sm border-transparent'
+                    : 'bg-white/5 text-stone-300 border-white/5 hover:bg-white/10'
+                  }
               `}
-            >
-              <span className={`truncate font-medium mr-1.5 ${isEditorActive ? 'text-xs' : 'text-sm'}`}>
-                {tab.title || 'Untitled Note'}
-              </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); closeTab(tab._id); }}
-                className={`
+              >
+                <span className={`truncate font-medium mr-1.5 ${isEditorActive ? 'text-xs' : 'text-sm'}`}>
+                  {tab.title || 'Untitled Note'}
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); closeTab(tab._id); }}
+                  className={`
                   flex-shrink-0 p-0.5 rounded-full transition-colors
                   ${isActive
-                    ? 'text-stone-500 hover:text-red-500 hover:bg-stone-100'
-                    : 'text-stone-400 opacity-0 group-hover:opacity-100 hover:text-red-300 hover:bg-white/10'
-                  }
+                      ? 'text-stone-500 hover:text-red-500 hover:bg-stone-100'
+                      : 'text-stone-400 opacity-0 group-hover:opacity-100 hover:text-red-300 hover:bg-white/10'
+                    }
                 `}
-              >
-                <MdClose className={isEditorActive ? 'text-[10px] cursor-pointer' : 'text-xs cursor-pointer'} />
-              </button>
-            </div>
-          );
-        })}
+                >
+                  <MdClose className={isEditorActive ? 'text-[10px] cursor-pointer' : 'text-xs cursor-pointer'} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -102,14 +102,15 @@ const TabDock = () => {
         onClick={handleNewNote}
         title="New Note"
         className={` 
-          shrink-0 cursor-pointer
+          shrink-0 cursor-pointer group relative
           flex items-center justify-center rounded-full
           bg-[#dd5e57] text-white hover:bg-[#fb6d65]
-          shadow-md transition-all duration-200 hover:rotate-90
+          shadow-md transition-colors duration-200
           ${isEditorActive ? 'w-8 h-8' : 'w-10 h-10'}
         `}
       >
-        <MdAdd className={isEditorActive ? 'text-lg' : 'text-xl'} />
+        {/* Absolutely center the icon mathematically and only rotate the icon, to prevent button wobble */}
+        <MdAdd className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-transform duration-200 origin-center group-hover:rotate-90 ${isEditorActive ? 'text-[20px]' : 'text-[24px]'}`} />
       </button>
     </div>
   );

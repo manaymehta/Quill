@@ -60,13 +60,22 @@
   color: #000;
 }
 
-/* Fix light cursor when hovering over empty space in the cream editor */
+/* Fix cursor inside the cream editor (textarea, input, and CodeMirror) */
 .editor-wrapper {
   cursor: default;
 }
 .editor-wrapper textarea,
-.editor-wrapper input {
+.editor-wrapper input,
+.editor-wrapper .cm-editor,
+.editor-wrapper .cm-content {
   cursor: text;
+}
+
+/* CodeMirror grows naturally with content; the wrapper div handles scrolling */
+.editor-wrapper .cm-editor,
+.editor-wrapper .cm-scroller {
+  /* no height constraint — content-sized, parent scrolls */
+  background-color: transparent; /* already set in quillTheme, belt+suspenders */
 }
 
 @theme {

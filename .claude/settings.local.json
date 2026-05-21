@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -v http://localhost:8000/)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":8000\")",
+      "Bash(Get-Process -Id 19424, 19892)",
+      "Bash(Select-Object Id, ProcessName, MainWindowTitle)",
+      "Bash(tasklist /FI \"PID eq 19424\")",
+      "Bash(tasklist /FI \"PID eq 19892\")",
+      "PowerShell(Get-Process -Id 19424, 19892)",
+      "PowerShell(Get-Process -Id 19424, 19892 -ErrorAction SilentlyContinue)"
+    ]
+  }
+}
