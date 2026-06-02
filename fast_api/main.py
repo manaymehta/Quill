@@ -16,7 +16,7 @@ load_dotenv()
 COLLECTION_NAME = "notes"
 EMBEDDING_DIM = 768
 EMBEDDING_MODEL = "gemini-embedding-001"
-GEMINI_MODEL = "gemma-3-27b-it"
+GEMINI_MODEL = "gemini-3.1-flash-lite"
 gemini_client: genai.Client | None = None
 qdrant_client: QdrantClient | None = None
 

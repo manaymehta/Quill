@@ -1,5 +1,5 @@
 import { memo, useEffect, useState, useCallback, useRef } from 'react'
-import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator } from 'react-icons/md'
+import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import axiosInstance from '../../utils/axiosInstance';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
@@ -9,9 +9,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { quillTheme, quillMarkdownHighlight, hideMarkdownSyntax, lineWrap } from '../../utils/markdownEditor';
 
-// ── Module-level constant: stable reference, never recreated on re-render. ───
-// Defined here (not inside the component) so CodeMirror sees the exact same
-// array reference on every render and never needlessly reconfigures its editor.
+
 const EDITOR_EXTENSIONS = [
   markdown(),
   quillTheme,
@@ -57,12 +55,11 @@ const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChe
 
 
 
-const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess, showToastMessage, isActive }) => {
+const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess, showToastMessage, isActive, onToggleMockPanel, onSummaryReceived }) => {
   const [tags, setTags] = useState(noteData?.tags || []);
   const [content, setContent] = useState(noteData?.content || "");
   const [title, setTitle] = useState(noteData?.title || "");
   const [error, setError] = useState("")
-  const [summarizedText, setSummarizedText] = useState("");
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isChecklist, setIsChecklist] = useState(noteData?.isChecklist || false);
   const [checklist, setChecklist] = useState(noteData?.checklist || []);
@@ -92,15 +89,12 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const charCount = content.length;
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
 
-  // ── Zustand sync ────────────────────────────────────────────────────────────
-  // Title is synced immediately so the TabDock pill shows up-to-date text live.
+
   useEffect(() => {
     if (onUpdateTabState) onUpdateTabState({ title });
   }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Content, tags, and checklist are debounced (250 ms) to avoid a Zustand
-  // write — and subsequent full re-render cascade — on every single keystroke.
-  // 250 ms is imperceptible to the user but eliminates ~98 % of intermediate writes.
+
   useEffect(() => {
     if (!onUpdateTabState) return;
     const timer = setTimeout(() => {
@@ -239,9 +233,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       });
 
       if (response.data && response.data.summary) {
-        setSummarizedText(response.data.summary);
+        onSummaryReceived(response.data.summary);
       } else {
-        setSummarizedText("Could not summarize the note.");
+        onSummaryReceived("Could not summarize the note.");
       }
     } catch (error) {
       console.error("Error summarizing note:", error);
@@ -250,7 +244,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       } else {
         setError("An unexpected error occurred during summarization.");
       }
-      setSummarizedText("Failed to summarize.");
+      onSummaryReceived("Failed to summarize.");
     } finally {
       setIsSummarizing(false);
     }
@@ -278,15 +272,23 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const activeChecklistItem = activeChecklistId ? checklist.find(i => i.id === activeChecklistId) : null;
 
   return (
-    <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] rounded-2xl shadow-sm border border-[#e8dcc8] overflow-hidden relative'>
+    <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] rounded-[24px] shadow-sm border border-[#e8dcc8] overflow-hidden relative'>
 
       {/* editor content area */}
-      <div className='flex-grow flex flex-col pt-4 md:pt-6 pr-8 md:pr-12 pb-2 pl-6 md:pl-8 overflow-hidden'>
+      <div className='flex-grow flex flex-col pt-12 md:pt-10 px-8 md:px-14 pb-2 overflow-y-auto editor-scrollbar'>
+
+        {/* metadata area */}
+        <div className="text-[13px] font-medium tracking-[0.15em] text-stone-500 mb-4 uppercase flex items-center gap-2">
+          <span>{noteData?.createdAt ? new Date(noteData.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          <span className="text-[16px] leading-none mb-0.5">&middot;</span>
+          <span>{type === 'edit' ? 'EDITED RECENTLY' : 'NEW NOTE'}</span>
+        </div>
 
         {/* title area */}
         <input
           type='text'
-          className='w-full bg-transparent outline-none font-medium text-4xl text-[#333] placeholder-stone-400 mb-6 font-sans caret-[#333] cursor-text shrink-0 leading-tight'
+          className='w-full bg-transparent outline-none font-medium text-4xl text-[#333] placeholder-stone-400 mb-4 caret-[#333] cursor-text shrink-0 leading-tight'
+          style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
           placeholder='Untitled Note'
           value={title}
           onChange={(e) => {
@@ -295,11 +297,41 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           }}
         />
 
-        <div className='flex flex-col gap-2 flex-grow overflow-hidden'>
+        {/* tags and tag input at the top */}
+        <div className="flex flex-wrap items-center gap-2 mb-6 shrink-0 font-sans">
+          {tags.map((tag, index) => (
+            <span key={index} className="flex items-center px-2.5 py-0.5 bg-[#f2dfd2] text-[#d55343] text-[15px] font-normal tracking-wide rounded-full cursor-default group/removetag">
+              <span className="mr-0 opacity-100">#</span>{tag}
+              <MdClose
+                className="ml-0 text-[#e85d56]/60 opacity-0 group-hover/removetag:opacity-100 cursor-pointer hover:text-[#e85d56] transition-colors"
+                onClick={() => handleRemoveTag(tag)}
+              />
+            </span>
+          ))}
+          {/* inline tag input */}
+          <div className="flex items-center gap-1 px-2 py-1 bg-transparent transition-all">
+            <MdAdd className="text-stone-500 text-base" />
+            <input
+              type="text"
+              placeholder="Add tag"
+              className="bg-transparent text-[15px] font-normal tracking-wide outline-none w-24 placeholder-stone-500 text-stone-700 caret-[#e85d56] cursor-text"
+              value={tagInputValue}
+              onChange={(e) => setTagInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddTag();
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        <div className='flex flex-col gap-2 flex-grow'>
           {error && (<p className='text-xs text-red-500 mb-2 shrink-0'>{error}</p>)}
 
           {isChecklist ? (
-            <div className="flex-grow overflow-y-auto editor-scrollbar pr-2">
+            <div className="flex-grow pr-2">
 
               {checklist.length === 0 && (
                 <button className='w-full text-sm bg-black/5 text-[#333] p-3 rounded-xl cursor-pointer hover:bg-black/10 transition-all ease-in-out text-left' onClick={addChecklistItem}>
@@ -349,7 +381,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             </div>
           ) : (
             /* ── CodeMirror live-preview markdown editor ── */
-            <div className="flex-grow min-h-0 overflow-y-auto editor-scrollbar pr-2">
+            <div className="flex-grow pr-2">
               <CodeMirror
                 value={content}
                 onChange={(val) => {
@@ -361,116 +393,82 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                 placeholder="Start typing..."
                 basicSetup={{
                   lineNumbers: false,
-                  foldGutter: false,
-                  dropCursor: false,
+                  foldGutter: true,
+                  dropCursor: true,
                   allowMultipleSelections: false,
-                  indentOnInput: false,
-                  bracketMatching: false,
-                  closeBrackets: false,
+                  indentOnInput: true,
+                  bracketMatching: true,
+                  closeBrackets: true,
                   autocompletion: false,
-                  highlightActiveLine: true,
+                  highlightActiveLine: false,
                   highlightSelectionMatches: false,
                   searchKeymap: false,
                 }}
               />
             </div>
           )}
-
-          {summarizedText && !isChecklist && (
-            <div className='mt-4 p-5 font-serif bg-[#f8f1e6] border border-[#e8dcc8] shadow-inner rounded-xl relative shrink-0 overflow-y-auto max-h-48 editor-scrollbar'>
-              <button
-                className='text-xl text-stone-400 cursor-pointer hover:text-[#e85d56] transition-colors absolute top-4 right-4'
-                onClick={() => setSummarizedText("")}
-              >
-                <MdClose />
-              </button>
-              <div className="flex items-center gap-2 mb-3 text-[#d97757]">
-                <FaWandMagicSparkles />
-                <h4 className='font-semibold text-lg'>AI Summary</h4>
-              </div>
-              <p className='text-base text-[#4a4a4a] leading-relaxed'>{summarizedText}</p>
-            </div>
-          )}
         </div>
-
-        {/* tags */}
-        {tags.length > 0 && (
-          <div className=" pt-2 border-t border-black/5 flex flex-wrap gap-2 shrink-0">
-            {tags.map((tag, index) => (
-              <span key={index} className="flex items-center px-3 py-1 bg-white/50 text-[#333] text-sm rounded-full border border-black/5 cursor-default group/removetag">
-                <span className="text-stone-500 mr-1">#</span>{tag}
-                <MdClose
-                  className="ml-2 text-stone-400 opacity-0 group-hover/removetag:opacity-100 cursor-pointer hover:text-red-500 transition-colors"
-                  onClick={() => handleRemoveTag(tag)}
-                />
-              </span>
-            ))}
-          </div>
-        )}
 
       </div>
 
+      {/* slim line separator */}
+      <div className="px-8 md:px-14 shrink-0">
+        <div className="h-[1px] w-full bg-black/5" />
+      </div>
 
-      <div className="bg-[#f8f1e6] border-t border-[#e8dcc8] px-8 py-1.5 flex items-center justify-between">
+      <div className="bg-[#eaddce] px-8 md:px-5 py-4 md:py-3 flex items-center justify-between gap-2 shrink-0">
 
         {/* tools */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1">
+
+
           <button
             onClick={() => setIsChecklist(!isChecklist)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${isChecklist ? 'bg-white shadow-sm text-[#333]' : 'text-stone-500 hover:text-[#333] hover:bg-black/5'}`}
+            className={`flex items-center gap-1.5 px-2.5 py-2.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isChecklist ? 'bg-white shadow-sm text-[#333]' : 'text-stone-500 hover:text-[#333] hover:bg-black/5'}`}
           >
-            <MdNotes className="text-lg" />
+            <MdNotes className="text-base" />
             Checklist
           </button>
 
           <button
             onClick={handleSummarize}
             disabled={isSummarizing || isChecklist || !content.trim()}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${isSummarizing ? 'opacity-50 animate-pulse text-[#d97757]' : isChecklist || !content.trim() ? 'opacity-40 cursor-not-allowed text-stone-500' : 'text-stone-500 hover:text-[#d97757] hover:bg-orange-50'}`}
+            className={`flex items-center gap-1.5 px-2.5 py-2.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isSummarizing ? 'opacity-50 animate-pulse text-[#d97757]' : isChecklist || !content.trim() ? 'opacity-40 cursor-not-allowed text-stone-500' : 'text-stone-500 hover:text-[#d97757] hover:bg-orange-50'}`}
           >
-            <FaWandMagicSparkles className="text-md" />
+            <FaWandMagicSparkles className="text-xs" />
             {isSummarizing ? "Summarizing..." : "Summarize"}
           </button>
 
-          {/* inline tag input */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-black/5 rounded-lg border border-transparent focus-within:border-black/10 focus-within:bg-white transition-all">
-            <FaTag className="text-stone-400 text-sm" />
-            <input
-              type="text"
-              placeholder="Add tag..."
-              className="bg-transparent text-sm outline-none w-24 placeholder-stone-500 text-[#333] caret-[#333] cursor-text"
-              value={tagInputValue}
-              onChange={(e) => setTagInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddTag();
-                }
-              }}
-            />
-          </div>
+          <button
+            onClick={onToggleMockPanel}
+            className="flex items-center gap-1.5 px-2.5 py-2.5 rounded-lg text-xs font-medium transition-colors cursor-pointer text-stone-500 hover:text-[#333] hover:bg-black/5"
+            title="Toggle Mock Side Panel"
+          >
+            <MdViewSidebar className="text-base" />
+            Panel
+          </button>
+
         </div>
 
         {/* actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 shrink-0">
 
           {!isChecklist && (
-            <span className="text-[12px] text-stone-400 font-medium tracking-wide mr-2">
-              {wordCount} words &middot; {charCount} chars
+            <span className="text-[11px] text-stone-400 font-medium whitespace-nowrap">
+              {wordCount}w &middot; {charCount}ch
             </span>
           )}
 
           <button
             onClick={onClose}
-            className="px-5 py-2 rounded-lg text-sm text-stone-500 font-medium hover:text-[#ef4444] cursor-pointer hover:bg-red-50 transition-colors"
+            className="px-3 py-2.5 rounded-lg text-xs text-stone-500 font-medium hover:text-[#ef4444] cursor-pointer hover:bg-red-50 transition-colors whitespace-nowrap"
           >
             Discard
           </button>
           <button
             onClick={handleAddNote}
-            className="px-6 py-2 rounded-lg text-sm font-medium text-white cursor-pointer bg-[#dd5e57] hover:bg-[#fb6d65] hover:shadow-md transition-all flex items-center gap-2"
+            className="px-4 py-2.5 rounded-lg text-xs font-medium text-white cursor-pointer bg-[#dd5e57] hover:bg-[#fb6d65] hover:shadow-md transition-all flex items-center gap-1.5 whitespace-nowrap"
           >
-
             {type === "edit" ? "Save Changes" : "Save Note"}
           </button>
         </div>

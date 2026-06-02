@@ -20,8 +20,8 @@ export const quillTheme = EditorView.theme({
   // light theme (which injects background:#fff) can't win the specificity race.
   '&': {
     backgroundColor: '#f4eadc',
-    fontSize: '1.125rem',       // 18px — same as the old textarea's text-lg
-    fontFamily: 'inherit',      // inherits Poppins from the page
+    fontSize: '1rem',            // 16px
+    fontFamily: "'Lora', Georgia, serif",
     // intentionally no height:'100%' — the outer wrapper div handles scroll
   },
 
@@ -47,7 +47,7 @@ export const quillTheme = EditorView.theme({
   // Scrollable panel — no height, no overflow override; the outer wrapper
   // div (`overflow-y-auto`) scrolls, so cm-scroller just shows all content.
   '.cm-scroller': {
-    fontFamily: 'inherit',
+    fontFamily: "'Lora', Georgia, serif",
     overflowY: 'visible',
   },
 
@@ -79,10 +79,10 @@ export const quillTheme = EditorView.theme({
 export const quillMarkdownHighlight = syntaxHighlighting(
   HighlightStyle.define([
     // Headings — sizes scale down from h1 to h6
-    { tag: tags.heading1, fontSize: '1.875rem', fontWeight: '700', color: '#1a1a1a', lineHeight: '1.3' },
-    { tag: tags.heading2, fontSize: '1.5rem',   fontWeight: '700', color: '#1a1a1a' },
-    { tag: tags.heading3, fontSize: '1.25rem',  fontWeight: '600', color: '#2a2a2a' },
-    { tag: tags.heading4, fontSize: '1.1rem',   fontWeight: '600', color: '#2a2a2a' },
+    { tag: tags.heading1, fontSize: '1.5rem',   fontWeight: '700', color: '#1a1a1a', lineHeight: '1.3' },
+    { tag: tags.heading2, fontSize: '1.25rem',  fontWeight: '700', color: '#1a1a1a' },
+    { tag: tags.heading3, fontSize: '1.125rem', fontWeight: '600', color: '#2a2a2a' },
+    { tag: tags.heading4, fontSize: '1rem',     fontWeight: '600', color: '#2a2a2a' },
     { tag: tags.heading5,                        fontWeight: '600', color: '#2a2a2a' },
     { tag: tags.heading6,                        fontWeight: '600', color: '#2a2a2a' },
 

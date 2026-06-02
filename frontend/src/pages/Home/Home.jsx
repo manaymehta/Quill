@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo } from 'react';
+import { useState, useEffect, useCallback, memo, Fragment } from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import AiSearchPanel from '../../components/Cards/AiSearchPanel';
 import useNoteOperations from '../../hooks/useNoteOperations';
@@ -9,21 +9,8 @@ import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import './Modal.css';
 
-// ── TabEditorSlot ─────────────────────────────────────────────────────────────
-// Problem 2 fix: a dedicated wrapper component for each open tab.
-//
-// The problem it solves:
-//   openTabs.map() in Home creates a new arrow function on EVERY render of Home
-//   (e.g. onUpdateTabState={(patch) => updateTabState(tab._id, patch)}).
-//   These unstable references defeat React.memo on AddEditNotes — even inactive
-//   tabs re-render on every keypress.
-//
-// The fix:
-//   By isolating each tab into its own component, useCallback can create
-//   per-tab stable function references that only change if tab._id changes
-//   (it never does for the lifetime of a tab).  AddEditNotes.memo then works
-//   correctly: inactive tabs are completely skipped.
-const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, showToastMessage }) => {
+
+const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, showToastMessage, onToggleMockPanel, onSummaryReceived }) => {
   const { closeTab, updateTabState } = useTabsStore();
 
   const handleUpdateTabState = useCallback(
@@ -50,6 +37,8 @@ const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, showToastMessage }) =>
       onClose={handleClose}
       onSaveSuccess={handleSaveSuccess}
       showToastMessage={showToastMessage}
+      onToggleMockPanel={onToggleMockPanel}
+      onSummaryReceived={onSummaryReceived}
     />
   );
 });
@@ -62,15 +51,21 @@ const Home = () => {
   const { openTabs, activeTabId, openTab, closeTab } = useTabsStore();
 
   const [showToast, setShowToast] = useState(false);
+  const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
+  const [panelContent, setPanelContent] = useState("");
   const [toastMessageVisibility, setToastMessageVisibility] = useState({
     isShown: false,
     message: '',
     type: 'add',
   });
 
-  // ── Stable callback refs ───────────────────────────────────────────────────
-  // useCallback deps: only state-setter functions (stable by React guarantee)
-  // so these never change reference across renders — TabEditorSlot.memo holds.
+  // Reset side panel when switching between tabs
+  useEffect(() => {
+    setIsMockPanelOpen(false);
+    setPanelContent("");
+  }, [activeTabId]);
+
+
   const showToastMessage = useCallback((message, type) => {
     setToastMessageVisibility({ isShown: true, message, type });
     setShowToast(true);
@@ -96,17 +91,22 @@ const Home = () => {
 
   const handleEdit = useCallback((note) => openTab(note), [openTab]);
 
+  const handleSummaryReceived = useCallback((summary) => {
+    setPanelContent(summary);
+    setIsMockPanelOpen(true);
+  }, []);
+
   const { deleteNote, updateIsPinned, updateNoteArchive, handleChecklistToggle } =
     useNoteOperations(getAllNotes, showToastMessage);
 
   const isEditorOpen = activeTabId !== 'home';
-  const isAIMode    = searchMode === 'semantic' && (isSearchingAI || semanticResult);
+  const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
+  const activeIndex = openTabs.findIndex(t => t._id === activeTabId);
 
   return (
-    <div className={`relative ${isEditorOpen ? 'h-screen' : 'min-h-[calc(100vh-80px)]'}`}>
+    <div className={`relative ${isEditorOpen ? 'h-screen overflow-hidden' : 'min-h-[calc(100vh-80px)]'}`}>
 
-      {/* ── Notes grid ─────────────────────────────────────────────────────── */}
-      {/* Hidden (CSS), not unmounted — grid doesn't re-fetch on editor open.  */}
+      {/* Notes grid */}
       <div className={isEditorOpen ? 'hidden' : 'pb-24 pt-2 px-2 md:px-4'}>
         {isAIMode ? (
           <div className="flex gap-4">
@@ -138,26 +138,127 @@ const Home = () => {
         )}
       </div>
 
-      {/* ── Editor tabs ────────────────────────────────────────────────────── */}
-      {/* One TabEditorSlot per open tab.  Inactive tabs are CSS-hidden (not   */}
-      {/* unmounted), so CodeMirror keeps cursor/scroll/undo alive across      */}
-      {/* tab switches.  React.memo + stable callbacks ensure only the ACTIVE  */}
-      {/* tab's component re-renders during typing.                            */}
-      {openTabs.map((tab) => (
-        <div
-          key={tab._id}
-          className={`w-full h-full pl-2 pr-4 pt-6 pb-12 md:pl-4 md:pr-8 md:pt-10 md:pb-14 ${
-            activeTabId === tab._id ? 'block animate-scale-up' : 'hidden'
-          }`}
-        >
-          <TabEditorSlot
-            tab={tab}
-            isActive={activeTabId === tab._id}
-            onNoteSaved={handleNoteSaved}
-            showToastMessage={showToastMessage}
-          />
-        </div>
-      ))}
+      {/* Editor tabs */}
+      {openTabs.map((tab, index) => {
+        const offset = isEditorOpen ? index - activeIndex : Infinity;
+        const isActive = offset === 0;
+        const isAdjacent = Math.abs(offset) === 1;
+
+        return (
+          <Fragment key={tab._id}>
+
+            {/* Hidden editor instance */}
+            {!isActive && (
+              <div className="hidden">
+                <TabEditorSlot
+                  tab={tab}
+                  isActive={false}
+                  onNoteSaved={handleNoteSaved}
+                  showToastMessage={showToastMessage}
+                />
+              </div>
+            )}
+
+            {/* Active editor — centered */}
+            {isActive && (
+              <div className="fixed inset-0 flex justify-center px-4 pt-6 pb-12 md:pt-5 md:pb-14 z-10 animate-scale-up pointer-events-none">
+                <div className={`flex gap-4 h-full pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full ${isMockPanelOpen ? 'max-w-[1150px]' : 'max-w-3xl'}`}>
+                  
+                  {/* Main Editor */}
+                  <div className="w-full h-full max-w-3xl shrink-0">
+                    <TabEditorSlot
+                      tab={tab}
+                      isActive={true}
+                      onNoteSaved={handleNoteSaved}
+                      showToastMessage={showToastMessage}
+                      onToggleMockPanel={() => setIsMockPanelOpen(prev => !prev)}
+                      onSummaryReceived={handleSummaryReceived}
+                    />
+                  </div>
+
+                  {/* Mock Side Panel */}
+                  {isMockPanelOpen && (
+                    <div className="w-[300px] md:w-[350px] shrink-0 h-full bg-[#1e1e1e] rounded-[24px] shadow-xl border border-[#333] p-6 md:p-8 flex flex-col text-stone-200 animate-scale-up origin-left">
+                       <h3 className={`text-2xl font-medium mb-4 ${panelContent ? 'text-[#d97757]' : 'text-white'}`} style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>{panelContent ? 'AI Summary' : 'Mock Panel'}</h3>
+                       
+                       {panelContent ? (
+                         <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-5 overflow-y-auto editor-scrollbar text-sm text-stone-300 leading-relaxed font-serif whitespace-pre-wrap">
+                            {panelContent}
+                         </div>
+                       ) : (
+                         <>
+                           <p className="text-sm text-stone-400 leading-relaxed mb-6">This is a temporary side panel with a dark color scheme.</p>
+                           <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-4 flex items-center justify-center">
+                              <span className="text-stone-500 text-xs tracking-widest uppercase">Content Area</span>
+                           </div>
+                         </>
+                       )}
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            )}
+
+            {/* Ghost card — tucked behind active card edges, scaled down for depth */}
+            {isAdjacent && isEditorOpen && !isMockPanelOpen && (
+              <div
+                className="fixed z-0 animate-ghost-in cursor-pointer group"
+                onClick={() => openTab(tab)}
+                style={{
+                  top: '2rem',
+                  bottom: '4.5rem',
+                  width: '350px',
+                  ...(offset < 0
+                    ? { right: 'calc(50% + 390px)', transformOrigin: 'right center' }
+                    : { left: 'calc(50% + 390px)', transformOrigin: 'left center' }
+                  ),
+                  transform: 'scale(0.65)',
+                }}
+              >
+                <div className="h-full bg-[#f4eadc] opacity-30 group-hover:opacity-100 transition-all duration-150 ease-out rounded-[32px] border border-[#e8dcc8] overflow-hidden p-8 md:p-10 shadow-sm group-hover:shadow-2xl group-active:scale-[0.98]">
+                  <div className="text-sm font-semibold tracking-widest text-[#999] mb-4 uppercase">
+                    {tab.createdAt ? new Date(tab.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '17 MAY'}
+                  </div>
+                  <h2
+                    className="text-3xl font-medium text-[#333] leading-tight mb-4"
+                    style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+                  >
+                    {tab.title || 'Untitled Note'}
+                  </h2>
+
+                  {tab.tags && tab.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-3 mb-6 opacity-70">
+                      {tab.tags.slice(0, 3).map((tag, i) => (
+                        <span key={i} className="text-sm font-medium text-[#777]">#{tag}</span>
+                      ))}
+                    </div>
+                  )}
+
+                  {tab.isChecklist && tab.checklist?.length > 0 ? (
+                    <div className="flex flex-col gap-3">
+                      {tab.checklist.slice(0, 6).map((item, i) => (
+                        <div key={i} className="flex items-center gap-3 text-lg text-[#555]">
+                          <div className={`w-4 h-4 rounded-sm border-2 border-[#aaa] flex-shrink-0 ${item.completed ? 'bg-[#aaa]' : ''}`} />
+                          <span className={`truncate ${item.completed ? 'line-through opacity-50' : ''}`}>{item.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p
+                      className="text-lg text-[#666] leading-relaxed line-clamp-[10]"
+                      style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+                    >
+                      {(tab.content || '').slice(0, 400)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+          </Fragment>
+        );
+      })}
 
       {showToast && (
         <Toast
