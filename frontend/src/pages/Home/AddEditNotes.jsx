@@ -75,6 +75,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     if (checklist.length > 0 && !checklist[0].id) {
       setChecklist(prev => prev.map((item, i) => ({ ...item, id: `item-${Date.now()}-${i}` })));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-focus the CodeMirror editor when this tab becomes the active tab
@@ -146,6 +147,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     const noteId = noteData._id;
     try {
       // POST for temp draft ID, PUT for existing note
+      // eslint-disable-next-line no-unused-vars
       const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
 
       if (noteData.isDraft) {
@@ -183,6 +185,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
   const addNewNote = useCallback(async () => {
     try {
+      // eslint-disable-next-line no-unused-vars
       const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
       const response = await axiosInstance.post("/add-note", {
         title,

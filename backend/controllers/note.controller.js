@@ -37,6 +37,7 @@ const addNote = async (req, res) => {
             message: "Note created succesfully",
         });
     } catch (error) {
+        console.error(error);
         return res.json({
             error: true,
             message: error,
@@ -78,6 +79,7 @@ const editNote = async (req, res) => {
             message: "Note edited successfully",
         });
     } catch (error) {
+        console.error(error);
         return res.json({
             error: true,
             message: "Internal Server Error",
@@ -100,6 +102,7 @@ const getAllNotes = async (req, res) => {
             notes,
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({
             error: true,
             message: "Internal Server Error",
@@ -119,6 +122,7 @@ const getPinnedNotes = async (req, res) => {
             notes,
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({
             error: true,
             message: "Internal Server Error",
@@ -141,6 +145,7 @@ const getArchivedNotes = async (req, res) => {
             notes,
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({
             error: true,
             message: "Internal Server Error",
@@ -169,6 +174,7 @@ const deleteNote = async (req, res) => {
             message: "Note moved to trash",
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({
             error: true,
             message: "Internal Server Error",
@@ -188,6 +194,7 @@ const getTrashNotes = async (req, res) => {
             notes,
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: true, message: "Internal Server Error" });
     }
 };
@@ -213,6 +220,7 @@ const restoreNote = async (req, res) => {
             note,
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: true, message: "Internal Server Error" });
     }
 };
@@ -242,6 +250,7 @@ const permanentDeleteNote = async (req, res) => {
             message: "Note permanently deleted",
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: true, message: "Internal Server Error" });
     }
 };
@@ -281,6 +290,7 @@ const semanticSearch = async (req, res) => {
             sourceNotes,
         });
     } catch (error) {
+        console.error(error);
         console.error("Semantic search error:", error.message);
         return res.status(500).json({ error: true, message: "Semantic search failed" });
     }
@@ -307,6 +317,7 @@ const updateNotePinned = async (req, res) => {
             note,
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: true, message: "Internal Server Error" });
     }
 };
@@ -335,6 +346,7 @@ const updateNoteArchive = async (req, res) => {
             note,
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: true, message: "Internal Server Error" });
     }
 };
@@ -360,6 +372,7 @@ const searchNotes = async (req, res) => {
             notes: matchingNote,
         });
     } catch (error) {
+        console.error(error);
         return res.status(500).json({ error: true, message: "Internal Server Error" });
     }
 };
@@ -402,6 +415,7 @@ const summarizeNote = async (req, res) => {
             });
         }
     } catch (error) {
+        console.error(error);
         console.error("Error calling FastAPI summarization service:", error.message);
 
         let errorMessage;
@@ -447,6 +461,7 @@ const reorderNotes = async (req, res) => {
 
         return res.json({ error: false, message: "Notes reordered successfully" });
     } catch (error) {
+        console.error(error);
         return res.status(500).json({ error: true, message: "Internal Server Error" });
     }
 };

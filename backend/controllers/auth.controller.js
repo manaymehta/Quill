@@ -81,6 +81,7 @@ const createAccount = async (req, res) => {
             }
         );
 
+        // eslint-disable-next-line no-unused-vars
         const { password: _pw, ...safeUser } = user.toObject(); // intentionally ignoring the password and store it as _pw to never use it and avoid linting errors 
 
         return res.json({
@@ -131,6 +132,7 @@ const login = async (req, res) => {
                 { expiresIn: "36000m" }
             );
 
+            // eslint-disable-next-line no-unused-vars
             const { password: _pw, ...safeUser } = userInfo.toObject();
 
             return res.json({
