@@ -36,11 +36,11 @@ const NotesGrid = ({
 
     // Dynamic columns for left-to-right masonry flow
     const getColumnCount = () => {
-        if (typeof window === 'undefined') return 1;
+        if (typeof window === 'undefined') return 2;
         if (window.innerWidth >= 1280) return 4; // xl
         if (window.innerWidth >= 1024) return 3; // lg
         if (window.innerWidth >= 640) return 2;  // sm
-        return 1;
+        return 2; // Mobile is now 2 columns like Google Keep
     };
 
     const [cols, setCols] = useState(getColumnCount());
@@ -102,12 +102,13 @@ const NotesGrid = ({
             onDragCancel={handleDragCancel}
         >
             <SortableContext items={notes.map(n => n._id)} strategy={rectSortingStrategy}>
-                <div className="flex flex-row gap-5 sm:pr-10 w-full items-start">
+                <div className="flex flex-row gap-2 md:gap-4 sm:pr-10 w-full items-start">
                     {columns.map((col, colIndex) => (
-                        <div key={colIndex} className="flex flex-col gap-5 flex-1 min-w-0">
-                            {col.map((note) => (
+                        <div key={colIndex} className="flex flex-col gap-2 md:gap-4 flex-1 min-w-0">
+                            {col.map((note, noteIndex) => (
                                 <NoteCard
                                     key={note._id}
+                                    index={noteIndex}
                                     id={note._id}
                                     title={note.title}
                                     date={note.createdOn}

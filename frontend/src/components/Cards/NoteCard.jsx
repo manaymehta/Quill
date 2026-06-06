@@ -26,9 +26,24 @@ const CARD_MD_COMPONENTS = {
   pre: ({ children }) => <span className="block font-mono text-xs bg-black/5 px-2 py-1 rounded my-0.5">{children}</span>,
   ul: ({ children }) => <span className="block">{children}</span>,
   ol: ({ children }) => <span className="block">{children}</span>,
-  li: ({ children }) => (
-    <span className="block pl-2 before:content-['•'] before:mr-1.5 before:text-[#9c9892]">{children}</span>
-  ),
+  li: ({ children, className }) => {
+    const isTask = className && className.includes('task-list-item');
+    return (
+      <span className={`block pl-2 ${isTask ? '' : "before:content-['•'] before:mr-1.5 before:text-[#9c9892]"}`}>
+        {children}
+      </span>
+    );
+  },
+  input: ({ type, checked }) => {
+    if (type === 'checkbox') {
+      return checked ? (
+        <MdCheckBox className="inline text-[#e85d56] mr-1.5 align-text-bottom text-lg" />
+      ) : (
+        <MdCheckBoxOutlineBlank className="inline text-[#9c9892] mr-1.5 align-text-bottom text-lg" />
+      );
+    }
+    return <input type={type} checked={checked} readOnly />;
+  },
   a: ({ children }) => <span className="text-[#d97757] underline">{children}</span>,
   blockquote: ({ children }) => (
     <span className="block pl-2 border-l-2 border-[#e8dcc8] text-[#78716c] italic">{children}</span>
@@ -48,7 +63,7 @@ const NoteCard = ({
   isPinned, onEdit, onDelete, onPinned,
   isChecklist, checklist, onChecklistToggle,
   isTrash, onRestore, isArchived, onArchive,
-  isOverlay,
+  isOverlay, index = 0,
 }) => {
   const {
     attributes, listeners, setNodeRef, transform, transition, isDragging,
@@ -67,7 +82,8 @@ const NoteCard = ({
   // Once a card enters the viewport (or is within 150 px of it), we swap in
   // the full react-markdown render and disconnect the observer permanently.
   // This means a 200-note grid does ~N_visible parses on load, not 200.
-  const [hasBeenVisible, setHasBeenVisible] = useState(false);
+  // We initialize the first few notes as true to prevent layout shift on load.
+  const [hasBeenVisible, setHasBeenVisible] = useState(index < 8);
   const observerTargetRef = useRef(null);
 
   // Combine dnd-kit's setNodeRef with our IntersectionObserver ref so both
@@ -107,12 +123,12 @@ const NoteCard = ({
         if (e.target.closest('.no-card-click') || isDragging || isOverlay) return;
         onEdit();
       }}
-      className={`group border w-full border-gray-700 rounded-3xl p-4 bg-[#f8ecdc] hover:bg-[#d8cec1] transition-transform transition-shadow duration-200 ease-in-out cursor-grab active:cursor-grabbing
+      className={`group border w-full border-gray-700 rounded-[20px] md:rounded-3xl p-3 md:p-4 bg-[#f8ecdc] hover:bg-[#d8cec1] transition-transform transition-shadow duration-200 ease-in-out cursor-grab active:cursor-grabbing
         ${isOverlay ? 'shadow-2xl scale-105 opacity-95' : (isDragging ? '' : 'shadow-xs hover:shadow-xl hover:-translate-y-1')}`}
     >
       <div className="flex flex-col">
-        <div className="flex justify-between items-start">
-          <h4 className="text-2xl font-semibold tracking-tight text-[#e85d56]">{title}</h4>
+        <div className="flex justify-between items-start gap-1">
+          <h4 className="text-lg md:text-2xl font-semibold tracking-tight text-[#e85d56] leading-tight">{title}</h4>
           <MdOutlinePushPin
             className={`icon-btn no-card-click transition-opacity duration-200 ${isPinned ? 'text-[#e85d56] opacity-100' : 'text-[#a6a6a6] opacity-0 group-hover:opacity-100'} ${isTrash || isArchived ? 'hidden' : ''} hover:text-slate-600`}
             onClick={onPinned}
@@ -140,11 +156,11 @@ const NoteCard = ({
           </div>
         ) : (
           <div
-            className="font-medium mt-2 text-[#494949] text-sm overflow-hidden"
+            className="font-medium mt-1 md:mt-2 text-[#494949] text-[13px] md:text-sm overflow-hidden whitespace-pre-wrap break-words"
             style={{
-              maxHeight: '4.5rem',
-              WebkitMaskImage: 'linear-gradient(to bottom, black 40%, transparent 100%)',
-              maskImage: 'linear-gradient(to bottom, black 40%, transparent 100%)',
+              maxHeight: '6rem',
+              WebkitMaskImage: 'linear-gradient(to bottom, black 0, black 4.5rem, transparent 6rem)',
+              maskImage: 'linear-gradient(to bottom, black 0, black 4.5rem, transparent 6rem)',
             }}
           >
             {hasBeenVisible ? (
@@ -161,14 +177,20 @@ const NoteCard = ({
       </div>
 
       <div className="flex items-center justify-between gap-2 mt-2">
-        <div className="flex items-center gap-1 flex-wrap">
+        <div 
+          className="flex items-center gap-1 flex-1 overflow-hidden"
+          style={{
+            WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
+            maskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
+          }}
+        >
           {tags.map((item) => (
-            <span key={item} className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-[#e3d7c9] text-gray-700 font-medium">
+            <span key={item} className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-[#e3d7c9] text-gray-700 font-medium shrink-0">
               #{item}
             </span>
           ))}
         </div>
-        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <div className="flex items-center gap-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
           {isTrash ? (
             <>
               <MdRestore

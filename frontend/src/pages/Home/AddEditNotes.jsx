@@ -278,10 +278,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] rounded-[24px] shadow-sm border border-[#e8dcc8] overflow-hidden relative'>
 
       {/* editor content area */}
-      <div className='flex-grow flex flex-col pt-12 md:pt-10 px-8 md:px-14 pb-2 overflow-y-auto editor-scrollbar'>
+      <div className='flex-grow flex flex-col pt-8 md:pt-10 px-5 md:px-14 pb-2 overflow-y-auto editor-scrollbar'>
 
         {/* metadata area */}
-        <div className="text-[13px] font-medium tracking-[0.15em] text-stone-500 mb-4 uppercase flex items-center gap-2">
+        <div className="text-[11px] md:text-[13px] font-medium tracking-widest md:tracking-[0.15em] text-stone-500 mb-2 md:mb-4 uppercase flex items-center gap-1.5 md:gap-2">
           <span>{noteData?.createdAt ? new Date(noteData.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
           <span className="text-[16px] leading-none mb-0.5">&middot;</span>
           <span>{type === 'edit' ? 'EDITED RECENTLY' : 'NEW NOTE'}</span>
@@ -290,7 +290,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         {/* title area */}
         <input
           type='text'
-          className='w-full bg-transparent outline-none font-medium text-4xl text-[#333] placeholder-stone-400 mb-4 caret-[#333] cursor-text shrink-0 leading-tight'
+          className='w-full bg-transparent outline-none font-medium text-2xl md:text-4xl text-[#333] placeholder-stone-400 mb-2 md:mb-4 caret-[#333] cursor-text shrink-0 leading-tight'
           style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
           placeholder='Untitled Note'
           value={title}
@@ -301,9 +301,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         />
 
         {/* tags and tag input at the top */}
-        <div className="flex flex-wrap items-center gap-2 mb-6 shrink-0 font-sans">
+        <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mb-3 md:mb-6 shrink-0 font-sans">
           {tags.map((tag, index) => (
-            <span key={index} className="flex items-center px-2.5 py-0.5 bg-[#f2dfd2] text-[#d55343] text-[15px] font-normal tracking-wide rounded-full cursor-default group/removetag">
+            <span key={index} className="flex items-center px-2 md:px-2.5 py-0.5 bg-[#f2dfd2] text-[#d55343] text-[13px] md:text-[15px] font-normal tracking-wide rounded-full cursor-default group/removetag">
               <span className="mr-0 opacity-100">#</span>{tag}
               <MdClose
                 className="ml-0 text-[#e85d56]/60 opacity-0 group-hover/removetag:opacity-100 cursor-pointer hover:text-[#e85d56] transition-colors"
@@ -312,12 +312,12 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             </span>
           ))}
           {/* inline tag input */}
-          <div className="flex items-center gap-1 px-2 py-1 bg-transparent transition-all">
-            <MdAdd className="text-stone-500 text-base" />
+          <div className="flex items-center gap-1 px-1.5 md:px-2 py-1 bg-transparent transition-all">
+            <MdAdd className="text-stone-500 text-sm md:text-base" />
             <input
               type="text"
               placeholder="Add tag"
-              className="bg-transparent text-[15px] font-normal tracking-wide outline-none w-24 placeholder-stone-500 text-stone-700 caret-[#e85d56] cursor-text"
+              className="bg-transparent text-[13px] md:text-[15px] font-normal tracking-wide outline-none w-20 md:w-24 placeholder-stone-500 text-stone-700 caret-[#e85d56] cursor-text"
               value={tagInputValue}
               onChange={(e) => setTagInputValue(e.target.value)}
               onKeyDown={(e) => {
@@ -384,7 +384,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             </div>
           ) : (
             /* ── CodeMirror live-preview markdown editor ── */
-            <div className="flex-grow pr-2">
+            <div className="flex-grow pr-2 text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75]">
               <CodeMirror
                 value={content}
                 onChange={(val) => {
@@ -415,11 +415,11 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       </div>
 
       {/* slim line separator */}
-      <div className="px-8 md:px-14 shrink-0">
+      <div className="px-4 md:px-14 shrink-0">
         <div className="h-[1px] w-full bg-black/5" />
       </div>
 
-      <div className="bg-[#eaddce] px-8 md:px-5 py-4 md:py-3 flex items-center justify-between gap-2 shrink-0">
+      <div className="bg-[#eaddce] px-4 md:px-5 py-3 flex items-center justify-between gap-1 md:gap-2 shrink-0">
 
         {/* tools */}
         <div className="flex items-center gap-1">
@@ -427,52 +427,55 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
           <button
             onClick={() => setIsChecklist(!isChecklist)}
-            className={`flex items-center gap-1.5 px-2.5 py-2.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isChecklist ? 'bg-white shadow-sm text-[#333]' : 'text-stone-500 hover:text-[#333] hover:bg-black/5'}`}
+            className={`flex items-center justify-center gap-1.5 p-2 md:px-2.5 md:py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isChecklist ? 'bg-white shadow-sm text-[#333]' : 'text-stone-500 hover:text-[#333] hover:bg-black/5'}`}
+            title="Checklist"
           >
-            <MdNotes className="text-base" />
-            Checklist
+            <MdNotes className="text-xl md:text-base" />
+            <span className="hidden md:inline">Checklist</span>
           </button>
 
           <button
             onClick={handleSummarize}
             disabled={isSummarizing || isChecklist || !content.trim()}
-            className={`flex items-center gap-1.5 px-2.5 py-2.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isSummarizing ? 'opacity-50 animate-pulse text-[#d97757]' : isChecklist || !content.trim() ? 'opacity-40 cursor-not-allowed text-stone-500' : 'text-stone-500 hover:text-[#d97757] hover:bg-orange-50'}`}
+            className={`flex items-center justify-center gap-1.5 p-2 md:px-2.5 md:py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isSummarizing ? 'opacity-50 animate-pulse text-[#d97757]' : isChecklist || !content.trim() ? 'opacity-40 cursor-not-allowed text-stone-500' : 'text-stone-500 hover:text-[#d97757] hover:bg-orange-50'}`}
+            title="Summarize"
           >
-            <FaWandMagicSparkles className="text-xs" />
-            {isSummarizing ? "Summarizing..." : "Summarize"}
+            <FaWandMagicSparkles className="text-lg md:text-xs" />
+            <span className="hidden md:inline">{isSummarizing ? "Summarizing..." : "Summarize"}</span>
           </button>
 
           <button
             onClick={onToggleMockPanel}
-            className="flex items-center gap-1.5 px-2.5 py-2.5 rounded-lg text-xs font-medium transition-colors cursor-pointer text-stone-500 hover:text-[#333] hover:bg-black/5"
-            title="Toggle Mock Side Panel"
+            className="flex items-center justify-center gap-1.5 p-2 md:px-2.5 md:py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer text-stone-500 hover:text-[#333] hover:bg-black/5"
+            title="Toggle Panel"
           >
-            <MdViewSidebar className="text-base" />
-            Panel
+            <MdViewSidebar className="text-xl md:text-base" />
+            <span className="hidden md:inline">Panel</span>
           </button>
 
         </div>
 
         {/* actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1 md:gap-2 shrink-0">
 
           {!isChecklist && (
-            <span className="text-[11px] text-stone-400 font-medium whitespace-nowrap">
+            <span className="hidden md:inline text-[11px] text-stone-400 font-medium whitespace-nowrap">
               {wordCount}w &middot; {charCount}ch
             </span>
           )}
 
           <button
             onClick={onClose}
-            className="px-3 py-2.5 rounded-lg text-xs text-stone-500 font-medium hover:text-[#ef4444] cursor-pointer hover:bg-red-50 transition-colors whitespace-nowrap"
+            className="px-2 md:px-3 py-2.5 rounded-lg text-xs text-stone-500 font-medium hover:text-[#ef4444] cursor-pointer hover:bg-red-50 transition-colors whitespace-nowrap"
           >
             Discard
           </button>
           <button
             onClick={handleAddNote}
-            className="px-4 py-2.5 rounded-lg text-xs font-medium text-white cursor-pointer bg-[#dd5e57] hover:bg-[#fb6d65] hover:shadow-md transition-all flex items-center gap-1.5 whitespace-nowrap"
+            className="px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-xs font-medium text-white cursor-pointer bg-[#dd5e57] hover:bg-[#fb6d65] hover:shadow-md transition-all flex items-center gap-1.5 whitespace-nowrap"
           >
-            {type === "edit" ? "Save Changes" : "Save Note"}
+            <span className="md:hidden">Save</span>
+            <span className="hidden md:inline">{type === "edit" ? "Save Changes" : "Save Note"}</span>
           </button>
         </div>
 

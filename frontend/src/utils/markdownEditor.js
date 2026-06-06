@@ -20,7 +20,7 @@ export const quillTheme = EditorView.theme({
   // light theme (which injects background:#fff) can't win the specificity race.
   '&': {
     backgroundColor: '#f4eadc',
-    fontSize: '1rem',            // 16px
+    fontSize: 'inherit',
     fontFamily: "'Lora', Georgia, serif",
     // intentionally no height:'100%' — the outer wrapper div handles scroll
   },
@@ -39,7 +39,7 @@ export const quillTheme = EditorView.theme({
   // Individual text lines
   '.cm-line': {
     color: '#333',
-    lineHeight: '1.75',
+    lineHeight: 'inherit',
     paddingLeft: '0',
     paddingRight: '0',
   },
@@ -79,10 +79,10 @@ export const quillTheme = EditorView.theme({
 export const quillMarkdownHighlight = syntaxHighlighting(
   HighlightStyle.define([
     // Headings — sizes scale down from h1 to h6
-    { tag: tags.heading1, fontSize: '1.5rem',   fontWeight: '700', color: '#1a1a1a', lineHeight: '1.3' },
-    { tag: tags.heading2, fontSize: '1.25rem',  fontWeight: '700', color: '#1a1a1a' },
-    { tag: tags.heading3, fontSize: '1.125rem', fontWeight: '600', color: '#2a2a2a' },
-    { tag: tags.heading4, fontSize: '1rem',     fontWeight: '600', color: '#2a2a2a' },
+    { tag: tags.heading1, fontSize: '1.5em',   fontWeight: '700', color: '#1a1a1a', lineHeight: '1.3' },
+    { tag: tags.heading2, fontSize: '1.25em',  fontWeight: '700', color: '#1a1a1a' },
+    { tag: tags.heading3, fontSize: '1.125em', fontWeight: '600', color: '#2a2a2a' },
+    { tag: tags.heading4, fontSize: '1em',     fontWeight: '600', color: '#2a2a2a' },
     { tag: tags.heading5,                        fontWeight: '600', color: '#2a2a2a' },
     { tag: tags.heading6,                        fontWeight: '600', color: '#2a2a2a' },
 
