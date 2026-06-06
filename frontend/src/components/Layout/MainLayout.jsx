@@ -150,9 +150,16 @@ const MainLayout = () => {
                         onAiSearch={onAiSearch}
                     />
                 )}
-                <div className={`transition-all duration-300 ease-in-out ${isSidebarOpen ? "pl-0 sm:pl-55" : "pl-0 sm:pl-16"}`}>
+                <div className={`transition-all duration-300 ease-in-out pt-[60px] md:pt-[72px] ${isSidebarOpen ? "pl-0 sm:pl-55" : "pl-0 sm:pl-16"}`}>
                     <Outlet />
                 </div>
+                
+                {/* Mobile Backdrop overlay (continuous transition instead of conditional rendering) */}
+                <div 
+                    className={`fixed inset-0 bg-black/60 z-30 sm:hidden transition-opacity duration-300 ease-in-out ${isSidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+                    onClick={toggleSidebar}
+                />
+
                 <Sidebar ref={sidebarRef} />
             </div>
 

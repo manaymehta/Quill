@@ -8,8 +8,22 @@
   }
   body{
     background-color: #202124;
-    overflow-x: hidden;
   }
+}
+
+/* Global scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.3);
 }
 
 @layer components{
@@ -32,6 +46,15 @@
   .animate-ghost-in {
     animation: ghost-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
+
+  .animate-slide-up {
+    animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes slide-up {
+  0% { transform: translateY(100%); }
+  100% { transform: translateY(0); }
 }
 
 @keyframes scale-up {

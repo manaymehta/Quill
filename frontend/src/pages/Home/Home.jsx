@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, memo, Fragment } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import AiSearchPanel from '../../components/Cards/AiSearchPanel';
 import useNoteOperations from '../../hooks/useNoteOperations';
@@ -107,21 +108,29 @@ const Home = () => {
     <div className={`relative ${isEditorOpen ? 'h-screen overflow-hidden' : 'min-h-[calc(100vh-80px)]'}`}>
 
       {/* Notes grid */}
-      <div className={isEditorOpen ? 'hidden' : 'pb-24 pt-2 px-2 md:px-4'}>
+      <div className={isEditorOpen ? 'hidden' : 'pb-24 px-2 md:px-4'}>
         {isAIMode ? (
-          <div className="flex gap-4">
+          <div className="flex flex-col-reverse md:flex-row gap-4">
             <div className="flex-1 min-w-0">
-              <NotesGrid
-                notes={semanticResult?.sourceNotes || []}
-                emptyMessage="No matching notes found."
-                onEdit={handleEdit}
-                onDelete={deleteNote}
-                onPin={updateIsPinned}
-                onArchive={updateNoteArchive}
-                onChecklistToggle={handleChecklistToggle}
-              />
+              {isSearchingAI ? (
+                <div className="flex flex-col items-center justify-center mt-20 opacity-50 animate-pulse">
+                   <p className="text-sm font-medium text-slate-400 text-center">
+                     Analyzing context across your notes...
+                   </p>
+                </div>
+              ) : (
+                <NotesGrid
+                  notes={semanticResult?.sourceNotes || []}
+                  emptyMessage="No matching notes found."
+                  onEdit={handleEdit}
+                  onDelete={deleteNote}
+                  onPin={updateIsPinned}
+                  onArchive={updateNoteArchive}
+                  onChecklistToggle={handleChecklistToggle}
+                />
+              )}
             </div>
-            <div className="w-72 shrink-0">
+            <div className="w-full md:w-72 shrink-0">
               <AiSearchPanel />
             </div>
           </div>
@@ -161,11 +170,11 @@ const Home = () => {
 
             {/* Active editor — centered */}
             {isActive && (
-              <div className="fixed inset-0 flex justify-center px-4 pt-6 pb-12 md:pt-5 md:pb-14 z-10 animate-scale-up pointer-events-none">
-                <div className={`flex gap-4 h-full pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full ${isMockPanelOpen ? 'max-w-[1150px]' : 'max-w-3xl'}`}>
-                  
+              <div className="fixed inset-0 flex justify-center px-2 md:px-4 pt-2 md:pt-4 pb-16 md:pb-14 z-10 animate-scale-up pointer-events-none">
+                <div className={`flex flex-col md:flex-row gap-4 h-full pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full ${isMockPanelOpen ? 'md:max-w-[1150px] max-w-3xl' : 'max-w-3xl'}`}>
+
                   {/* Main Editor */}
-                  <div className="w-full h-full max-w-3xl shrink-0">
+                  <div className="w-full h-full md:max-w-3xl shrink-0">
                     <TabEditorSlot
                       tab={tab}
                       isActive={true}
@@ -176,25 +185,55 @@ const Home = () => {
                     />
                   </div>
 
-                  {/* Mock Side Panel */}
-                  {isMockPanelOpen && (
-                    <div className="w-[300px] md:w-[350px] shrink-0 h-full bg-[#1e1e1e] rounded-[24px] shadow-xl border border-[#333] p-6 md:p-8 flex flex-col text-stone-200 animate-scale-up origin-left">
-                       <h3 className={`text-2xl font-medium mb-4 ${panelContent ? 'text-[#d97757]' : 'text-white'}`} style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>{panelContent ? 'AI Summary' : 'Mock Panel'}</h3>
-                       
-                       {panelContent ? (
-                         <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-5 overflow-y-auto editor-scrollbar text-sm text-stone-300 leading-relaxed font-serif whitespace-pre-wrap">
-                            {panelContent}
-                         </div>
-                       ) : (
-                         <>
-                           <p className="text-sm text-stone-400 leading-relaxed mb-6">This is a temporary side panel with a dark color scheme.</p>
-                           <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-4 flex items-center justify-center">
-                              <span className="text-stone-500 text-xs tracking-widest uppercase">Content Area</span>
-                           </div>
-                         </>
-                       )}
-                    </div>
-                  )}
+                  {/* Mock Side Panel (Becomes Bottom Sheet on Mobile) */}
+                  <AnimatePresence>
+                    {isMockPanelOpen && (
+                      <>
+                        {/* Mobile Backdrop for Bottom Sheet */}
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] md:hidden"
+                          onClick={() => setIsMockPanelOpen(false)}
+                        />
+
+                        <motion.div
+                          initial={{ y: window.innerWidth < 768 ? '100%' : 0, scale: window.innerWidth < 768 ? 1 : 0.95, opacity: window.innerWidth < 768 ? 1 : 0 }}
+                          animate={{ y: 0, scale: 1, opacity: 1 }}
+                          exit={{ y: window.innerWidth < 768 ? '100%' : 0, scale: window.innerWidth < 768 ? 1 : 0.95, opacity: window.innerWidth < 768 ? 1 : 0 }}
+                          transition={{ type: 'tween', ease: 'easeOut', duration: 0.25 }}
+                          drag={window.innerWidth < 768 ? "y" : false}
+                          dragConstraints={{ top: 0, bottom: 0 }}
+                          dragElastic={0.2}
+                          onDragEnd={(e, info) => {
+                            if (info.offset.y > 100 || info.velocity.y > 500) {
+                              setIsMockPanelOpen(false);
+                            }
+                          }}
+                          className="fixed md:static inset-x-0 bottom-0 md:bottom-auto md:w-[350px] shrink-0 h-[60vh] md:h-full bg-[#1e1e1e] rounded-t-[32px] md:rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] md:shadow-xl border-t md:border border-[#333] p-6 md:p-8 flex flex-col text-stone-200 origin-bottom md:origin-left z-[70]"
+                        >
+
+                          <div className="w-12 h-1.5 bg-[#444] rounded-full mx-auto mb-6 md:hidden cursor-grab active:cursor-grabbing" onClick={() => setIsMockPanelOpen(false)}></div>
+
+                          <h3 className={`text-2xl font-medium mb-4 ${panelContent ? 'text-[#d97757]' : 'text-white'}`} style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>{panelContent ? 'AI Summary' : 'Mock Panel'}</h3>
+
+                          {panelContent ? (
+                            <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-5 overflow-y-auto editor-scrollbar text-sm text-stone-300 leading-relaxed font-serif whitespace-pre-wrap">
+                              {panelContent}
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-sm text-stone-400 leading-relaxed mb-6">This is a temporary side panel with a dark color scheme.</p>
+                              <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-4 flex items-center justify-center">
+                                <span className="text-stone-500 text-xs tracking-widest uppercase">Content Area</span>
+                              </div>
+                            </>
+                          )}
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
 
                 </div>
               </div>
@@ -206,17 +245,17 @@ const Home = () => {
                 className="fixed z-0 animate-ghost-in cursor-pointer group"
                 onClick={() => openTab(tab)}
                 style={{
-                  top: '2rem',
-                  bottom: '4.5rem',
-                  width: '350px',
+                  top: window.innerWidth < 768 ? '1rem' : '2rem',
+                  bottom: window.innerWidth < 768 ? '5.5rem' : '4.5rem',
+                  width: window.innerWidth < 768 ? '90vw' : '350px',
                   ...(offset < 0
-                    ? { right: 'calc(50% + 390px)', transformOrigin: 'right center' }
-                    : { left: 'calc(50% + 390px)', transformOrigin: 'left center' }
+                    ? { right: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 390px)', transformOrigin: 'right center' }
+                    : { left: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 390px)', transformOrigin: 'left center' }
                   ),
-                  transform: 'scale(0.65)',
+                  transform: window.innerWidth < 768 ? 'scale(0.85)' : 'scale(0.65)',
                 }}
               >
-                <div className="h-full bg-[#f4eadc] opacity-30 group-hover:opacity-100 transition-all duration-150 ease-out rounded-[32px] border border-[#e8dcc8] overflow-hidden p-8 md:p-10 shadow-sm group-hover:shadow-2xl group-active:scale-[0.98]">
+                <div className="h-full bg-[#f4eadc] opacity-15 md:opacity-30 group-hover:opacity-100 transition-all duration-150 ease-out rounded-[32px] border border-[#e8dcc8] overflow-hidden p-6 md:p-10 shadow-sm group-hover:shadow-2xl group-active:scale-[0.98]">
                   <div className="text-sm font-semibold tracking-widest text-[#999] mb-4 uppercase">
                     {tab.createdAt ? new Date(tab.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '17 MAY'}
                   </div>

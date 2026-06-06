@@ -21,8 +21,9 @@ const Sidebar = forwardRef((props, ref) => {
       ref={ref}
       className={`
         fixed top-0 left-0 h-full bg-[#202124] 
-        transform transition-all duration-250 ease-in-out
-        ${isSidebarOpen ? 'w-55' : 'w-0 sm:w-16'}
+        transform transition-all duration-300 ease-in-out z-40
+        sm:translate-x-0
+        ${isSidebarOpen ? 'translate-x-0 w-55' : '-translate-x-full w-55 sm:w-16'}
       `}
     >
       <div className="py-4">
@@ -38,7 +39,7 @@ const Sidebar = forwardRef((props, ref) => {
               <div className={`w-16 flex-shrink-0 flex items-center justify-center`}>
                 {item.icon}
               </div>
-              <div className={`transition-all duration-300 overflow-hidden  ${isSidebarOpen ? 'w-23' : 'w-0'}`}>
+              <div className={`transition-all duration-300 overflow-hidden  ${isSidebarOpen ? 'w-23' : 'w-23 sm:w-0'}`}>
                 <span className="whitespace-nowrap">
                   {item.text}
                 </span>
