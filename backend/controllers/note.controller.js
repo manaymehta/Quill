@@ -1,12 +1,35 @@
 const Note = require("../models/note.model");
 const axios = require("axios");
 
+const getFastApiHeaders = () => {
+    const key = process.env.FASTAPI_INTERNAL_KEY;
+    return key ? { headers: { "x-api-key": key } } : {};
+};
+
 // even if qdrant is down, it should not affect the saving of notes
-const triggerEmbed = (noteId, userId, text) => {
+const triggerEmbed = (note, userId) => {
     const url = process.env.FASTAPI_SUMMARIZE_URL;
     if (!url) return;
-    axios.post(`${url}/embed-note`, { noteId: String(noteId), userId: String(userId), text })
-        .catch((err) => console.error(`embedding process failed for note ${noteId}:`, err.message));
+
+    // Build meaningful text for embedding, including checklist items if any
+    let embedText = note.content || "";
+    if (note.isChecklist && note.checklist && note.checklist.length > 0) {
+        const checklistStr = note.checklist.map(item => `- [${item.completed ? 'x' : ' '}] ${item.text}`).join('\n');
+        embedText = embedText ? `${embedText}\n\n${checklistStr}` : checklistStr;
+    }
+
+    // Skip embedding if note is completely blank
+    if (!embedText.trim() && !(note.title && note.title.trim())) return;
+
+    axios.post(`${url}/embed-note`, { noteId: String(note._id), userId: String(userId), title: note.title || "", text: embedText }, getFastApiHeaders())
+        .catch((err) => console.error(`embedding process failed for note ${note._id}:`, err.message));
+};
+
+const deleteEmbed = (noteId) => {
+    const url = process.env.FASTAPI_SUMMARIZE_URL;
+    if (!url) return;
+    axios.delete(`${url}/delete-embedding/${noteId}`, getFastApiHeaders())
+        .catch((err) => console.error(`Delete embedding failed for ${noteId}:`, err.message));
 };
 
 const addNote = async (req, res) => {
@@ -29,7 +52,7 @@ const addNote = async (req, res) => {
 
         await note.save();
 
-        triggerEmbed(note._id, userId, `${note.title} ${note.content}`);
+        triggerEmbed(note, userId);
 
         return res.json({
             error: false,
@@ -70,7 +93,11 @@ const editNote = async (req, res) => {
 
         await note.save();
 
-        triggerEmbed(note._id, userId, `${note.title} ${note.content}`);
+        // Only re-embed when semantic content actually changed — not for pin/tag-only edits
+        const contentChanged = title || content || checklist || typeof isChecklist !== "undefined";
+        if (contentChanged) {
+            triggerEmbed(note, userId);
+        }
 
 
         return res.json({
@@ -168,6 +195,7 @@ const deleteNote = async (req, res) => {
         }
 
         await Note.updateOne({ _id: noteId, userId: userId }, { $set: { isDeleted: true, deletedAt: new Date() } });
+        deleteEmbed(noteId);
 
         return res.json({
             error: false,
@@ -213,6 +241,7 @@ const restoreNote = async (req, res) => {
         note.isDeleted = false;
         note.deletedAt = null;
         await note.save();
+        triggerEmbed(note, userId);
 
         return res.json({
             error: false,
@@ -237,13 +266,7 @@ const permanentDeleteNote = async (req, res) => {
         }
 
         await Note.deleteOne({ _id: noteId, userId: userId });
-
-        const url = process.env.FASTAPI_SUMMARIZE_URL;
-        if (url) {
-            axios
-                .delete(`${url}/delete-embedding/${noteId}`)
-                .catch((err) => console.error(`Delete embedding failed for ${noteId}:`, err.message));
-        }
+        deleteEmbed(noteId);
 
         return res.json({
             error: false,
@@ -269,21 +292,20 @@ const semanticSearch = async (req, res) => {
     }
 
     try {
-        const notes = await Note.find({
-            userId,
-            isDeleted: { $ne: true },
-            isArchived: { $ne: true },
-        })
-
+        // FastAPI now handles context entirely from Qdrant chunk payloads.
+        // Express only needs to send query + userId.
         const response = await axios.post(`${FASTAPI_URL}/semantic-search`, {
             query: query.trim(),
             userId: String(userId),
-            notes,
-        });
+        }, getFastApiHeaders());
 
         const { answer, sourceNoteIds } = response.data;
 
-        const sourceNotes = notes.filter((n) => sourceNoteIds.includes(String(n._id)));
+        // Fetch only the matched source notes by ID for the frontend card display
+        const sourceNotes = sourceNoteIds.length
+            ? await Note.find({ _id: { $in: sourceNoteIds }, userId, isDeleted: { $ne: true } })
+            : [];
+
         return res.json({
             error: false,
             answer,
@@ -295,6 +317,7 @@ const semanticSearch = async (req, res) => {
         return res.status(500).json({ error: true, message: "Semantic search failed" });
     }
 };
+
 
 const updateNotePinned = async (req, res) => {
     const noteId = req.params.noteId;
@@ -339,6 +362,13 @@ const updateNoteArchive = async (req, res) => {
             note.isPinned = false;
         }
         await note.save();
+
+        // Keep Qdrant in sync: archived notes leave AI context, un-archived notes return
+        if (isArchived) {
+            deleteEmbed(String(noteId));
+        } else {
+            triggerEmbed(note, userId);
+        }
 
         return res.json({
             error: false,
@@ -400,7 +430,7 @@ const summarizeNote = async (req, res) => {
 
         const fastapiResponse = await axios.post(`${FASTAPI_SUMMARIZE_URL}/summarize`, {
             text: text,
-        });
+        }, getFastApiHeaders());
 
         if (fastapiResponse.data && fastapiResponse.data.summary) {
             return res.json({

@@ -27,7 +27,7 @@ export const quillTheme = EditorView.theme({
 
   // Editable content pane
   '.cm-content': {
-    caretColor: '#333',
+    caretColor: '#e85d56',
     fontFamily: 'inherit',
     padding: '0',
     // minHeight removed — let content grow naturally
@@ -53,7 +53,7 @@ export const quillTheme = EditorView.theme({
 
   // Text cursor
   '.cm-cursor': {
-    borderLeftColor: '#333',
+    borderLeftColor: '#e85d56',
     borderLeftWidth: '2px',
   },
 

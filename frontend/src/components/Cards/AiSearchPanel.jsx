@@ -1,5 +1,6 @@
 import { RiSparkling2Fill } from 'react-icons/ri';
 import { IoMdClose } from 'react-icons/io';
+import ReactMarkdown from 'react-markdown';
 import { useSearchStore } from '../../store/useSearchStore';
 
 const AiSearchPanel = () => {
@@ -7,7 +8,7 @@ const AiSearchPanel = () => {
 
     if (isSearchingAI) {
         return (
-            <div className="flex flex-col gap-3 p-6 rounded-3xl bg-[#f8ecdc] border border-gray-700 shadow-sm h-fit sticky top-8 animate-scale-up">
+            <div className="flex flex-col gap-3 p-6 rounded-3xl bg-[#f8ecdc] border border-gray-700 shadow-sm h-fit sticky top-8 max-h-[85vh] overflow-y-auto animate-scale-up">
                 <div className="flex items-center gap-2">
                     <RiSparkling2Fill className="text-[#e85d56] text-xl animate-pulse" />
                     <span className="text-base font-bold text-[#e85d56]">Ask AI</span>
@@ -31,7 +32,7 @@ const AiSearchPanel = () => {
     if (!semanticResult) return null;
 
     return (
-        <div className="flex flex-col gap-4 p-6 rounded-3xl bg-[#f8ecdc] border border-gray-700 shadow-sm h-fit sticky top-8 animate-scale-up">
+        <div className="flex flex-col gap-4 p-6 rounded-3xl bg-[#f8ecdc] border border-gray-700 shadow-sm h-fit sticky top-8 max-h-[85vh] overflow-y-auto animate-scale-up">
             {/* header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 title-area">
@@ -47,9 +48,20 @@ const AiSearchPanel = () => {
             </div>
 
             {/* answer */}
-            <p className="text-[#494949] text-sm leading-relaxed border-l-[3px] border-[#e85d56]/50 pl-4 font-medium">
-                {semanticResult.answer}
-            </p>
+            <div className="text-[#494949] text-sm leading-relaxed border-l-[3px] border-[#e85d56]/50 pl-4 font-medium">
+                <ReactMarkdown
+                    components={{
+                        p: ({node, ...props}) => <p className="mb-3 last:mb-0" data-type={node?.type} {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-bold text-stone-700" data-type={node?.type} {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3" data-type={node?.type} {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3" data-type={node?.type} {...props} />,
+                        li: ({node, ...props}) => <li className="mb-1" data-type={node?.type} {...props} />,
+                        a: ({node, ...props}) => <a className="text-[#e85d56] hover:underline" data-type={node?.type} {...props} />
+                    }}
+                >
+                    {semanticResult.answer}
+                </ReactMarkdown>
+            </div>
 
             {/* source count */}
             {semanticResult.sourceNotes?.length > 0 && (

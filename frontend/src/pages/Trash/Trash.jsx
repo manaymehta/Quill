@@ -36,6 +36,7 @@ const Trash = () => {
           onRestore={restoreNote}
           onDelete={deleteNotePermanently}
           isTrash={true}
+          allowDrag={false}
         />
       </div>
 

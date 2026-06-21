@@ -42,7 +42,7 @@ const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChe
           type="text"
           value={item.text}
           onChange={(e) => handleChecklistItemChange(index, e.target.value)}
-          className={`text-base bg-transparent outline-none w-full border-b border-transparent focus:border-black/10 transition-colors py-1 caret-[#333] cursor-text ${item.completed ? 'line-through text-stone-400' : 'text-[#333]'}`}
+          className={`text-base bg-transparent outline-none w-full border-b border-transparent focus:border-black/10 transition-colors py-1 caret-[#e85d56] cursor-text ${item.completed ? 'line-through text-stone-400' : 'text-[#333]'}`}
           placeholder='Checklist item'
         />
         <button className='cursor-pointer text-stone-400 opacity-0 group-hover:opacity-100 transition-opacity hover:text-[#e85d56]' onClick={() => removeChecklistItem(index)}>

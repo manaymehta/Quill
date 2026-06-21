@@ -3,14 +3,13 @@ import ProfileInfo from '../Cards/ProfileInfo';
 import { useNavigate } from 'react-router-dom';
 import SearchBar from '../Cards/SearchBar';
 import { FiMenu } from 'react-icons/fi';
-import { IoClose } from 'react-icons/io5';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
 
 const Navbar = ({ onSearch, handleClearSearch, onAiSearch }) => {
   const navigate = useNavigate();
   const { logout, isLoggedIn } = useAuthStore();
-  const { isNavbarVisible, isSidebarOpen, toggleSidebar } = useUIStore();
+  const { isNavbarVisible, toggleSidebar } = useUIStore();
 
   const onLogout = () => {
     logout();
@@ -24,18 +23,12 @@ const Navbar = ({ onSearch, handleClearSearch, onAiSearch }) => {
   return (
     <div className="bg-[#202124]/80 backdrop-blur-sm px-5 py-2 flex items-center justify-between z-50 fixed top-0 left-0 w-full">
       <div className="flex items-center gap-4 text-[#dd5e57]">
-        {isLoggedIn &&
-          (isSidebarOpen ? (
-            <IoClose
-              className="text-2xl cursor-pointer"
-              onClick={toggleSidebar}
-            />
-          ) : (
-            <FiMenu
-              className="text-2xl cursor-pointer"
-              onClick={toggleSidebar}
-            />
-          ))}
+        {isLoggedIn && (
+          <FiMenu
+            className="text-2xl cursor-pointer sidebar-toggle-btn"
+            onClick={toggleSidebar}
+          />
+        )}
 
         <h2 className="hidden sm:block text-3xl text-white font-bold cursor-pointer py-2">
           Quill

@@ -21,7 +21,7 @@ const Sidebar = forwardRef((props, ref) => {
       ref={ref}
       className={`
         fixed top-0 left-0 h-full bg-[#202124] 
-        transform transition-all duration-300 ease-in-out z-40
+        transform transition-all duration-200 ease-in-out z-40
         sm:translate-x-0
         ${isSidebarOpen ? 'translate-x-0 w-55' : '-translate-x-full w-55 sm:w-16'}
       `}
@@ -29,17 +29,17 @@ const Sidebar = forwardRef((props, ref) => {
       <div className="py-4">
         <h2 className="text-xl font-semibold"><br></br></h2>
       </div>
-      <ul className=" space-y-1 mt-3 text-[#e85d56] text-xl font-medium">
+      <ul className="px-1 space-y-1 mt-3 text-[#e85d56] text-xl font-medium">
         {menuItems.map((item, index) => (
           <li key={index}>
             <button
-              className={`cursor-pointer w-full flex items-center h-14 rounded-4xl  transition-colors duration-50 ${location.pathname === item.path ? 'bg-[#4c2f2e]' : ''} hover:bg-[#313337] overflow-hidden`}
+              className={`cursor-pointer w-full flex items-center h-14 rounded-4xl transition-colors duration-200 ease-in-out overflow-hidden ${location.pathname === item.path ? 'bg-[#4c2f2e]' : 'hover:bg-[#313337]'}`}
               onClick={() => navigate(item.path)}
             >
-              <div className={`w-16 flex-shrink-0 flex items-center justify-center`}>
+              <div className={`w-14 flex-shrink-0 flex items-center justify-center`}>
                 {item.icon}
               </div>
-              <div className={`transition-all duration-300 overflow-hidden  ${isSidebarOpen ? 'w-23' : 'w-23 sm:w-0'}`}>
+              <div className={`transition-all duration-200 overflow-hidden  ${isSidebarOpen ? 'w-23' : 'w-23 sm:w-0'}`}>
                 <span className="whitespace-nowrap">
                   {item.text}
                 </span>
