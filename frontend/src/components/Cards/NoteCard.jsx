@@ -24,15 +24,14 @@ const CARD_MD_COMPONENTS = {
     <code className="font-mono text-xs bg-black/5 px-1 rounded">{children}</code>
   ),
   pre: ({ children }) => <span className="block font-mono text-xs bg-black/5 px-2 py-1 rounded my-0.5">{children}</span>,
-  ul: ({ children }) => <span className="block">{children}</span>,
-  ol: ({ children }) => <span className="block">{children}</span>,
+  ul: ({ children }) => <ul className="list-disc pl-4 marker:text-[#9c9892]">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-4 marker:text-[#9c9892]">{children}</ol>,
   li: ({ children, className }) => {
     const isTask = className && className.includes('task-list-item');
-    return (
-      <span className={`block pl-2 ${isTask ? '' : "before:content-['•'] before:mr-1.5 before:text-[#9c9892]"}`}>
-        {children}
-      </span>
-    );
+    if (isTask) {
+      return <li className="list-none -ml-4 pl-0">{children}</li>;
+    }
+    return <li className="pl-1">{children}</li>;
   },
   input: ({ type, checked }) => {
     if (type === 'checkbox') {
@@ -156,7 +155,7 @@ const NoteCard = ({
           </div>
         ) : (
           <div
-            className="font-medium mt-1 md:mt-2 text-[#494949] text-[13px] md:text-sm overflow-hidden whitespace-pre-wrap break-words"
+            className="font-medium mt-1 md:mt-2 text-[#494949] text-[13px] md:text-sm overflow-hidden break-words"
             style={{
               maxHeight: '6rem',
               WebkitMaskImage: 'linear-gradient(to bottom, black 0, black 4.5rem, transparent 6rem)',
@@ -170,7 +169,7 @@ const NoteCard = ({
               </ReactMarkdown>
             ) : (
               // Lightweight off-screen placeholder — plain text, zero parse cost
-              <span>{(content || '').slice(0, PREVIEW_CHARS)}{(content || '').length > PREVIEW_CHARS ? '…' : ''}</span>
+              <span className="whitespace-pre-wrap">{(content || '').slice(0, PREVIEW_CHARS)}{(content || '').length > PREVIEW_CHARS ? '…' : ''}</span>
             )}
           </div>
         )}

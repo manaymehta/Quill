@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, memo, Fragment } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import AiSearchPanel from '../../components/Cards/AiSearchPanel';
 import useNoteOperations from '../../hooks/useNoteOperations';
@@ -114,9 +114,9 @@ const Home = () => {
             <div className="flex-1 min-w-0">
               {isSearchingAI ? (
                 <div className="flex flex-col items-center justify-center mt-20 opacity-50 animate-pulse">
-                   <p className="text-sm font-medium text-slate-400 text-center">
-                     Analyzing context across your notes...
-                   </p>
+                  <p className="text-sm font-medium text-slate-400 text-center">
+                    Analyzing context across your notes...
+                  </p>
                 </div>
               ) : (
                 <NotesGrid
@@ -130,7 +130,7 @@ const Home = () => {
                 />
               )}
             </div>
-            <div className="w-full md:w-72 shrink-0">
+            <div className="w-full md:w-1/3 shrink-0">
               <AiSearchPanel />
             </div>
           </div>
@@ -190,7 +190,7 @@ const Home = () => {
                     {isMockPanelOpen && (
                       <>
                         {/* Mobile Backdrop for Bottom Sheet */}
-                        <motion.div
+                        <Motion.div
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
@@ -198,7 +198,7 @@ const Home = () => {
                           onClick={() => setIsMockPanelOpen(false)}
                         />
 
-                        <motion.div
+                        <Motion.div
                           initial={{ y: window.innerWidth < 768 ? '100%' : 0, scale: window.innerWidth < 768 ? 1 : 0.95, opacity: window.innerWidth < 768 ? 1 : 0 }}
                           animate={{ y: 0, scale: 1, opacity: 1 }}
                           exit={{ y: window.innerWidth < 768 ? '100%' : 0, scale: window.innerWidth < 768 ? 1 : 0.95, opacity: window.innerWidth < 768 ? 1 : 0 }}
@@ -216,7 +216,7 @@ const Home = () => {
 
                           <div className="w-12 h-1.5 bg-[#444] rounded-full mx-auto mb-6 md:hidden cursor-grab active:cursor-grabbing" onClick={() => setIsMockPanelOpen(false)}></div>
 
-                          <h3 className={`text-2xl font-medium mb-4 ${panelContent ? 'text-[#d97757]' : 'text-white'}`} style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>{panelContent ? 'AI Summary' : 'Mock Panel'}</h3>
+                          <h3 className={`text-2xl font-medium mb-4 ${panelContent ? 'text-[#d97757]' : 'text-white'}`} style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>{panelContent ? 'Summary' : 'Mock Panel'}</h3>
 
                           {panelContent ? (
                             <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-5 overflow-y-auto editor-scrollbar text-sm text-stone-300 leading-relaxed font-serif whitespace-pre-wrap">
@@ -230,7 +230,7 @@ const Home = () => {
                               </div>
                             </>
                           )}
-                        </motion.div>
+                        </Motion.div>
                       </>
                     )}
                   </AnimatePresence>

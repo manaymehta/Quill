@@ -81,6 +81,7 @@ const Pinned = () => {
           onPin={updateIsPinned}
           onArchive={updateNoteArchive}
           onChecklistToggle={handleChecklistToggle}
+          allowDrag={false}
         />
       </div>
 

@@ -81,6 +81,7 @@ const Archive = () => {
                     onDelete={deleteNote}
                     onArchive={updateNoteArchive}
                     onChecklistToggle={handleChecklistToggle}
+                    allowDrag={false}
                 // onPin not passed because archived notes typically aren't pinned, or it unarchives them (handled in backend/hook)
                 />
             </div>

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import NoteCard from './NoteCard';
 import EmptyCard from './EmptyCard';
 import { useNotesStore } from '../../store/useNotesStore';
+import { useSearchStore } from '../../store/useSearchStore';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, rectSortingStrategy, } from '@dnd-kit/sortable';
 
@@ -15,9 +16,12 @@ const NotesGrid = ({
     onArchive,
     onChecklistToggle,
     onRestore,
-    isTrash
+    isTrash,
+    allowDrag = true
 }) => {
     const { reorderNotes } = useNotesStore();
+    const { searchMode, isSearchingAI, semanticResult } = useSearchStore();
+    const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
     const [activeId, setActiveId] = useState(null);
 
     const sensors = useSensors(
@@ -35,21 +39,34 @@ const NotesGrid = ({
     );
 
     // Dynamic columns for left-to-right masonry flow
-    const getColumnCount = () => {
+    const getColumnCount = useCallback(() => {
         if (typeof window === 'undefined') return 2;
+        
+        // Drop a column if the AI side panel is taking up 1/3 of the screen width
+        if (isAIMode) {
+            if (window.innerWidth >= 1280) return 3;
+            if (window.innerWidth >= 1024) return 2;
+            if (window.innerWidth >= 640) return 2;
+            return 2;
+        }
+
         if (window.innerWidth >= 1280) return 4; // xl
         if (window.innerWidth >= 1024) return 3; // lg
         if (window.innerWidth >= 640) return 2;  // sm
         return 2; // Mobile is now 2 columns like Google Keep
-    };
+    }, [isAIMode]);
 
     const [cols, setCols] = useState(getColumnCount());
 
     useEffect(() => {
         const handleResize = () => setCols(getColumnCount());
         window.addEventListener('resize', handleResize);
+        
+        // Re-evaluate immediately when AI mode toggles
+        setCols(getColumnCount());
+        
         return () => window.removeEventListener('resize', handleResize);
-    }, []);
+    }, [getColumnCount]);
 
     if (loading) {
         return <div className="p-4">Loading...</div>; // Simple loading state
@@ -75,6 +92,8 @@ const NotesGrid = ({
 
     const handleDragEnd = (event) => {
         setActiveId(null);
+        if (!allowDrag) return; // Let it snap back, do not save
+
         const { active, over } = event;
         if (!over) return;
 
