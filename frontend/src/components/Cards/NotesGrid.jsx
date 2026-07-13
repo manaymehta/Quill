@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import NoteCard from './NoteCard';
 import EmptyCard from './EmptyCard';
 import { useNotesStore } from '../../store/useNotesStore';
+import { useFoldersStore } from '../../store/useFoldersStore';
 import { useSearchStore } from '../../store/useSearchStore';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, rectSortingStrategy, } from '@dnd-kit/sortable';
@@ -12,14 +13,15 @@ const NotesGrid = ({
     emptyMessage,
     onEdit,
     onDelete,
-    onPin,
     onArchive,
     onChecklistToggle,
     onRestore,
     isTrash,
-    allowDrag = true
+    allowDrag = true,
+    hideFolderBadge = false
 }) => {
-    const { reorderNotes } = useNotesStore();
+    const { reorderNotes, reorderHomeNotes, toggleHomePin } = useNotesStore();
+    const { activeFolderId } = useFoldersStore();
     const { searchMode, isSearchingAI, semanticResult } = useSearchStore();
     const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
     const [activeId, setActiveId] = useState(null);
@@ -68,16 +70,17 @@ const NotesGrid = ({
         return () => window.removeEventListener('resize', handleResize);
     }, [getColumnCount]);
 
-    if (loading) {
-        return <div className="p-4">Loading...</div>; // Simple loading state
+    // During loading, render nothing only if we don't have cached notes to show
+    if (loading && (!notes || notes.length === 0)) {
+        return null;
     }
 
     if (!notes || notes.length === 0) {
         return (
-            <div className={`flex items-center justify-center ${isTrash ? 'mt-20' : ''}`}> {/* Keep Trash styling consistent */}
+            <div className={`flex items-center justify-center ${isTrash ? 'mt-20' : ''} w-full`}>
                 <EmptyCard message={emptyMessage} />
             </div>
-        )
+        );
     }
 
     // Distribute notes left-to-right into columns
@@ -102,7 +105,11 @@ const NotesGrid = ({
             const newIndex = notes.findIndex((n) => n._id === over.id);
 
             const newOrder = arrayMove(notes, oldIndex, newIndex);
-            reorderNotes(newOrder); // Optimistic UI update & API save
+            if (activeFolderId === null) {
+                reorderHomeNotes(newOrder);
+            } else {
+                reorderNotes(newOrder, activeFolderId);
+            }
         }
     };
 
@@ -133,17 +140,19 @@ const NotesGrid = ({
                                     date={note.createdOn}
                                     content={note.content}
                                     tags={note.tags}
-                                    isPinned={note.isPinned}
+                                    folderId={note.folderId}
+                                    showInHome={note.showInHome}
                                     isChecklist={note.isChecklist}
                                     checklist={note.checklist}
                                     isArchived={note.isArchived}
                                     isTrash={isTrash}
                                     onEdit={() => onEdit && onEdit(note)}
                                     onDelete={() => onDelete && onDelete(note)}
-                                    onPinned={() => onPin && onPin(note)}
                                     onArchive={() => onArchive && onArchive(note)}
                                     onChecklistToggle={(index) => onChecklistToggle && onChecklistToggle(note, index)}
                                     onRestore={() => onRestore && onRestore(note)}
+                                    onHomeToggle={() => toggleHomePin(note._id)}
+                                    hideFolderBadge={hideFolderBadge}
                                 />
                             ))}
                         </div>
@@ -159,12 +168,15 @@ const NotesGrid = ({
                         date={activeNote.createdOn}
                         content={activeNote.content}
                         tags={activeNote.tags}
-                        isPinned={activeNote.isPinned}
+                        folderId={activeNote.folderId}
+                        showInHome={activeNote.showInHome}
                         isChecklist={activeNote.isChecklist}
                         checklist={activeNote.checklist}
                         isArchived={activeNote.isArchived}
                         isTrash={isTrash}
                         isOverlay={true}
+                        onHomeToggle={() => toggleHomePin(activeNote._id)}
+                        hideFolderBadge={hideFolderBadge}
                     />
                 ) : null}
             </DragOverlay>
@@ -173,4 +185,3 @@ const NotesGrid = ({
 };
 
 export default NotesGrid;
-

@@ -15,8 +15,7 @@ export const useTabsStore = create((set, get) => ({
     set({ activeTabId: note._id });
   },
 
-  // creates a blank temp tab and goes to home
-  createDraftTab: () => {
+  createDraftTab: (folderId = null) => {
     const newDraftId = `draft-${Date.now()}`;
     const newTab = {
       _id: newDraftId,
@@ -26,6 +25,7 @@ export const useTabsStore = create((set, get) => ({
       isChecklist: false,
       checklist: [],
       isDraft: true,
+      folderId: folderId,
     };
     set({ openTabs: [...get().openTabs, newTab], activeTabId: newDraftId });
     return newDraftId;

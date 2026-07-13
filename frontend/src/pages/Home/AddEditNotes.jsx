@@ -1,5 +1,5 @@
 import { memo, useEffect, useState, useCallback, useRef } from 'react'
-import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar } from 'react-icons/md'
+import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import axiosInstance from '../../utils/axiosInstance';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
@@ -8,6 +8,8 @@ import { CSS } from '@dnd-kit/utilities';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { quillTheme, quillMarkdownHighlight, hideMarkdownSyntax, lineWrap } from '../../utils/markdownEditor';
+import MoveToPicker from '../../components/Cards/MoveToPicker';
+import { useFoldersStore } from '../../store/useFoldersStore';
 
 
 const EDITOR_EXTENSIONS = [
@@ -56,9 +58,12 @@ const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChe
 
 
 const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess, showToastMessage, isActive, onToggleMockPanel, onSummaryReceived }) => {
+  const { folders } = useFoldersStore();
   const [tags, setTags] = useState(noteData?.tags || []);
   const [content, setContent] = useState(noteData?.content || "");
   const [title, setTitle] = useState(noteData?.title || "");
+  const [folderId, setFolderId] = useState(noteData?.folderId || null);
+  const [showMovePicker, setShowMovePicker] = useState(false);
   const [error, setError] = useState("")
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isChecklist, setIsChecklist] = useState(noteData?.isChecklist || false);
@@ -99,10 +104,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   useEffect(() => {
     if (!onUpdateTabState) return;
     const timer = setTimeout(() => {
-      onUpdateTabState({ content, tags, isChecklist, checklist });
+      onUpdateTabState({ content, tags, isChecklist, checklist, folderId });
     }, 250);
     return () => clearTimeout(timer);
-  }, [content, tags, isChecklist, checklist]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [content, tags, isChecklist, checklist, folderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const handleAddTag = () => {
@@ -150,26 +155,28 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       // eslint-disable-next-line no-unused-vars
       const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
 
+      const payload = {
+        title,
+        content: isChecklist ? "" : content,
+        tags,
+        isChecklist,
+        checklist: cleanedChecklist,
+        folderId: folderId || null
+      };
+      
+      // If a folder is assigned, explicitly keep it in the Home stream
+      if (folderId) {
+        payload.showInHome = true;
+      }
+
       if (noteData.isDraft) {
-        const response = await axiosInstance.post("/add-note", {
-          title,
-          content: isChecklist ? "" : content,
-          tags,
-          isChecklist,
-          checklist: cleanedChecklist
-        });
+        const response = await axiosInstance.post("/add-note", payload);
         if (response.data && response.data.note) {
           onSaveSuccess();
           showToastMessage("Note added successfully", "add");
         }
       } else {
-        const response = await axiosInstance.put("/edit-note/" + noteId, {
-          title,
-          content: isChecklist ? "" : content,
-          tags,
-          isChecklist,
-          checklist: cleanedChecklist
-        });
+        const response = await axiosInstance.put("/edit-note/" + noteId, payload);
         if (response.data && response.data.note) {
           onSaveSuccess();
           showToastMessage("Note updated successfully", "edit");
@@ -181,19 +188,27 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         setError(error.response.data.message);
       }
     }
-  }, [noteData, title, content, isChecklist, tags, checklist, onSaveSuccess, showToastMessage]);
+  }, [noteData, title, content, isChecklist, tags, checklist, folderId, onSaveSuccess, showToastMessage]);
 
   const addNewNote = useCallback(async () => {
     try {
       // eslint-disable-next-line no-unused-vars
       const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
-      const response = await axiosInstance.post("/add-note", {
+      
+      const payload = {
         title,
         content,
         tags,
         isChecklist,
-        checklist: cleanedChecklist
-      });
+        checklist: cleanedChecklist,
+        folderId: folderId || null
+      };
+
+      if (folderId) {
+        payload.showInHome = true;
+      }
+
+      const response = await axiosInstance.post("/add-note", payload);
       if (response.data && response.data.note) {
         onSaveSuccess();
         showToastMessage("Note added successfully", "add");
@@ -204,7 +219,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         setError(error.response.data.message);
       }
     }
-  }, [title, content, tags, isChecklist, checklist, onSaveSuccess, showToastMessage]);
+  }, [title, content, tags, isChecklist, checklist, folderId, onSaveSuccess, showToastMessage]);
 
   const handleAddNote = useCallback(() => {
     if (!isChecklist && !content && !title) {
@@ -281,10 +296,37 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       <div className='flex-grow flex flex-col pt-8 md:pt-10 px-5 md:px-14 pb-2 overflow-y-auto editor-scrollbar'>
 
         {/* metadata area */}
-        <div className="text-[11px] md:text-[13px] font-medium tracking-widest md:tracking-[0.15em] text-stone-500 mb-2 md:mb-4 uppercase flex items-center gap-1.5 md:gap-2">
-          <span>{noteData?.createdAt ? new Date(noteData.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-          <span className="text-[16px] leading-none mb-0.5">&middot;</span>
-          <span>{type === 'edit' ? 'EDITED RECENTLY' : 'NEW NOTE'}</span>
+        <div className="text-[11px] md:text-[13px] font-medium tracking-widest md:tracking-[0.15em] text-stone-500 mb-2 md:mb-4 uppercase flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <span>{noteData?.createdAt ? new Date(noteData.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[16px] leading-none mb-0.5">&middot;</span>
+            <span>{type === 'edit' ? 'EDITED RECENTLY' : 'NEW NOTE'}</span>
+          </div>
+          {(() => {
+            const folderObj = folderId ? folders.find(f => f._id === folderId) : null;
+            return (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMovePicker(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1 bg-[#ebe0d3] hover:bg-[#e4d7c8] text-stone-600 rounded-full transition-all duration-200 text-xs md:text-sm font-sans tracking-normal normal-case border border-[#e0d2bf] shadow-sm cursor-pointer"
+                title="Change note folder"
+              >
+                {folderObj ? (
+                  <>
+                    <MdOutlineFolder style={{ color: folderObj.color }} size={16} />
+                    <span className="text-[#333] font-medium truncate max-w-[120px]">{folderObj.name}</span>
+                  </>
+                ) : (
+                  <>
+                    <MdOutlineFolder className="text-stone-400" size={16} />
+                    <span className="text-stone-500 font-normal">Add to Folder</span>
+                  </>
+                )}
+              </button>
+            );
+          })()}
         </div>
 
         {/* title area */}
@@ -480,6 +522,13 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         </div>
 
       </div>
+      <MoveToPicker
+        isOpen={showMovePicker}
+        onClose={() => setShowMovePicker(false)}
+        noteId={noteData._id}
+        currentFolderId={folderId}
+        onMove={(noteId, targetFolderId) => setFolderId(targetFolderId)}
+      />
     </div>
 
   )

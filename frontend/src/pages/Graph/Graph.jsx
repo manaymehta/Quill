@@ -119,8 +119,9 @@ const Graph = () => {
 
   useEffect(() => {
     if (fgRef.current) {
-      fgRef.current.d3Force('charge').strength(-12);
-      fgRef.current.d3Force('collide', forceCollide(19));
+      const isMobile = window.matchMedia('(max-width: 639px)').matches;
+      fgRef.current.d3Force('charge').strength(isMobile ? -6 : -12);
+      fgRef.current.d3Force('collide', forceCollide(isMobile ? 15 : 19));
     }
   }, []);
 

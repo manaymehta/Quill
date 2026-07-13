@@ -1,13 +1,30 @@
-import { useNavigate } from 'react-router-dom';
-import { MdAdd, MdHome, MdClose } from 'react-icons/md';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { MdAdd, MdHome, MdClose, MdOutlineFolder } from 'react-icons/md';
 import { useTabsStore } from '../../store/useTabsStore';
+import { useFoldersStore } from '../../store/useFoldersStore';
 
 const TabDock = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { openTabs, activeTabId, setActiveTab, closeTab, createDraftTab } = useTabsStore();
+  const { activeFolderId } = useFoldersStore();
 
   // dock is compact when any editor tab is active
   const isEditorActive = activeTabId !== 'home';
+
+  const queryParams = new URLSearchParams(location.search);
+  const isFoldersView = queryParams.get('view') === 'folders';
+  const isHomeActive = location.pathname === '/dashboard' && !isFoldersView && !isEditorActive;
+  const isFolderIconActive = location.pathname === '/dashboard' && isFoldersView && !isEditorActive;
+
+  const handleToggleView = () => {
+    setActiveTab('home');
+    if (location.pathname === '/dashboard' && isFoldersView) {
+      navigate('/dashboard');
+    } else {
+      navigate('/dashboard?view=folders');
+    }
+  };
 
   const handleHomeClick = () => {
     setActiveTab('home');
@@ -15,13 +32,19 @@ const TabDock = () => {
   };
 
   const handleNewNote = () => {
-    createDraftTab();
-    navigate('/dashboard');
+    createDraftTab(activeFolderId);
+    const isEditorPage = location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/folder/');
+    if (!isEditorPage) {
+      navigate('/dashboard');
+    }
   };
 
   const handleTabClick = (tabId) => {
     setActiveTab(tabId);
-    navigate('/dashboard');
+    const isEditorPage = location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/folder/');
+    if (!isEditorPage) {
+      navigate('/dashboard');
+    }
   };
 
   return (
@@ -33,7 +56,7 @@ const TabDock = () => {
         rounded-full border border-white/10 shadow-2xl
         transition-all duration-300 ease-in-out
         gap-1
-        ${isEditorActive ? 'px-2 py-2 bottom-3' : 'px-2 py-2 bottom-4'}
+        ${isEditorActive ? 'px-2 py-2 bottom-1.5 sm:bottom-3' : 'px-2 py-2 bottom-2 sm:bottom-4'}
       `}
     >
       {/* home button */}
@@ -43,11 +66,25 @@ const TabDock = () => {
         className={`
           shrink-0 cursor-pointer
           flex items-center justify-center rounded-full transition-all duration-200
-          ${activeTabId === 'home' ? 'bg-[#f4eadc] text-[#333] shadow-md' : 'text-stone-300 hover:bg-white/10'}
+          ${isHomeActive ? 'bg-[#f4eadc] text-[#333] shadow-md' : 'text-stone-300 hover:bg-white/10'}
           ${isEditorActive ? 'w-8 h-8' : 'w-10 h-10'}
         `}
       >
         <MdHome className={isEditorActive ? 'text-lg' : 'text-xl'} />
+      </button>
+
+      {/* folder toggle */}
+      <button
+        onClick={handleToggleView}
+        title={isFoldersView ? "View Notes" : "View Folders"}
+        className={`
+          shrink-0 cursor-pointer
+          flex items-center justify-center rounded-full transition-all duration-200
+          ${isFolderIconActive ? 'bg-[#f4eadc] text-[#333] shadow-md scale-105' : 'text-stone-300 hover:bg-white/10'}
+          ${isEditorActive ? 'w-8 h-8' : 'w-10 h-10'}
+        `}
+      >
+        <MdOutlineFolder className={isEditorActive ? 'text-lg' : 'text-xl'} />
       </button>
 
       {/* separator only when tabs exist */}

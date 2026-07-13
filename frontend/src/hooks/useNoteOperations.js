@@ -25,25 +25,6 @@ const useNoteOperations = (refreshData, showToastMessage) => {
         }
     };
 
-    const updateIsPinned = async (noteData) => {
-        const noteId = noteData._id;
-        try {
-            const response = await axiosInstance.put(
-                "/update-note-pinned/" + noteId,
-                { isPinned: !noteData.isPinned }
-            );
-
-            if (response.data && response.data.note) {
-                showToastMessage(
-                    `Note ${!noteData.isPinned ? "pinned" : "unpinned"}`
-                );
-                refreshData();
-                if (refreshData !== getAllNotes) getAllNotes();
-            }
-        } catch (error) {
-            console.log(error);
-        }
-    };
 
     const updateNoteArchive = async (noteData) => {
         const noteId = noteData._id;
@@ -114,7 +95,6 @@ const useNoteOperations = (refreshData, showToastMessage) => {
 
     return {
         deleteNote,
-        updateIsPinned,
         updateNoteArchive,
         handleChecklistToggle,
         restoreNote,

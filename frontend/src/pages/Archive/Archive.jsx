@@ -7,6 +7,7 @@ import { useNotesStore } from '../../store/useNotesStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useNavigate } from 'react-router-dom';
 import Toast from '../../components/ToastMessage/Toast';
+import { useModalStore } from '../../components/Modals/useModalStore';
 
 const Archive = () => {
     const [archivedNotes, setArchivedNotes] = useState([]);
@@ -16,6 +17,7 @@ const Archive = () => {
     const { getAllNotes } = useNotesStore();
     const { openTab } = useTabsStore();
     const navigate = useNavigate();
+    const { openConfirmModal } = useModalStore();
 
     const [toastMessageVisibility, setToastMessageVisibility] = useState({
         isShown: false,
@@ -66,6 +68,14 @@ const Archive = () => {
         handleChecklistToggle
     } = useNoteOperations(getArchivedNotes, showToastMessage, getAllNotes);
 
+    const handleDeleteNoteClick = (note) => {
+        openConfirmModal({
+            title: "Delete note?",
+            message: "This moves the note to Trash.",
+            onConfirm: () => deleteNote(note)
+        });
+    };
+
     useEffect(() => {
         getArchivedNotes();
         getUser();
@@ -78,7 +88,7 @@ const Archive = () => {
                     notes={archivedNotes}
                     emptyMessage={"No Archived Notes..."}
                     onEdit={handleEdit}
-                    onDelete={deleteNote}
+                    onDelete={handleDeleteNoteClick}
                     onArchive={updateNoteArchive}
                     onChecklistToggle={handleChecklistToggle}
                     allowDrag={false}

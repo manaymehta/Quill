@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useNavigate } from 'react-router-dom';
 import Toast from '../../components/ToastMessage/Toast';
+import { useModalStore } from '../../components/Modals/useModalStore';
 
 const Pinned = () => {
   const [allPinnedNotes, setAllPinnedNotes] = useState([]);
@@ -14,6 +15,7 @@ const Pinned = () => {
   const { getUser } = useAuthStore();
   const { openTab } = useTabsStore();
   const navigate = useNavigate();
+  const { openConfirmModal } = useModalStore();
 
   const [toastMessageVisibility, setToastMessageVisibility] = useState({
     isShown: false,
@@ -65,6 +67,14 @@ const Pinned = () => {
     handleChecklistToggle
   } = useNoteOperations(getAllPinnedNotes, showToastMessage);
 
+  const handleDeleteNoteClick = (note) => {
+    openConfirmModal({
+      title: "Delete note?",
+      message: "This moves the note to Trash.",
+      onConfirm: () => deleteNote(note)
+    });
+  };
+
   useEffect(() => {
     getAllPinnedNotes();
     getUser();
@@ -77,7 +87,7 @@ const Pinned = () => {
           notes={allPinnedNotes}
           emptyMessage={"No Pinned Notes..."}
           onEdit={handleEdit}
-          onDelete={deleteNote}
+          onDelete={handleDeleteNoteClick}
           onPin={updateIsPinned}
           onArchive={updateNoteArchive}
           onChecklistToggle={handleChecklistToggle}

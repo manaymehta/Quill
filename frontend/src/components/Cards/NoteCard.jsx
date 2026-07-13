@@ -2,9 +2,10 @@ import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import moment from 'moment';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { MdOutlinePushPin, MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever, MdOutlineArchive, MdOutlineUnarchive } from "react-icons/md";
+import { MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever, MdOutlineArchive, MdOutlineUnarchive, MdOutlineFolder } from "react-icons/md";
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { useFoldersStore } from '../../store/useFoldersStore';
 
 // ── Markdown component overrides for the compact card preview ────────────────
 // All block-level elements are rendered as <span>s so they stay inside the
@@ -59,10 +60,12 @@ const PREVIEW_CHARS = 150;
 
 const NoteCard = ({
   id, title, date, content, tags,
-  isPinned, onEdit, onDelete, onPinned,
+  onEdit, onDelete,
   isChecklist, checklist, onChecklistToggle,
   isTrash, onRestore, isArchived, onArchive,
   isOverlay, index = 0,
+  folderId,
+  hideFolderBadge = false,
 }) => {
   const {
     attributes, listeners, setNodeRef, transform, transition, isDragging,
@@ -75,6 +78,9 @@ const NoteCard = ({
     zIndex: isOverlay ? 100 : (isDragging ? 0 : 'auto'),
     opacity: isOverlay ? 1 : (isDragging ? 0.3 : 1),
   };
+
+  const { folders } = useFoldersStore();
+  const folder = folderId ? folders.find(f => f._id === folderId) : null;
 
   // ── Lazy markdown rendering via Intersection Observer ───────────────────────
   // Problem 3 fix: cards outside the viewport get a cheap plain-text preview.
@@ -122,20 +128,30 @@ const NoteCard = ({
         if (e.target.closest('.no-card-click') || isDragging || isOverlay) return;
         onEdit();
       }}
-      className={`group border w-full border-gray-700 rounded-[20px] md:rounded-3xl p-3 md:p-4 bg-[#f8ecdc] hover:bg-[#d8cec1] transition-transform transition-shadow duration-200 ease-in-out cursor-grab active:cursor-grabbing
+      className={`group border w-full border-gray-700 rounded-[20px] md:rounded-3xl p-3 md:p-4 bg-[#f8ecdc] hover:bg-[#d8cec1] transition-transform transition-shadow duration-200 ease-in-out cursor-grab active:cursor-grabbing animate-card-fade-in
         ${isOverlay ? 'shadow-2xl scale-105 opacity-95' : (isDragging ? '' : 'shadow-xs hover:shadow-xl hover:-translate-y-1')}`}
     >
       <div className="flex flex-col">
         <div className="flex justify-between items-start gap-1">
           <h4 className="text-lg md:text-2xl font-semibold tracking-tight text-[#e85d56] leading-tight">{title}</h4>
-          <MdOutlinePushPin
-            className={`icon-btn no-card-click transition-opacity duration-200 ${isPinned ? 'text-[#e85d56] opacity-100' : 'text-[#a6a6a6] opacity-0 group-hover:opacity-100'} ${isTrash || isArchived ? 'hidden' : ''} hover:text-slate-600`}
-            onClick={onPinned}
-          />
         </div>
-        <span className="font-medium text-xs text-[#9c9892] mt-1">
-          {moment(date).format("Do MMM YYYY")}
-        </span>
+        <div className="flex items-center space-x-2 mt-1">
+          <span className="font-medium text-xs text-[#9c9892]">
+            {moment(date).format("Do MMM YYYY")}
+          </span>
+
+          {/* Folder Badge */}
+          {folder && !hideFolderBadge && (
+            <div 
+              style={{ color: folder.color }}
+              className="flex items-center text-[10px] font-semibold bg-[#2a2a2c]/10 px-1.5 py-0.5 rounded-md select-none border border-transparent hover:border-gray-400 no-card-click truncate max-w-[120px]"
+              title={`In folder: ${folder.name}`}
+            >
+              <MdOutlineFolder size={11} className="mr-1 flex-shrink-0" />
+              <span className="truncate">{folder.name}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-2">
@@ -220,10 +236,11 @@ const NoteCard = ({
           )}
         </div>
       </div>
+ 
     </div>
   );
 };
-
+ 
 // ── React.memo with value-aware comparator ────────────────────────────────────
 // After every getAllNotes() call, the server returns fresh JSON so tag arrays
 // are new references even when values haven't changed, defeating === equality.
@@ -235,12 +252,13 @@ export default memo(NoteCard, (prev, next) =>
   prev.id === next.id &&
   prev.title === next.title &&
   prev.content === next.content &&
-  prev.isPinned === next.isPinned &&
+  prev.folderId === next.folderId &&
   prev.isArchived === next.isArchived &&
   prev.isChecklist === next.isChecklist &&
   prev.checklist === next.checklist &&
   JSON.stringify(prev.tags) === JSON.stringify(next.tags) &&  // what happens here is 
   prev.isTrash === next.isTrash &&
   prev.isDragging === next.isDragging &&
-  prev.isOverlay === next.isOverlay
+  prev.isOverlay === next.isOverlay &&
+  prev.hideFolderBadge === next.hideFolderBadge
 );

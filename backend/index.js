@@ -7,6 +7,7 @@ const app = express();
 
 const authRoutes = require("./routes/auth.routes");
 const noteRoutes = require("./routes/note.routes");
+const folderRoutes = require("./routes/folder.routes");
 
 connectDB();
 
@@ -20,6 +21,7 @@ app.get("/health-check", (req, res) => {
 });
 app.use("/", authRoutes);
 app.use("/", noteRoutes);
+app.use("/", folderRoutes);
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

@@ -1,23 +1,35 @@
 import { useRef, useEffect } from "react";
 import Sidebar from "../Sidebar/Sidebar";
 import Navbar from "../Navbar/Navbar";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
+import ConfirmModal from "../Modals/ConfirmModal";
+import FolderDeleteModal from "../Modals/FolderDeleteModal";
 import { useUIStore } from "../../store/useUIStore";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useNotesStore } from "../../store/useNotesStore";
 import { useTabsStore } from "../../store/useTabsStore";
 import TabDock from "../TabDock/TabDock";
+import { useModalStore } from "../Modals/useModalStore";
 
 const MainLayout = () => {
     const { isSidebarOpen, toggleSidebar } = useUIStore();
     const { getUser } = useAuthStore();
     const { getAllNotes, onSearch, handleClearSearch, onAiSearch } = useNotesStore();
     const { activeTabId } = useTabsStore();
+    const location = useLocation();
+    const { closeConfirmModal, closeFolderDeleteModal } = useModalStore();
 
     const isEditorActive = activeTabId !== 'home';
 
     const sidebarRef = useRef(null);
     const canvasRef = useRef(null);
+
+    // Unify scroll restoration across page transitions & close modals
+    useEffect(() => {
+        window.scrollTo(0, 0);
+        closeConfirmModal();
+        closeFolderDeleteModal();
+    }, [location.pathname, location.search, closeConfirmModal, closeFolderDeleteModal]);
 
     useEffect(() => {
         getAllNotes();
@@ -142,7 +154,7 @@ const MainLayout = () => {
 
     return (
         <div className="relative min-h-screen">
-            <canvas ref={canvasRef} className="fixed top-0 left-0 w-full h-screen "></canvas>
+            <canvas ref={canvasRef} className="fixed top-0 left-0 w-full h-screen pointer-events-none"></canvas>
             <div className="relative z-10">
                 {!isEditorActive && (
                     <Navbar
@@ -165,6 +177,8 @@ const MainLayout = () => {
             </div>
 
             <TabDock />
+            <ConfirmModal />
+            <FolderDeleteModal />
         </div>
     );
 };

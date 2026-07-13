@@ -1,5 +1,19 @@
 const Note = require("../models/note.model");
+const Folder = require("../models/folder.model");
 const axios = require("axios");
+
+const findNearestLivingAncestor = async (startParentId, userId) => {
+    if (!startParentId) return null;
+    const allFolders = await Folder.find({ userId });
+    let currentId = startParentId;
+    while (currentId) {
+        const folder = allFolders.find(f => f._id.toString() === currentId);
+        if (!folder) return null;
+        if (!folder.isDeleted) return folder._id.toString();
+        currentId = folder.parentId;
+    }
+    return null;
+};
 
 const getFastApiHeaders = () => {
     const key = process.env.FASTAPI_INTERNAL_KEY;
@@ -33,7 +47,7 @@ const deleteEmbed = (noteId) => {
 };
 
 const addNote = async (req, res) => {
-    const { title, content, tags, isChecklist, checklist } = req.body;
+    const { title, content, tags, isChecklist, checklist, folderId, showInHome } = req.body;
     const userId = req.user._id;
 
     if (!title && !content && (!checklist || checklist.length === 0)) {
@@ -41,6 +55,18 @@ const addNote = async (req, res) => {
     }
 
     try {
+        const targetFolderId = folderId || null;
+        let homeOrderIndex = 0;
+        if (!targetFolderId) {
+            const maxNote = await Note.findOne({
+                userId,
+                isDeleted: { $ne: true },
+                isArchived: { $ne: true },
+                $or: [{ folderId: null }, { showInHome: true }]
+            }).sort({ homeOrderIndex: -1 }).select("homeOrderIndex");
+            homeOrderIndex = maxNote ? maxNote.homeOrderIndex + 1 : 0;
+        }
+
         const note = new Note({
             title: title || " ",
             content: content || " ",
@@ -48,6 +74,9 @@ const addNote = async (req, res) => {
             isChecklist: isChecklist || false,
             checklist: checklist || [],
             userId,
+            folderId: targetFolderId,
+            showInHome: typeof showInHome !== "undefined" ? showInHome : false,
+            homeOrderIndex,
         });
 
         await note.save();
@@ -57,20 +86,20 @@ const addNote = async (req, res) => {
         return res.json({
             error: false,
             note,
-            message: "Note created succesfully",
+            message: "Note created successfully",
         });
     } catch (error) {
         console.error(error);
         return res.json({
             error: true,
-            message: error,
+            message: error.message || error,
         });
     }
 };
 
 const editNote = async (req, res) => {
     const noteId = req.params.noteId;
-    const { title, content, tags, isPinned, isChecklist, checklist } = req.body;
+    const { title, content, tags, isChecklist, checklist, folderId, showInHome } = req.body;
     const userId = req.user._id;
 
     try {
@@ -83,13 +112,16 @@ const editNote = async (req, res) => {
         if (title) note.title = title;
         if (content) note.content = content;
         if (tags) note.tags = tags;
-        if (typeof isPinned !== "undefined") {
-            note.isPinned = isPinned;
-        }
         if (typeof isChecklist !== "undefined") {
             note.isChecklist = isChecklist;
         }
         if (checklist) note.checklist = checklist;
+        if (typeof folderId !== "undefined") {
+            note.folderId = folderId;
+        }
+        if (typeof showInHome !== "undefined") {
+            note.showInHome = showInHome;
+        }
 
         await note.save();
 
@@ -137,15 +169,23 @@ const getAllNotes = async (req, res) => {
     }
 };
 
-const getPinnedNotes = async (req, res) => {
+const getHomeNotes = async (req, res) => {
     const userId = req.user._id;
 
     try {
-        const notes = await Note.find({ userId: userId, isPinned: true, isDeleted: { $ne: true }, isArchived: { $ne: true } });
+        const notes = await Note.find({
+            userId: userId,
+            isDeleted: { $ne: true },
+            isArchived: { $ne: true },
+            $or: [{ folderId: null }, { showInHome: true }]
+        }).sort({
+            homeOrderIndex: 1,
+            createdOn: -1,
+        });
 
         return res.json({
             error: false,
-            message: "All notes retrieved successfully",
+            message: "Home notes retrieved successfully",
             notes,
         });
     } catch (error) {
@@ -156,6 +196,31 @@ const getPinnedNotes = async (req, res) => {
         });
     }
 };
+
+const getFolderNotes = async (req, res) => {
+    const userId = req.user._id;
+    const { folderIds } = req.query;
+
+    try {
+        let filter = { userId, isDeleted: { $ne: true }, isArchived: { $ne: true } };
+        if (folderIds && folderIds !== "all") {
+            const ids = typeof folderIds === "string" ? folderIds.split(",") : folderIds;
+            filter.folderId = { $in: ids };
+        }
+
+        const notes = await Note.find(filter).sort({ orderIndex: 1, createdOn: -1 });
+
+        return res.json({
+            error: false,
+            message: "Folder notes retrieved successfully",
+            notes,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
 
 const getArchivedNotes = async (req, res) => {
     const userId = req.user._id;
@@ -319,32 +384,6 @@ const semanticSearch = async (req, res) => {
 };
 
 
-const updateNotePinned = async (req, res) => {
-    const noteId = req.params.noteId;
-    const { isPinned } = req.body;
-    const userId = req.user._id;
-
-    try {
-        const note = await Note.findOne({ userId: userId, _id: noteId });
-
-        if (!note) {
-            return res.status(404).json({ error: true, message: "Note not found" });
-        }
-
-        note.isPinned = isPinned;
-        await note.save();
-
-        return res.json({
-            error: false,
-            message: "Note unpinned",
-            note,
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
-};
-
 const updateNoteArchive = async (req, res) => {
     const noteId = req.params.noteId;
     const { isArchived } = req.body;
@@ -358,8 +397,14 @@ const updateNoteArchive = async (req, res) => {
         }
 
         note.isArchived = isArchived;
-        if (isArchived) {
-            note.isPinned = false;
+        if (!isArchived) {
+            // Un-archiving: verify folder is alive, otherwise bubble up
+            if (note.folderId) {
+                const folder = await Folder.findOne({ _id: note.folderId, userId, isDeleted: false });
+                if (!folder) {
+                    note.folderId = await findNearestLivingAncestor(note.folderId, userId);
+                }
+            }
         }
         await note.save();
 
@@ -383,17 +428,27 @@ const updateNoteArchive = async (req, res) => {
 
 const searchNotes = async (req, res) => {
     const userId = req.user._id;
-    const { query } = req.query;
+    const { query, scope, folderIds } = req.query;
 
     if (!query) {
         return res.status(400).json({ error: true, message: "Search query is required" });
     }
 
     try {
+        let folderFilter = {};
+        if (scope === "home") {
+            folderFilter = { $or: [{ folderId: null }, { showInHome: true }] };
+        } else if (folderIds) {
+            const ids = typeof folderIds === "string" ? folderIds.split(",") : folderIds;
+            folderFilter = { folderId: { $in: ids } };
+        }
+
         const matchingNote = await Note.find({
             userId: userId,
             $or: [{ title: { $regex: new RegExp(query, "i") } }, { content: { $regex: new RegExp(query, "i") } }],
             isDeleted: { $ne: true },
+            isArchived: { $ne: true },
+            ...folderFilter,
         });
 
         return res.json({
@@ -496,20 +551,140 @@ const reorderNotes = async (req, res) => {
     }
 };
 
+const moveNote = async (req, res) => {
+    const noteId = req.params.noteId;
+    const { targetFolderId } = req.body;
+    const userId = req.user._id;
+
+    try {
+        const note = await Note.findOne({ _id: noteId, userId });
+        if (!note) {
+            return res.status(404).json({ error: true, message: "Note not found" });
+        }
+
+        const wasOnHome = note.folderId === null || note.showInHome === true;
+        note.folderId = targetFolderId || null;
+
+        if (!targetFolderId) {
+            note.showInHome = false;
+        } else if (wasOnHome) {
+            note.showInHome = true;
+        }
+
+        await note.save();
+        return res.json({ error: false, note, message: "Note moved successfully" });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
+const toggleHomePin = async (req, res) => {
+    const noteId = req.params.noteId;
+    const userId = req.user._id;
+
+    try {
+        const note = await Note.findOne({ _id: noteId, userId });
+        if (!note) {
+            return res.status(404).json({ error: true, message: "Note not found" });
+        }
+
+        if (note.folderId === null) {
+            return res.status(400).json({ error: true, message: "Unfiled notes are always shown on Home" });
+        }
+
+        note.showInHome = !note.showInHome;
+        await note.save();
+
+        return res.json({
+            error: false,
+            message: note.showInHome ? "Added to Home" : "Removed from Home",
+            note,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
+const reorderHomeNotes = async (req, res) => {
+    const { updates } = req.body;
+    const userId = req.user._id;
+
+    if (!updates || !Array.isArray(updates)) {
+        return res.status(400).json({ error: true, message: "Updates array is required" });
+    }
+
+    try {
+        const bulkOps = updates.map((update) => ({
+            updateOne: {
+                filter: { _id: update._id, userId },
+                update: { $set: { homeOrderIndex: update.homeOrderIndex } }
+            }
+        }));
+
+        if (bulkOps.length > 0) {
+            await Note.bulkWrite(bulkOps);
+        }
+
+        return res.json({ error: false, message: "Home notes reordered successfully" });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
+const restoreTrashNote = async (req, res) => {
+    const noteId = req.params.noteId;
+    const userId = req.user._id;
+
+    try {
+        const note = await Note.findOne({ _id: noteId, userId, isDeleted: true });
+        if (!note) {
+            return res.status(404).json({ error: true, message: "Trashed note not found" });
+        }
+
+        if (note.folderId) {
+            const folder = await Folder.findOne({ _id: note.folderId, userId, isDeleted: false });
+            if (!folder) {
+                note.folderId = await findNearestLivingAncestor(note.folderId, userId);
+            }
+        }
+
+        note.isDeleted = false;
+        note.deletedAt = null;
+        note.deletedBatchId = null;
+        await note.save();
+
+        triggerEmbed(note, userId);
+
+        return res.json({ error: false, note, message: "Note restored successfully" });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
 module.exports = {
     addNote,
     editNote,
     getAllNotes,
-    getPinnedNotes,
+    getHomeNotes,
+    getFolderNotes,
     deleteNote,
     getTrashNotes,
     restoreNote,
+    restoreTrashNote,
     permanentDeleteNote,
-    updateNotePinned,
     searchNotes,
     summarizeNote,
     updateNoteArchive,
     getArchivedNotes,
     semanticSearch,
     reorderNotes,
+    reorderHomeNotes,
+    moveNote,
+    toggleHomePin,
+    deleteEmbed,
+    triggerEmbed,
 };
