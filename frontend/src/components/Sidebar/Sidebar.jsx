@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useUIStore } from '../../store/useUIStore';
 import { MdOutlineStickyNote2, MdOutlineDelete, MdOutlineAutoGraph, MdOutlineArchive, MdAdd, MdOutlineFolder } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
+import { useTabsStore } from '../../store/useTabsStore';
 import FolderTree from './FolderTree';
 
 const Sidebar = forwardRef((props, ref) => {
@@ -72,7 +73,15 @@ const Sidebar = forwardRef((props, ref) => {
               }`}
               onClick={() => {
                 useFoldersStore.getState().setActiveFolderId(null);
-                navigate(item.path);
+                const isActive = item.path === '/dashboard'
+                  ? location.pathname === '/dashboard' && !location.search.includes('view=folders')
+                  : location.pathname === item.path;
+                
+                if (isActive) {
+                  useTabsStore.getState().setActiveTab('home');
+                } else {
+                  navigate(item.path);
+                }
                 if (window.matchMedia('(max-width: 639px)').matches && isSidebarOpen) {
                   useUIStore.getState().toggleSidebar();
                 }
@@ -96,7 +105,12 @@ const Sidebar = forwardRef((props, ref) => {
             <div
               className={`cursor-pointer w-full flex items-center h-14 rounded-4xl transition-colors duration-200 ease-in-out overflow-hidden ${isFoldersActive ? 'bg-[#4c2f2e]' : 'hover:bg-[#313337]'}`}
               onClick={() => {
-                navigate('/dashboard?view=folders');
+                const targetPath = '/dashboard?view=folders';
+                if (location.pathname === '/dashboard' && location.search.includes('view=folders')) {
+                  useTabsStore.getState().setActiveTab('home');
+                } else {
+                  navigate(targetPath);
+                }
                 if (window.matchMedia('(max-width: 639px)').matches && isSidebarOpen) {
                   useUIStore.getState().toggleSidebar();
                 } else {
@@ -165,7 +179,7 @@ const Sidebar = forwardRef((props, ref) => {
                 >
                   {showAddFolderInput && (
                     <div className="flex items-center h-10 px-2 rounded-lg bg-[#282a2d] mb-1">
-                      <MdOutlineFolder size={20} className="text-[#e85d56] mr-2 flex-shrink-0" />
+                      <MdOutlineFolder size={20} style={{ color: '#f4eadc' }} className="mr-2 flex-shrink-0" />
                       <input
                         autoFocus
                         type="text"

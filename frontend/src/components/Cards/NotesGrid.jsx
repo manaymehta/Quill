@@ -20,7 +20,7 @@ const NotesGrid = ({
     allowDrag = true,
     hideFolderBadge = false
 }) => {
-    const { reorderNotes, reorderHomeNotes, toggleHomePin } = useNotesStore();
+    const { reorderNotes, reorderHomeNotes } = useNotesStore();
     const { activeFolderId } = useFoldersStore();
     const { searchMode, isSearchingAI, semanticResult } = useSearchStore();
     const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
@@ -137,11 +137,9 @@ const NotesGrid = ({
                                     index={noteIndex}
                                     id={note._id}
                                     title={note.title}
-                                    date={note.createdOn}
                                     content={note.content}
                                     tags={note.tags}
                                     folderId={note.folderId}
-                                    showInHome={note.showInHome}
                                     isChecklist={note.isChecklist}
                                     checklist={note.checklist}
                                     isArchived={note.isArchived}
@@ -151,7 +149,6 @@ const NotesGrid = ({
                                     onArchive={() => onArchive && onArchive(note)}
                                     onChecklistToggle={(index) => onChecklistToggle && onChecklistToggle(note, index)}
                                     onRestore={() => onRestore && onRestore(note)}
-                                    onHomeToggle={() => toggleHomePin(note._id)}
                                     hideFolderBadge={hideFolderBadge}
                                 />
                             ))}
@@ -165,17 +162,14 @@ const NotesGrid = ({
                     <NoteCard
                         id={activeNote._id}
                         title={activeNote.title}
-                        date={activeNote.createdOn}
                         content={activeNote.content}
                         tags={activeNote.tags}
                         folderId={activeNote.folderId}
-                        showInHome={activeNote.showInHome}
                         isChecklist={activeNote.isChecklist}
                         checklist={activeNote.checklist}
                         isArchived={activeNote.isArchived}
                         isTrash={isTrash}
                         isOverlay={true}
-                        onHomeToggle={() => toggleHomePin(activeNote._id)}
                         hideFolderBadge={hideFolderBadge}
                     />
                 ) : null}

@@ -131,7 +131,7 @@ const deleteFolder = async (req, res) => {
 };
 
 const reorderFolders = async (req, res) => {
-    const { parentId, updates } = req.body;
+    const { updates } = req.body;
     const userId = req.user._id;
 
     if (!updates || !Array.isArray(updates)) {
@@ -141,7 +141,7 @@ const reorderFolders = async (req, res) => {
     try {
         const bulkOps = updates.map(update => ({
             updateOne: {
-                filter: { _id: update._id, userId, parentId: parentId || null },
+                filter: { _id: update._id, userId },
                 update: { $set: { orderIndex: update.orderIndex } }
             }
         }));

@@ -2,11 +2,13 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { forceCollide } from 'd3-force';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useNotesStore } from '../../store/useNotesStore';
+import { useUIStore } from '../../store/useUIStore';
 
 // Mock data removed
 
 const Graph = () => {
   const fgRef = useRef();
+  const { isSidebarOpen } = useUIStore();
   const { allNotes } = useNotesStore();
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [hoveredNode, setHoveredNode] = useState(null);
@@ -15,6 +17,29 @@ const Graph = () => {
   const [selectedTag, setSelectedTag] = useState(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [animTick, setAnimTick] = useState(0);
+
+  const [dimensions, setDimensions] = useState({
+    width: typeof window !== 'undefined' ? window.innerWidth - (window.innerWidth < 640 ? 0 : isSidebarOpen ? 220 : 64) : 800,
+    height: typeof window !== 'undefined' ? window.innerHeight - (window.innerWidth < 640 ? 60 : 72) - 70 : 600
+  });
+
+  // Track the actual visible container size efficiently
+  useEffect(() => {
+    const handleResize = () => {
+      const isMobile = window.innerWidth < 640;
+      const sidebarWidth = !isMobile ? (isSidebarOpen ? 220 : 64) : 0;
+      const navbarHeight = isMobile ? 60 : 72;
+      setDimensions({
+        width: window.innerWidth - sidebarWidth,
+        height: window.innerHeight - navbarHeight - 70
+      });
+    };
+
+    handleResize(); // Sync dimensions immediately on mount or sidebar toggle
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isSidebarOpen]);
 
   // Stores animated values per node: { [nodeId]: { opacity, radius } }
   const nodeAnimRef = useRef({});
@@ -122,6 +147,10 @@ const Graph = () => {
       const isMobile = window.matchMedia('(max-width: 639px)').matches;
       fgRef.current.d3Force('charge').strength(isMobile ? -6 : -12);
       fgRef.current.d3Force('collide', forceCollide(isMobile ? 15 : 19));
+      // In D3 coordinate space, (0, 0) corresponds exactly to the center of the canvas viewport
+      fgRef.current.d3Force('center')
+        .x(0)
+        .y(0);
     }
   }, []);
 
@@ -174,6 +203,8 @@ const Graph = () => {
     <div className={'bg-[#202124b5]'} style={{ width: '100%', height: 'calc(100vh - 70px)', overflow: 'hidden', position: 'relative', cursor: hoveredNode ? 'pointer' : 'default' }}>
       <ForceGraph2D
         ref={fgRef}
+        width={dimensions.width}
+        height={dimensions.height}
         extraRenderTick={animTick}
         graphData={graphData}
         nodeLabel={node => node.connectingTags.join(', ')}

@@ -1,5 +1,4 @@
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
-import moment from 'moment';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever, MdOutlineArchive, MdOutlineUnarchive, MdOutlineFolder } from "react-icons/md";
@@ -59,7 +58,7 @@ const PREVIEW_CHARS = 150;
 
 
 const NoteCard = ({
-  id, title, date, content, tags,
+  id, title, content, tags,
   onEdit, onDelete,
   isChecklist, checklist, onChecklistToggle,
   isTrash, onRestore, isArchived, onArchive,
@@ -135,29 +134,12 @@ const NoteCard = ({
         <div className="flex justify-between items-start gap-1">
           <h4 className="text-lg md:text-2xl font-semibold tracking-tight text-[#e85d56] leading-tight">{title}</h4>
         </div>
-        <div className="flex items-center space-x-2 mt-1">
-          <span className="font-medium text-xs text-[#9c9892]">
-            {moment(date).format("Do MMM YYYY")}
-          </span>
-
-          {/* Folder Badge */}
-          {folder && !hideFolderBadge && (
-            <div 
-              style={{ color: folder.color }}
-              className="flex items-center text-[10px] font-semibold bg-[#2a2a2c]/10 px-1.5 py-0.5 rounded-md select-none border border-transparent hover:border-gray-400 no-card-click truncate max-w-[120px]"
-              title={`In folder: ${folder.name}`}
-            >
-              <MdOutlineFolder size={11} className="mr-1 flex-shrink-0" />
-              <span className="truncate">{folder.name}</span>
-            </div>
-          )}
-        </div>
       </div>
 
-      <div className="mt-2">
+      <div className="mt-1">
         {isChecklist ? (
-          <div className="flex flex-col gap-2 mt-2">
-            {checklist.slice(0, 3).map((item, index) => (
+          <div className="flex flex-col gap-2 mt-1">
+            {checklist.slice(0, 5).map((item, index) => (
               <div key={index} className="flex items-center gap-2">
                 <div className="no-card-click" onClick={(e) => { e.stopPropagation(); onChecklistToggle(index); }}>
                   {item.completed ? <MdCheckBox /> : <MdCheckBoxOutlineBlank />}
@@ -165,17 +147,17 @@ const NoteCard = ({
                 <span className={item.completed ? 'line-through text-slate-500' : ''}>{item.text}</span>
               </div>
             ))}
-            {checklist.length > 3 && (
-              <span className="text-xs text-slate-500">...and {checklist.length - 3} more items.</span>
+            {checklist.length > 5 && (
+              <span className="text-xs text-slate-500">...and {checklist.length - 5} more items.</span>
             )}
           </div>
         ) : (
           <div
             className="font-medium mt-1 md:mt-2 text-[#494949] text-[13px] md:text-sm overflow-hidden break-words"
             style={{
-              maxHeight: '6rem',
-              WebkitMaskImage: 'linear-gradient(to bottom, black 0, black 4.5rem, transparent 6rem)',
-              maskImage: 'linear-gradient(to bottom, black 0, black 4.5rem, transparent 6rem)',
+              maxHeight: '9rem',
+              WebkitMaskImage: 'linear-gradient(to bottom, black 0, black 8rem, transparent 9rem)',
+              maskImage: 'linear-gradient(to bottom, black 0, black 8rem, transparent 9rem)',
             }}
           >
             {hasBeenVisible ? (
@@ -191,16 +173,29 @@ const NoteCard = ({
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-2 mt-2">
+      <div className="flex items-center justify-between gap-2 mt-1">
         <div 
-          className="flex items-center gap-1 flex-1 overflow-hidden"
+          className="flex items-center gap-2 flex-grow overflow-hidden"
           style={{
             WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
             maskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
           }}
         >
+          {/* Folder Badge with subtle matching tinted background */}
+          {folder && !hideFolderBadge && (
+            <div 
+              style={{ color: folder.color, backgroundColor: `${folder.color}15` }}
+              className="flex items-center text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full select-none no-card-click truncate max-w-[120px] shrink-0"
+              title={`In folder: ${folder.name}`}
+            >
+              <MdOutlineFolder size={13} className="mr-1 flex-shrink-0" />
+              <span className="truncate">{folder.name}</span>
+            </div>
+          )}
+
+          {/* Tags with soft neutral background */}
           {tags.map((item) => (
-            <span key={item} className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-[#e3d7c9] text-gray-700 font-medium shrink-0">
+            <span key={item} className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-black/5 text-stone-600 font-semibold shrink-0 select-none no-card-click">
               #{item}
             </span>
           ))}

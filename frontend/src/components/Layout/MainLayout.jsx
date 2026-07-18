@@ -15,7 +15,7 @@ const MainLayout = () => {
     const { isSidebarOpen, toggleSidebar } = useUIStore();
     const { getUser } = useAuthStore();
     const { getAllNotes, onSearch, handleClearSearch, onAiSearch } = useNotesStore();
-    const { activeTabId } = useTabsStore();
+    const { activeTabId, setActiveTab } = useTabsStore();
     const location = useLocation();
     const { closeConfirmModal, closeFolderDeleteModal } = useModalStore();
 
@@ -23,13 +23,21 @@ const MainLayout = () => {
 
     const sidebarRef = useRef(null);
     const canvasRef = useRef(null);
+    const isEditorActiveRef = useRef(isEditorActive);
 
-    // Unify scroll restoration across page transitions & close modals
+    useEffect(() => {
+        isEditorActiveRef.current = isEditorActive;
+    }, [isEditorActive]);
+
+    // Unify scroll restoration, modal closing, and resetting editor tabs to home across page transitions
     useEffect(() => {
         window.scrollTo(0, 0);
         closeConfirmModal();
         closeFolderDeleteModal();
-    }, [location.pathname, location.search, closeConfirmModal, closeFolderDeleteModal]);
+        if (!location.state?.preserveTab) {
+            setActiveTab('home');
+        }
+    }, [location.pathname, location.search, location.state, closeConfirmModal, closeFolderDeleteModal, setActiveTab]);
 
     useEffect(() => {
         getAllNotes();
@@ -100,6 +108,12 @@ const MainLayout = () => {
         };
 
         const animate = () => {
+            if (isEditorActiveRef.current) {
+                // Pause calculations and drawing to conserve power while editing notes
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+
             // Clear the logical canvas
             ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
@@ -151,6 +165,18 @@ const MainLayout = () => {
             cancelAnimationFrame(animationFrameId);
         };
     }, []);
+
+    // Lock body scrolling when the editor is active to prevent outer scrollbars
+    useEffect(() => {
+        if (isEditorActive) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [isEditorActive]);
 
     return (
         <div className="relative min-h-screen">

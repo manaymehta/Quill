@@ -152,7 +152,7 @@
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.22));
   border: none !important;
   transition: background-color 300ms ease, filter 300ms ease;
-  animation: cardFadeIn 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: cardFadeIn 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes cardFadeIn {
@@ -167,7 +167,7 @@
 }
 
 .animate-card-fade-in {
-  animation: cardFadeIn 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: cardFadeIn 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .physical-folder-card::before,
@@ -207,4 +207,19 @@
 
 .physical-folder-card:hover::after {
   background-color: #e3d7c9;
+}
+
+@keyframes contextMenuPop {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.context-menu-pop {
+  animation: contextMenuPop 120ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

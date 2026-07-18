@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react'
 import { useNotesStore } from '../../store/useNotesStore';
 import NotesGrid from '../../components/Cards/NotesGrid';
-import FolderCard from '../../components/Cards/FolderCard';
-import useNoteOperations from '../../hooks/useNoteOperations';
+import FoldersGrid from '../../components/Cards/FoldersGrid';
 import Toast from '../../components/ToastMessage/Toast';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
+import { MdOutlineFolder, MdOutlineStickyNote2 } from 'react-icons/md';
 
 const Trash = () => {
-  const { trashNotes, getTrashNotes } = useNotesStore();
+  const { trashNotes, getTrashNotes, restoreNote, deleteNotePermanent } = useNotesStore();
   const { folders, getFolders, trashFolders, getTrashFolders, restoreFolder, deleteFolderPermanent } = useFoldersStore();
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState({ message: '', type: '' });
@@ -29,18 +29,21 @@ const Trash = () => {
     getFolders();
   }, [getTrashNotes, getTrashFolders, getFolders]);
 
-  const {
-    restoreNote,
-    deleteNotePermanently
-  } = useNoteOperations(getTrashNotes, showToastMsg);
+  const handleRestoreNote = async (note) => {
+    await restoreNote(note._id);
+    showToastMsg("Note restored successfully", "success");
+  };
 
-  const handleDeleteNoteClick = (note) => {
+  const handleDeleteNotePermanentClick = (note) => {
     openConfirmModal({
       title: "Delete permanently?",
       message: "This cannot be undone. Are you sure you want to permanently delete this note?",
       confirmLabel: "Delete forever",
       variant: "danger",
-      onConfirm: () => deleteNotePermanently(note)
+      onConfirm: async () => {
+        await deleteNotePermanent(note._id);
+        showToastMsg("Note permanently deleted", "delete");
+      }
     });
   };
 
@@ -73,7 +76,7 @@ const Trash = () => {
 
   return (
     <>
-      <div className="p-4 md:p-6">
+      <div className="pb-24 px-2 md:px-4">
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center min-h-[50vh] text-center">
             <p className="text-stone-400 text-sm">
@@ -84,33 +87,30 @@ const Trash = () => {
           <div className="space-y-8">
             {trashFolders.length > 0 && (
               <div>
-                <h2 className="text-xs font-semibold text-stone-500 tracking-wider uppercase mb-3">
+                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-4 flex items-center">
+                  <MdOutlineFolder className="mr-2" size={16} />
                   Folders
-                </h2>
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-4 animate-fade-in">
-                  {trashFolders.map(folder => (
-                    <FolderCard
-                      key={folder._id}
-                      folder={folder}
-                      isTrash={true}
-                      onRestore={handleRestoreFolder}
-                      onDeletePermanent={handleDeleteFolderPermanentClick}
-                    />
-                  ))}
-                </div>
+                </h3>
+                <FoldersGrid
+                  folders={trashFolders}
+                  isTrash={true}
+                  onRestore={handleRestoreFolder}
+                  onDeletePermanent={handleDeleteFolderPermanentClick}
+                />
               </div>
             )}
 
             {individualTrashNotes.length > 0 && (
               <div>
-                <h2 className="text-xs font-semibold text-stone-500 tracking-wider uppercase mb-3">
+                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-4 flex items-center">
+                  <MdOutlineStickyNote2 className="mr-2" size={16} />
                   Notes
-                </h2>
+                </h3>
                 <NotesGrid
                   notes={individualTrashNotes}
                   emptyMessage=""
-                  onRestore={restoreNote}
-                  onDelete={handleDeleteNoteClick}
+                  onRestore={handleRestoreNote}
+                  onDelete={handleDeleteNotePermanentClick}
                   isTrash={true}
                   allowDrag={false}
                 />

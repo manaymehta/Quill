@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, memo, Fragment } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import AiSearchPanel from '../../components/Cards/AiSearchPanel';
@@ -10,7 +10,7 @@ import { useNotesStore } from '../../store/useNotesStore';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
-import FolderCard from '../../components/Cards/FolderCard';
+import FoldersGrid from '../../components/Cards/FoldersGrid';
 import Breadcrumb from '../../components/Cards/Breadcrumb';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { MdFolderOpen, MdOutlineFolder, MdOutlineStickyNote2, MdAdd, MdFolder } from 'react-icons/md';
@@ -52,6 +52,7 @@ TabEditorSlot.displayName = 'TabEditorSlot';
 const FolderView = () => {
   const { folderId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { getViewNotes, isViewLoading, refreshActiveView } = useNotesStore();
   // Read notes directly from the per-folder cache — no stale cross-view data
@@ -59,13 +60,18 @@ const FolderView = () => {
   const isLoading = isViewLoading(folderId);
   const { searchMode, semanticResult, isSearchingAI, setSearchScope, setScopeFolderIds } = useSearchStore();
   const { openTabs, activeTabId, openTab, closeTab } = useTabsStore();
-  const { folders, editFolder, getSubtreeIds, setActiveFolderId, createFolder } = useFoldersStore();
+  const { folders, editFolder, getSubtreeIds, setActiveFolderId } = useFoldersStore();
 
   const [showToast, setShowToast] = useState(false);
   const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
   const [panelContent, setPanelContent] = useState("");
   const [isAddingFolder, setIsAddingFolder] = useState(false);
-  const [newFolderNameInline, setNewFolderNameInline] = useState('');
+
+  // Reset inline folder creation state on route/navigation changes
+  useEffect(() => {
+    setIsAddingFolder(false);
+  }, [location]);
+
   const { openFolderDeleteModal, openConfirmModal } = useModalStore();
   const [toastMessageVisibility, setToastMessageVisibility] = useState({
     isShown: false,
@@ -176,159 +182,86 @@ const FolderView = () => {
   return (
     <div className={`relative ${isEditorOpen ? 'h-screen overflow-hidden' : 'min-h-0'}`}>
       {/* Main Content Area */}
-      <div className={isEditorOpen ? 'hidden' : 'pb-24 px-2 md:px-4'}>
-        <div className="mb-4">
-          <Breadcrumb folderId={folderId} />
-        </div>
-        {isAIMode ? (
-          <div className="flex flex-col-reverse md:flex-row gap-4">
-            <div className="flex-1 min-w-0">
-              {isSearchingAI ? (
-                <div className="flex flex-col items-center justify-center mt-20 opacity-50 animate-pulse">
-                  <p className="text-sm font-medium text-slate-400 text-center">
-                    Analyzing context across your notes...
-                  </p>
-                </div>
-              ) : (
-                <NotesGrid
-                  notes={semanticResult?.sourceNotes || []}
-                  loading={isLoading}
-                  emptyMessage="No matching notes found."
-                  onEdit={handleEdit}
-                  onDelete={handleDeleteNoteClick}
-                  onArchive={updateNoteArchive}
-                  onChecklistToggle={handleChecklistToggle}
-                />
-              )}
-            </div>
-            <div className="w-full md:w-1/3 shrink-0">
-              <AiSearchPanel />
-            </div>
+      {!isEditorOpen && (
+        <div className="pb-24 px-2 md:px-4">
+          <div className="mb-4">
+            <Breadcrumb folderId={folderId} />
           </div>
-        ) : (
-          <div>
-            <div className="space-y-8">
-              <div>
-                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-4 flex items-center">
-                  <MdOutlineFolder className="mr-2" size={16} />
-                  Folders
-                </h3>
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-4">
-                  {subfolders.map(folder => (
-                    <FolderCard
-                      key={folder._id}
-                      folder={folder}
-                      onRename={handleRenameFolder}
-                      onColorChange={handleColorChangeFolder}
-                      onDelete={handleDeleteFolder}
-                    />
-                  ))}
-                  {isAddingFolder ? (
-                    <div 
-                      key="inline-add-folder-card"
-                      className="group relative physical-folder-card p-5 select-none flex flex-col h-[150px] justify-between"
-                    >
-                      <div 
-                        className="p-3 rounded-xl inline-flex items-center justify-center shadow-sm self-start"
-                        style={{ backgroundColor: '#e85d5620', color: '#e85d56' }}
-                      >
-                        <MdFolder size={26} />
-                      </div>
-                      <div className="mt-auto relative z-10">
-                        <input
-                          autoFocus
-                          type="text"
-                          placeholder="Folder name..."
-                          value={newFolderNameInline}
-                          onChange={(e) => setNewFolderNameInline(e.target.value)}
-                          onBlur={async () => {
-                            if (newFolderNameInline.trim()) {
-                              await createFolder(newFolderNameInline.trim(), folderId);
-                            }
-                            setIsAddingFolder(false);
-                            setNewFolderNameInline('');
-                          }}
-                          onKeyDown={async (e) => {
-                            if (e.key === 'Enter') {
-                              if (newFolderNameInline.trim()) {
-                                  await createFolder(newFolderNameInline.trim(), folderId);
-                              }
-                              setIsAddingFolder(false);
-                              setNewFolderNameInline('');
-                            } else if (e.key === 'Escape') {
-                              setIsAddingFolder(false);
-                              setNewFolderNameInline('');
-                            }
-                          }}
-                          className="bg-[#2a2b2e] text-white text-md outline-none border border-[#e85d56] px-3 py-1.5 rounded-lg w-full font-medium shadow-inner"
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div 
-                        key="new-folder-placeholder-card"
-                        onClick={() => setIsAddingFolder(true)}
-                        className="group relative cursor-pointer transition-transform duration-300 select-none flex flex-col h-[150px] items-center justify-center hover:-translate-y-1 mt-6"
-                    >
-                        {/* SVG draws a single continuous dashed folder tab outline */}
-                        <svg
-                            className="absolute w-full pointer-events-none"
-                            style={{ height: '174px', top: '-24px', left: 0, overflow: 'visible' }}
-                            viewBox="0 0 320 174"
-                            preserveAspectRatio="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <path
-                                className="transition-colors duration-300 group-hover:stroke-[#5a5f63]"
-                                d="M 0,158 L 0,16 A 16,16 0 0 1 16,0 L 136,0 C 152,0 160,24 176,24 L 304,24 A 16,16 0 0 1 320,40 L 320,158 A 16,16 0 0 1 304,174 L 16,174 A 16,16 0 0 1 0,158 Z"
-                                fill="none"
-                                stroke="#3c4043"
-                                strokeWidth="2"
-                                strokeDasharray="6 4"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                vectorEffect="non-scaling-stroke"
-                            />
-                        </svg>
-                        <div className="relative z-10 p-4 rounded-full bg-[#3c4043]/30 text-gray-400 group-hover:text-[#e85d56] group-hover:bg-[#e85d56]/10 transition-colors duration-300">
-                            <MdAdd size={32} />
-                        </div>
-                        <span className="relative z-10 mt-3 text-sm font-medium text-gray-500 group-hover:text-gray-300 transition-colors">New Folder</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {directNotes.length > 0 && (
-                <div>
-                  <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-4 flex items-center">
-                    <MdOutlineStickyNote2 className="mr-2" size={16} />
-                    Notes
-                  </h3>
+          {isAIMode ? (
+            <div className="flex flex-col-reverse md:flex-row gap-4">
+              <div className="flex-1 min-w-0">
+                {isSearchingAI ? (
+                  <div className="flex flex-col items-center justify-center mt-20 opacity-50 animate-pulse">
+                    <p className="text-sm font-medium text-slate-400 text-center">
+                      Analyzing context across your notes...
+                    </p>
+                  </div>
+                ) : (
                   <NotesGrid
-                    notes={directNotes}
+                    notes={semanticResult?.sourceNotes || []}
                     loading={isLoading}
-                    emptyMessage="No notes in this folder."
+                    emptyMessage="No matching notes found."
                     onEdit={handleEdit}
                     onDelete={handleDeleteNoteClick}
                     onArchive={updateNoteArchive}
                     onChecklistToggle={handleChecklistToggle}
-                    hideFolderBadge={true}
+                  />
+                )}
+              </div>
+              <div className="w-full md:w-1/3 shrink-0">
+                <AiSearchPanel />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="space-y-8">
+                <div>
+                  <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-4 flex items-center">
+                    <MdOutlineFolder className="mr-2" size={16} />
+                    Folders
+                  </h3>
+                  <FoldersGrid
+                    folders={subfolders}
+                    parentId={folderId}
+                    onRename={handleRenameFolder}
+                    onColorChange={handleColorChangeFolder}
+                    onDelete={handleDeleteFolder}
+                    isAddingFolder={isAddingFolder}
+                    setIsAddingFolder={setIsAddingFolder}
                   />
                 </div>
-              )}
 
-              {!isLoading && subfolders.length === 0 && directNotes.length === 0 && (
-                <div className="flex flex-col items-center justify-center mt-20 opacity-50">
-                  <p className="text-sm font-medium text-slate-400 text-center">
-                    This folder is empty.
-                  </p>
-                </div>
-              )}
+                {directNotes.length > 0 && (
+                  <div>
+                    <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-4 flex items-center">
+                      <MdOutlineStickyNote2 className="mr-2" size={16} />
+                      Notes
+                    </h3>
+                    <NotesGrid
+                      notes={directNotes}
+                      loading={isLoading}
+                      emptyMessage="No notes in this folder."
+                      onEdit={handleEdit}
+                      onDelete={handleDeleteNoteClick}
+                      onArchive={updateNoteArchive}
+                      onChecklistToggle={handleChecklistToggle}
+                      hideFolderBadge={true}
+                    />
+                  </div>
+                )}
+
+                {!isLoading && subfolders.length === 0 && directNotes.length === 0 && (
+                  <div className="flex flex-col items-center justify-center mt-20 opacity-50">
+                    <p className="text-sm font-medium text-slate-400 text-center">
+                      This folder is empty.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {openTabs.map((tab, index) => {
         const offset = isEditorOpen ? index - activeIndex : Infinity;

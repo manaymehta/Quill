@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useUIStore } from '../../store/useUIStore';
+import { useTabsStore } from '../../store/useTabsStore';
 import { useModalStore } from '../Modals/useModalStore';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdEdit, MdDelete, MdPalette, MdOutlineFolder, MdOutlineFolderOpen } from 'react-icons/md';
+import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdEdit, MdDelete, MdPalette, MdFolder, MdFolderOpen } from 'react-icons/md';
 
 const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'];
 
@@ -17,6 +18,7 @@ const rowVariants = {
 
 const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { isSidebarOpen } = useUIStore();
     const { folders, editFolder } = useFoldersStore();
     const { openFolderDeleteModal } = useModalStore();
@@ -48,7 +50,12 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
             <div
                 onDoubleClick={(e) => { e.stopPropagation(); setIsEditing(true); }}
                 onClick={() => {
-                    navigate(`/folder/${folder._id}`);
+                    const targetPath = `/folder/${folder._id}`;
+                    if (location.pathname === targetPath) {
+                        useTabsStore.getState().setActiveTab('home');
+                    } else {
+                        navigate(targetPath);
+                    }
                     if (window.matchMedia('(max-width: 639px)').matches && isSidebarOpen) {
                         useUIStore.getState().toggleSidebar();
                     }
@@ -64,8 +71,8 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
             >
                 <div className="flex items-center justify-between w-full min-w-0 px-2">
                     <div className="flex items-center min-w-0 flex-1">
-                        <span style={{ color: folder.color }} className={`mr-2 flex-shrink-0 ${!isSidebarOpen && 'mx-auto flex justify-center w-full'}`}>
-                            {expanded ? <MdOutlineFolderOpen size={isSidebarOpen ? 20 : 24} /> : <MdOutlineFolder size={isSidebarOpen ? 20 : 24} />}
+                        <span style={{ color: '#f4eadc' }} className={`mr-2 flex-shrink-0 ${!isSidebarOpen && 'mx-auto flex justify-center w-full'}`}>
+                            {expanded ? <MdFolderOpen size={isSidebarOpen ? 20 : 24} /> : <MdFolder size={isSidebarOpen ? 20 : 24} />}
                         </span>
                         {isSidebarOpen && (
                             <div className="flex-1 min-w-0">
@@ -99,36 +106,64 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
             {contextMenu && createPortal(
                 <>
                     <div
-                        className="fixed inset-0 z-[100]"
+                        className="fixed inset-0 z-[9998]"
                         onClick={() => setContextMenu(null)}
                         onMouseDown={(e) => e.stopPropagation()}
                         onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
                     />
                     <div
-                        style={{ top: contextMenu.y, left: contextMenu.x }}
-                        className="fixed z-[101] bg-[#2a2b2e] border border-stone-700/60 p-1.5 rounded-lg shadow-xl text-stone-200 text-xs flex flex-col gap-0.5 min-w-[130px]"
+                        style={(() => {
+                            const menuWidth = 160;
+                            const menuHeight = 130;
+                            let finalX = contextMenu.x;
+                            let finalY = contextMenu.y;
+                            let originX = 'left';
+                            let originY = 'top';
+
+                            if (contextMenu.x + menuWidth > window.innerWidth) {
+                                finalX = Math.max(8, contextMenu.x - menuWidth);
+                                originX = 'right';
+                            }
+                            if (contextMenu.y + menuHeight > window.innerHeight) {
+                                finalY = Math.max(8, contextMenu.y - menuHeight);
+                                originY = 'bottom';
+                            }
+
+                            return {
+                                position: 'fixed',
+                                left: `${finalX}px`,
+                                top: `${finalY}px`,
+                                transformOrigin: `${originY} ${originX}`,
+                                zIndex: 9999,
+                            };
+                        })()}
+                        className="bg-[#1e1e20]/96 backdrop-blur-xl border border-white/[0.08] py-1.5 rounded-lg shadow-2xl flex flex-col min-w-[160px] context-menu-pop"
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
                     >
+                        <div className="px-3 pb-1 pt-0.5 text-[10px] font-semibold text-stone-500 uppercase tracking-widest select-none">
+                            Folder Options
+                        </div>
                         <button
                             onClick={(e) => { e.stopPropagation(); setContextMenu(null); setIsEditing(true); }}
-                            className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-[#3d3f43] rounded cursor-pointer transition-colors text-left w-full text-stone-300 hover:text-white"
+                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-md cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.09] hover:text-white text-stone-300"
                         >
-                            <MdEdit size={14} />
+                            <MdEdit size={13} />
                             Rename
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); setContextMenu(null); setShowColorPicker(true); }}
-                            className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-[#3d3f43] rounded cursor-pointer transition-colors text-left w-full text-stone-300 hover:text-white"
+                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-md cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.09] hover:text-white text-stone-300"
                         >
-                            <MdPalette size={14} />
-                            Change Color
+                            <MdPalette size={13} />
+                            Color
                         </button>
+                        <div className="h-[1px] bg-white/[0.06] mx-0 my-1" />
                         <button
                             onClick={(e) => { e.stopPropagation(); setContextMenu(null); openFolderDeleteModal(folder); }}
-                            className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-red-500/10 hover:text-red-400 rounded cursor-pointer transition-colors text-left w-full text-stone-400"
+                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-md cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-red-500/15 hover:text-red-400 text-red-400"
                         >
-                            <MdDelete size={14} />
+                            <MdDelete size={13} />
                             Delete
                         </button>
                     </div>
