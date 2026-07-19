@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import axiosInstance from '../utils/axiosInstance';
 import { useSearchStore } from './useSearchStore';
+import { useFoldersStore } from './useFoldersStore';
 
 
 export const useNotesStore = create((set, get) => ({
@@ -175,7 +176,6 @@ export const useNotesStore = create((set, get) => ({
 
   // Refreshes the currently active view (used after saves / deletes)
   refreshActiveView: async () => {
-    const { useFoldersStore } = await import('./useFoldersStore');
     const { activeFolderId, getSubtreeIds } = useFoldersStore.getState();
     if (activeFolderId === null) {
       await get().getHomeNotes();

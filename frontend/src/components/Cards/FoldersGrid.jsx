@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { MdFolder, MdAdd } from 'react-icons/md';
@@ -21,10 +21,12 @@ const FoldersGrid = ({
     const [newFolderNameInline, setNewFolderNameInline] = useState('');
     const [activeId, setActiveId] = useState(null);
 
+    const sortableItems = useMemo(() => (folders || []).map(f => f._id), [folders]);
+
     const sensors = useSensors(
         useSensor(MouseSensor, {
             activationConstraint: {
-                distance: 8,
+                distance: 3,
             },
         }),
         useSensor(TouchSensor, {
@@ -73,7 +75,7 @@ const FoldersGrid = ({
 
     // Inner grid content
     const gridContent = (
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-4">
+        <div className={`grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-4 ${activeId ? 'is-dragging-active' : ''}`}>
             {folders.map(folder => (
                 <FolderCard
                     key={folder._id}
@@ -168,7 +170,7 @@ const FoldersGrid = ({
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
         >
-            <SortableContext items={folders.map(f => f._id)} strategy={rectSortingStrategy}>
+            <SortableContext items={sortableItems} strategy={rectSortingStrategy}>
                 {gridContent}
             </SortableContext>
 

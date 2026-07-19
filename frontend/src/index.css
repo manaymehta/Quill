@@ -5,10 +5,13 @@
 @layer base {
   html {
     font-family: "Poppins", "sans-serif";
+    scrollbar-gutter: stable;
   }
 
   body {
     background-color: #202124;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
   }
 }
 
@@ -86,6 +89,10 @@
 }
 
 /* Elegant Scrollbar for the editor */
+.editor-scrollbar {
+  scrollbar-gutter: stable;
+}
+
 .editor-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
@@ -151,23 +158,50 @@
   margin-top: 1.5rem;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.22));
   border: none !important;
-  transition: background-color 300ms ease, filter 300ms ease;
-  animation: cardFadeIn 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: transform 150ms cubic-bezier(0.25, 1, 0.5, 1), filter 150ms cubic-bezier(0.25, 1, 0.5, 1), opacity 300ms ease-out;
+  animation: cardFadeIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes cardFadeIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    translate: 0 8px;
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    translate: 0 0px;
   }
 }
 
 .animate-card-fade-in {
-  animation: cardFadeIn 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: cardFadeIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.note-card {
+  position: relative;
+  transition: transform 150ms cubic-bezier(0.25, 1, 0.5, 1), box-shadow 150ms cubic-bezier(0.25, 1, 0.5, 1), opacity 300ms ease-out;
+}
+
+/* Dimming overlay on hover */
+.note-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.25, 1, 0.5, 1);
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 10;
+}
+
+.note-card-wrapper:hover:not(:has(.no-card-click:hover)):not(.is-dragging-active) .note-card {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.15);
+}
+
+.note-card-wrapper:hover:not(:has(.no-card-click:hover)):not(.is-dragging-active) .note-card::after {
+  opacity: 1;
 }
 
 .physical-folder-card::before,
@@ -178,7 +212,6 @@
   left: 0;
   width: 50%;
   height: 1.5rem;
-  transition: background-color 300ms ease;
 }
 
 .physical-folder-card::before {
@@ -188,7 +221,6 @@
   background: transparent;
   border-bottom-left-radius: 1.5rem;
   box-shadow: -1rem 0.75rem 0 #f8ecdc;
-  transition: box-shadow 300ms ease;
 }
 
 .physical-folder-card::after {
@@ -197,16 +229,24 @@
   border-radius: 1rem 1.5rem 0 0;
 }
 
-.physical-folder-card:hover {
-  background-color: #e3d7c9;
+.folder-card-wrapper:hover:not(:has(.no-card-click:hover)):not(.is-dragging-active) .physical-folder-card {
+  transform: translateY(-4px);
+  filter: drop-shadow(0 12px 20px rgba(0, 0, 0, 0.25)) brightness(0.913);
 }
 
-.physical-folder-card:hover::before {
-  box-shadow: -1rem 0.75rem 0 #e3d7c9;
+/* Custom scrollbar styling for horizontal previews in editor */
+.previews-scrollbar::-webkit-scrollbar {
+  height: 5px;
 }
-
-.physical-folder-card:hover::after {
-  background-color: #e3d7c9;
+.previews-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.previews-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+.previews-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
 }
 
 @keyframes contextMenuPop {

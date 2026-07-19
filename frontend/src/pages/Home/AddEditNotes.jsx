@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, useCallback, useRef } from 'react'
+import { memo, useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import axiosInstance from '../../utils/axiosInstance';
@@ -74,6 +74,130 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   // Ref to the CodeMirror editor view for programmatic focus
   const cmViewRef = useRef(null);
 
+  const [linkPreviews, setLinkPreviews] = useState(noteData?.linkPreviews || []);
+  const fetchingUrls = useRef(new Set());
+  const contentRef = useRef(content);
+
+  useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
+
+  const fetchPreview = useCallback(async (url) => {
+    fetchingUrls.current.add(url);
+    try {
+      const response = await axiosInstance.post("/notes/extract-preview", { url });
+      if (response.data && response.data.preview) {
+        setLinkPreviews(prev => {
+          // Double check if the URL still exists in the latest content before adding it
+          const currentUrls = contentRef.current.match(/(https?:\/\/[^\s]+)/g) || [];
+          const currentCleanUrls = currentUrls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
+          if (!currentCleanUrls.includes(url)) return prev;
+          if (prev.some(p => p.url === url)) return prev;
+          return [...prev, response.data.preview];
+        });
+      }
+    } catch (err) {
+      console.error("Failed to fetch link preview for", url, err);
+      // Tier 3 Fallback: Scrape failed completely. Construct a local fallback.
+      setLinkPreviews(prev => {
+        const currentUrls = contentRef.current.match(/(https?:\/\/[^\s]+)/g) || [];
+        const currentCleanUrls = currentUrls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
+        if (!currentCleanUrls.includes(url)) return prev;
+        if (prev.some(p => p.url === url)) return prev;
+        
+        let host = url;
+        try {
+          host = new URL(url).hostname;
+        } catch {
+          // ignore
+        }
+        const siteName = host.startsWith("www.") ? host.substring(4) : host;
+        
+        return [...prev, {
+          url,
+          title: url,
+          description: "",
+          image: "",
+          siteName: siteName
+        }];
+      });
+    } finally {
+      fetchingUrls.current.delete(url);
+    }
+  }, []);
+
+  const getFinalPreviewsBeforeSave = useCallback(async (currentContent, currentPreviews) => {
+    if (isChecklist) return [];
+    const urls = currentContent.match(/(https?:\/\/[^\s]+)/g) || [];
+    const cleanUrls = urls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
+    const uniqueUrls = [...new Set(cleanUrls)];
+
+    const missingUrls = uniqueUrls.filter(url => 
+      !currentPreviews.some(p => p.url === url) &&
+      !fetchingUrls.current.has(url)
+    );
+
+    if (missingUrls.length === 0) return currentPreviews;
+
+    const fetched = await Promise.all(
+      missingUrls.map(async (url) => {
+        try {
+          const response = await axiosInstance.post("/notes/extract-preview", { url });
+          return response.data?.preview || null;
+        } catch {
+          // Tier 3 Fallback on save: generate fallback object
+          try {
+            const host = new URL(url).hostname;
+            const siteName = host.startsWith("www.") ? host.substring(4) : host;
+            return {
+              url,
+              title: url,
+              description: "",
+              image: "",
+              siteName: siteName
+            };
+          } catch {
+            return {
+              url,
+              title: url,
+              description: "",
+              image: "",
+              siteName: url
+            };
+          }
+        }
+      })
+    );
+
+    const validFetched = fetched.filter(Boolean);
+    const updated = [...currentPreviews, ...validFetched];
+    setLinkPreviews(updated); // Sync local state too
+    return updated;
+  }, [isChecklist]);
+
+  useEffect(() => {
+    if (isChecklist) {
+      setLinkPreviews(prev => prev.length > 0 ? [] : prev);
+      return;
+    }
+    const urls = content.match(/(https?:\/\/[^\s]+)/g) || [];
+    const cleanUrls = urls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
+    const uniqueUrls = [...new Set(cleanUrls)];
+
+    // Sync linkPreviews state to only keep previews of URLs that actually still exist in content
+    setLinkPreviews(prev => {
+      const filtered = prev.filter(p => uniqueUrls.includes(p.url));
+      if (filtered.length !== prev.length) {
+        return filtered;
+      }
+      return prev;
+    });
+  }, [content, isChecklist]);
+
+  const handleRemoveLinkPreview = useCallback((urlToRemove) => {
+    setLinkPreviews(prev => prev.filter(p => p.url !== urlToRemove));
+  }, []);
+
 
   // Ensure all checklist items have a unique ID for dnd-kit sorting
   useEffect(() => {
@@ -104,10 +228,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   useEffect(() => {
     if (!onUpdateTabState) return;
     const timer = setTimeout(() => {
-      onUpdateTabState({ content, tags, isChecklist, checklist, folderId });
+      onUpdateTabState({ content, tags, isChecklist, checklist, folderId, linkPreviews });
     }, 250);
     return () => clearTimeout(timer);
-  }, [content, tags, isChecklist, checklist, folderId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [content, tags, isChecklist, checklist, folderId, linkPreviews]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const handleAddTag = () => {
@@ -151,7 +275,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const editNote = useCallback(async () => {
     const noteId = noteData._id;
     try {
-      // POST for temp draft ID, PUT for existing note
+      // Fetch missing previews before compiling payload to ensure we save latest preview changes
+      const finalPreviews = await getFinalPreviewsBeforeSave(content, linkPreviews);
       // eslint-disable-next-line no-unused-vars
       const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
 
@@ -161,7 +286,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         tags,
         isChecklist,
         checklist: cleanedChecklist,
-        folderId: folderId || null
+        folderId: folderId || null,
+        linkPreviews: finalPreviews
       };
       
       // If a folder is assigned, explicitly keep it in the Home stream
@@ -188,10 +314,11 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         setError(error.response.data.message);
       }
     }
-  }, [noteData, title, content, isChecklist, tags, checklist, folderId, onSaveSuccess, showToastMessage]);
+  }, [noteData, title, content, isChecklist, tags, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getFinalPreviewsBeforeSave]);
 
   const addNewNote = useCallback(async () => {
     try {
+      const finalPreviews = await getFinalPreviewsBeforeSave(content, linkPreviews);
       // eslint-disable-next-line no-unused-vars
       const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
       
@@ -201,7 +328,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         tags,
         isChecklist,
         checklist: cleanedChecklist,
-        folderId: folderId || null
+        folderId: folderId || null,
+        linkPreviews: finalPreviews
       };
 
       if (folderId) {
@@ -219,7 +347,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         setError(error.response.data.message);
       }
     }
-  }, [title, content, tags, isChecklist, checklist, folderId, onSaveSuccess, showToastMessage]);
+  }, [title, content, tags, isChecklist, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getFinalPreviewsBeforeSave]);
 
   const handleAddNote = useCallback(() => {
     if (!isChecklist && !content && !title) {
@@ -288,6 +416,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   };
 
   const activeChecklistItem = activeChecklistId ? checklist.find(i => i.id === activeChecklistId) : null;
+
+  const checklistItems = useMemo(() => checklist.map(item => item.id), [checklist]);
 
   return (
     <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] rounded-[24px] shadow-sm border border-[#e8dcc8] overflow-hidden relative'>
@@ -385,7 +515,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
               )}
 
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-                <SortableContext items={checklist.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                <SortableContext items={checklistItems} strategy={verticalListSortingStrategy}>
                   {checklist.map((item, index) => (
                     <SortableChecklistItem
                       key={item.id}
@@ -426,7 +556,15 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             </div>
           ) : (
             /* ── CodeMirror live-preview markdown editor ── */
-            <div className="flex-grow pr-2 text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75]">
+             <div 
+               className="flex-grow pr-2 text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75]"
+               onPaste={(event) => {
+                 const pastedText = event.clipboardData?.getData('text') || '';
+                 const urls = pastedText.match(/(https?:\/\/[^\s]+)/g) || [];
+                 const cleanUrls = urls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
+                 cleanUrls.forEach(url => fetchPreview(url));
+               }}
+             >
               <CodeMirror
                 value={content}
                 onChange={(val) => {
@@ -450,6 +588,43 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                   searchKeymap: false,
                 }}
               />
+            </div>
+          )}
+
+          {/* Link Previews list */}
+          {linkPreviews.length > 0 && (
+            <div className="flex flex-col gap-2 mt-4 border-t border-black/5 pt-4 shrink-0 font-sans">
+              <span className="text-[10px] md:text-xs font-semibold text-stone-400 tracking-wider uppercase">Link Previews ({linkPreviews.length})</span>
+              <div className="flex gap-2.5 overflow-x-auto pb-2 previews-scrollbar py-0.5">
+                {linkPreviews.map((preview, idx) => (
+                  <div 
+                    key={idx} 
+                    className="group/preview relative bg-[#ebe0d3]/60 hover:bg-[#e4d7c8]/80 border border-[#e0d2bf] rounded-xl p-3 flex gap-3 items-center w-[250px] sm:w-[280px] shrink-0 min-w-0"
+                  >
+                    {preview.image && (
+                      <img 
+                        src={preview.image} 
+                        alt={preview.title} 
+                        className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                      />
+                    )}
+                    <div className="flex-grow min-w-0 pr-4">
+                      <h5 className="text-xs md:text-sm font-semibold text-[#333] truncate leading-snug">{preview.title || preview.url}</h5>
+                      <span className="text-[10px] md:text-xs text-stone-500 font-medium truncate block mt-0.5 uppercase tracking-wide">{preview.siteName}</span>
+                    </div>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveLinkPreview(preview.url);
+                      }}
+                      className="absolute top-2 right-2 p-0.5 rounded-full text-stone-400 hover:text-[#e85d56] transition-colors cursor-pointer"
+                      title="Remove preview"
+                    >
+                      <MdClose size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

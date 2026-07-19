@@ -20,12 +20,14 @@ const {
     moveNote,
     toggleHomePin,
 } = require("../controllers/note.controller");
+const { extractLinkPreview } = require("../controllers/scraper.controller");
 const { authenticateToken } = require("../middleware/auth.middleware");
 
 const router = express.Router();
 
 router.post("/add-note", authenticateToken, addNote);
 router.put("/edit-note/:noteId", authenticateToken, editNote);
+router.post("/notes/extract-preview", authenticateToken, extractLinkPreview);
 router.get("/get-all-notes", authenticateToken, getAllNotes);
 router.get("/get-home-notes", authenticateToken, getHomeNotes);
 router.get("/get-folder-notes", authenticateToken, getFolderNotes);

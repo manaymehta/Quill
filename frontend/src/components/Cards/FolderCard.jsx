@@ -18,6 +18,8 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [coords, setCoords] = useState(null);
 
+    const [shouldAnimate, setShouldAnimate] = useState(true);
+
     const {
         attributes, listeners, setNodeRef, transform, transition, isDragging,
     } = useSortable({ id: folder._id, disabled: isTrash || isOverlay });
@@ -26,7 +28,7 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
         transform: CSS.Translate.toString(transform),
         transition,
         zIndex: isOverlay ? 100 : (isDragging ? 0 : 'auto'),
-        opacity: isOverlay ? 1 : (isDragging ? 0.3 : 1),
+        opacity: 1,
     };
 
     const showDropdown = activeDropdownFolderId === folder._id;
@@ -97,108 +99,115 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
                 setCoords({ x: e.clientX, y: e.clientY });
                 setActiveDropdownFolderId(folder._id);
             }}
-            /* Lift card z-index to z-40 when dropdown is open to prevent overlap from cards/tabs below it */
-            className={`group relative physical-folder-card p-5 cursor-pointer transition-[transform,box-shadow] duration-300 select-none flex flex-col h-[150px] justify-between hover:shadow-xl hover:-translate-y-1 ${showDropdown ? 'z-40 shadow-xl' : 'z-10'
-                } ${isOverlay ? 'cursor-grabbing pointer-events-none' : ''}`}
+            className={`folder-card-wrapper relative ${showDropdown ? 'z-40' : 'z-10'} ${isDragging ? 'is-dragging-active' : ''}`}
         >
-            {/* Inner background absolute elements container */}
-            <div className="absolute inset-0 rounded-r-2xl rounded-bl-2xl overflow-hidden pointer-events-none">
-                {/* Watermark Icon */}
-                <MdFolder
-                    size={120}
-                    className="absolute -bottom-8 -right-6 opacity-[0.04] text-stone-900 rotate-12 pointer-events-none transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110"
-                />
-            </div>
-
-            {/* Header: Icon + Edit actions */}
-            <div className={`flex justify-between items-start relative ${showDropdown ? 'z-20' : 'z-10'}`}>
-                <div
-                    className="p-3 rounded-xl inline-flex items-center justify-center shadow-sm transition-transform group-hover:scale-110 duration-300"
-                    style={{ backgroundColor: `${folder.color}20`, color: folder.color }}
-                >
-                    <MdFolder size={26} />
+            <div
+                onAnimationEnd={() => setShouldAnimate(false)}
+                className={`group physical-folder-card p-5 cursor-pointer select-none flex flex-col h-[150px] justify-between
+                    ${showDropdown ? 'shadow-xl' : ''}
+                    ${shouldAnimate && !isOverlay ? 'animate-card-fade-in' : ''}
+                    ${isDragging ? 'opacity-30' : 'opacity-100'}
+                    ${isOverlay ? 'cursor-grabbing pointer-events-none' : ''}`}
+            >
+                {/* Inner background absolute elements container */}
+                <div className="absolute inset-0 rounded-r-2xl rounded-bl-2xl overflow-hidden pointer-events-none">
+                    {/* Watermark Icon */}
+                    <MdFolder
+                        size={120}
+                        className="absolute -bottom-8 -right-6 opacity-[0.04] text-stone-900 rotate-12 pointer-events-none transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110"
+                    />
                 </div>
 
-                {/* Options Menu Button (compact, mobile-friendly) */}
-                {!isOverlay && (
-                    <div className="relative no-card-click">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (showDropdown) {
-                                    setActiveDropdownFolderId(null);
-                                    setCoords(null);
-                                } else {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    // Align menu below the 3-dots button, sticking to its right edge (160px width offset)
-                                    setCoords({ x: rect.right - 160, y: rect.bottom + 8 });
-                                    setActiveDropdownFolderId(folder._id);
-                                }
-                            }}
-                            className="p-1.5 text-stone-600 hover:text-stone-950 rounded-full hover:bg-stone-400 cursor-pointer transition-colors"
-                            title="Options"
-                        >
-                            <MdMoreVert size={20} />
-                        </button>
+                {/* Header: Icon + Edit actions */}
+                <div className={`flex justify-between items-start relative ${showDropdown ? 'z-20' : 'z-10'}`}>
+                    <div
+                        className="p-3 rounded-xl inline-flex items-center justify-center shadow-sm transition-transform group-hover:scale-110 duration-300"
+                        style={{ backgroundColor: `${folder.color}20`, color: folder.color }}
+                    >
+                        <MdFolder size={26} />
+                    </div>
+
+                    {/* Options Menu Button (compact, mobile-friendly) */}
+                    {!isOverlay && (
+                        <div className="relative no-card-click">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (showDropdown) {
+                                        setActiveDropdownFolderId(null);
+                                        setCoords(null);
+                                    } else {
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        // Align menu below the 3-dots button, sticking to its right edge (160px width offset)
+                                        setCoords({ x: rect.right - 160, y: rect.bottom + 8 });
+                                        setActiveDropdownFolderId(folder._id);
+                                    }
+                                }}
+                                className="p-1.5 text-stone-600 hover:text-stone-950 rounded-full hover:bg-stone-400 cursor-pointer transition-colors"
+                                title="Options"
+                            >
+                                <MdMoreVert size={20} />
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Folder Name & Stats */}
+                <div className="relative z-10 mt-auto">
+                    {isEditing ? (
+                        <input
+                            autoFocus
+                            type="text"
+                            value={nameVal}
+                            onChange={(e) => setNameVal(e.target.value)}
+                            onBlur={handleRenameSubmit}
+                            onKeyDown={handleKeyDown}
+                            className="bg-[#2a2b2e] text-white text-md outline-none border border-[#e85d56] px-3 py-1.5 rounded-xl w-full font-medium shadow-inner no-card-click"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    ) : (
+                        <h3 className="text-lg font-bold text-stone-900 tracking-tight truncate max-w-full group-hover:text-stone-950 transition-colors">
+                            {folder.name}
+                        </h3>
+                    )}
+
+                    <div className="flex items-center space-x-2 mt-1.5 text-[13px] text-stone-600 font-medium">
+                        {subfoldersCount > 0 && (
+                            <>
+                                <span className="flex items-center">
+                                    <MdOutlineFolder className="mr-1 opacity-70" size={14} />
+                                    {subfoldersCount}
+                                </span>
+                                <span className="w-1 h-1 rounded-full bg-stone-400" />
+                            </>
+                        )}
+                        <span className="flex items-center">
+                            {notesCount} {notesCount === 1 ? 'note' : 'notes'}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Floating Color Picker (Matching context menu style, instant mount, solid color) */}
+                {showColorPicker && (
+                    <div
+                        className="absolute right-4 top-14 bg-[#2a2b2e] border border-[#3d3f43] p-2 rounded-lg shadow-xl flex space-x-1.5 z-50 animate-none no-card-click"
+                        onMouseLeave={() => setShowColorPicker(false)}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {COLORS.map(c => (
+                            <div
+                                key={c}
+                                onClick={() => {
+                                    onColorChange(folder._id, c);
+                                    setShowColorPicker(false);
+                                }}
+                                style={{ backgroundColor: c }}
+                                className="w-5 h-5 rounded-full cursor-pointer hover:scale-125 transition-transform shadow-inner border border-black/20"
+                            />
+                        ))}
                     </div>
                 )}
             </div>
-
-            {/* Folder Name & Stats */}
-            <div className="relative z-10 mt-auto">
-                {isEditing ? (
-                    <input
-                        autoFocus
-                        type="text"
-                        value={nameVal}
-                        onChange={(e) => setNameVal(e.target.value)}
-                        onBlur={handleRenameSubmit}
-                        onKeyDown={handleKeyDown}
-                        className="bg-[#2a2b2e] text-white text-md outline-none border border-[#e85d56] px-3 py-1.5 rounded-xl w-full font-medium shadow-inner no-card-click"
-                        onClick={(e) => e.stopPropagation()}
-                    />
-                ) : (
-                    <h3 className="text-lg font-bold text-stone-900 tracking-tight truncate max-w-full group-hover:text-stone-950 transition-colors">
-                        {folder.name}
-                    </h3>
-                )}
-
-                <div className="flex items-center space-x-2 mt-1.5 text-[13px] text-stone-600 font-medium">
-                    {subfoldersCount > 0 && (
-                        <>
-                            <span className="flex items-center">
-                                <MdOutlineFolder className="mr-1 opacity-70" size={14} />
-                                {subfoldersCount}
-                            </span>
-                            <span className="w-1 h-1 rounded-full bg-stone-400" />
-                        </>
-                    )}
-                    <span className="flex items-center">
-                        {notesCount} {notesCount === 1 ? 'note' : 'notes'}
-                    </span>
-                </div>
-            </div>
-
-            {/* Floating Color Picker (Matching context menu style, instant mount, solid color) */}
-            {showColorPicker && (
-                <div
-                    className="absolute right-4 top-14 bg-[#2a2b2e] border border-[#3d3f43] p-2 rounded-lg shadow-xl flex space-x-1.5 z-50 animate-none no-card-click"
-                    onMouseLeave={() => setShowColorPicker(false)}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    {COLORS.map(c => (
-                        <div
-                            key={c}
-                            onClick={() => {
-                                onColorChange(folder._id, c);
-                                setShowColorPicker(false);
-                            }}
-                            style={{ backgroundColor: c }}
-                            className="w-5 h-5 rounded-full cursor-pointer hover:scale-125 transition-transform shadow-inner border border-black/20"
-                        />
-                    ))}
-                </div>
-            )}
 
             {/* Viewport-Aware portal context menu */}
             {showDropdown && coords && createPortal(
@@ -224,7 +233,7 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
                             position: 'fixed',
                             left: `${finalX}px`,
                             top: `${finalY}px`,
-                            transformOrigin: `${originY} ${originX}`,
+                            transformOrigin: `${originX} ${originY}`,
                             zIndex: 9999,
                         };
                     })()}
@@ -236,8 +245,8 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
                     </div>
                     {menuItems.map((item, idx) => (
                         <React.Fragment key={idx}>
-                            {idx === menuItems.length - 1 && (
-                                <div className="h-[1px] bg-white/[0.06] mx-0 my-1" />
+                            {idx > 0 && (
+                                <div className="h-[1px] bg-white/[0.05] my-1 mx-2" />
                             )}
                             <button
                                 onClick={() => {

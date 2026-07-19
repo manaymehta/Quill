@@ -1,20 +1,18 @@
-import { memo, useState, useEffect, useRef, useCallback } from 'react';
+import { memo, useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever, MdOutlineArchive, MdOutlineUnarchive, MdOutlineFolder } from "react-icons/md";
+import { MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever, MdOutlineArchive, MdOutlineUnarchive, MdOutlineFolder, MdArrowOutward } from "react-icons/md";
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useFoldersStore } from '../../store/useFoldersStore';
 
 // ── Markdown component overrides for the compact card preview ────────────────
-// All block-level elements are rendered as <span>s so they stay inside the
-// fixed-height (4.5 rem) overflow:hidden preview without breaking card layout.
 const CARD_MD_COMPONENTS = {
   h1: ({ children }) => <span className="font-bold text-[#333] block">{children}</span>,
   h2: ({ children }) => <span className="font-bold text-[#444] block">{children}</span>,
   h3: ({ children }) => <span className="font-semibold text-[#444] block">{children}</span>,
   h4: ({ children }) => <span className="font-semibold block">{children}</span>,
-  h5: ({ children }) => <span className="font-mmedium block">{children}</span>,
+  h5: ({ children }) => <span className="font-medium block">{children}</span>,
   h6: ({ children }) => <span className="font-medium block">{children}</span>,
   p: ({ children }) => <span className="block">{children}</span>,
   strong: ({ children }) => <span className="font-bold">{children}</span>,
@@ -48,87 +46,51 @@ const CARD_MD_COMPONENTS = {
     <span className="block pl-2 border-l-2 border-[#e8dcc8] text-[#78716c] italic">{children}</span>
   ),
   hr: () => <span className="block border-t border-[#e8dcc8] my-1" />,
-  // Tables are too wide for a card preview — collapse to a placeholder
   table: () => <span className="text-xs text-stone-400 italic">[table]</span>,
 };
 
-// Cheap fallback rendered for cards that are still off-screen. Just plain text,
-// no react-markdown parsing, so off-screen cards cost almost nothing on load.
 const PREVIEW_CHARS = 150;
 
-
-const NoteCard = ({
-  id, title, content, tags,
-  onEdit, onDelete,
-  isChecklist, checklist, onChecklistToggle,
-  isTrash, onRestore, isArchived, onArchive,
-  isOverlay, index = 0,
-  folderId,
-  hideFolderBadge = false,
+// ── Inner static rendering component ─────────────────────────────────────────
+// This component renders the actual UI. It is heavily memoized and will skip
+// rendering, markdown parsing, and diffing completely unless value props change,
+// preventing massive drag-and-drop lags in large lists.
+const InnerNoteCard = memo(({
+  title, content, tags, folder, isChecklist, checklist,
+  isTrash, isArchived, isDragging, isOverlay, hideFolderBadge,
+  linkPreviews, onDelete, onArchive, onChecklistToggle, onRestore,
+  index
 }) => {
-  const {
-    attributes, listeners, setNodeRef, transform, transition, isDragging,
-  } = useSortable({ id });
-
-  const style = {
-    // Translate instead of Transform preserves exact dimensions without squishing text
-    transform: CSS.Translate.toString(transform),
-    transition,
-    zIndex: isOverlay ? 100 : (isDragging ? 0 : 'auto'),
-    opacity: isOverlay ? 1 : (isDragging ? 0.3 : 1),
-  };
-
-  const { folders } = useFoldersStore();
-  const folder = folderId ? folders.find(f => f._id === folderId) : null;
-
-  // ── Lazy markdown rendering via Intersection Observer ───────────────────────
-  // Problem 3 fix: cards outside the viewport get a cheap plain-text preview.
-  // Once a card enters the viewport (or is within 150 px of it), we swap in
-  // the full react-markdown render and disconnect the observer permanently.
-  // This means a 200-note grid does ~N_visible parses on load, not 200.
-  // We initialize the first few notes as true to prevent layout shift on load.
-  const [hasBeenVisible, setHasBeenVisible] = useState(index < 8);
+  const [shouldAnimate, setShouldAnimate] = useState(true);
+  const [hasBeenVisible, setHasBeenVisible] = useState(isOverlay || index < 8);
   const observerTargetRef = useRef(null);
-
-  // Combine dnd-kit's setNodeRef with our IntersectionObserver ref so both
-  // can point at the same root element without conflicting.
-  const combinedRef = useCallback((el) => {
-    setNodeRef(el);
-    observerTargetRef.current = el;
-  }, [setNodeRef]);
 
   useEffect(() => {
     const el = observerTargetRef.current;
-    // Skip if already visible once, or element not mounted yet
-    if (!el || hasBeenVisible) return;
+    if (!el || hasBeenVisible || isOverlay) return;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           setHasBeenVisible(true);
-          observer.disconnect(); // one-shot — never fires again
+          observer.disconnect();
         }
       },
-      { rootMargin: '150px 0px' }, // start loading 150px before it enters view
+      { rootMargin: '150px 0px' },
     );
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasBeenVisible]);
-
+  }, [hasBeenVisible, isOverlay]);
 
   return (
     <div
-      ref={combinedRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      onClick={(e) => {
-        if (e.target.closest('.no-card-click') || isDragging || isOverlay) return;
-        onEdit();
-      }}
-      className={`group border w-full border-gray-700 rounded-[20px] md:rounded-3xl p-3 md:p-4 bg-[#f8ecdc] hover:bg-[#d8cec1] transition-transform transition-shadow duration-200 ease-in-out cursor-grab active:cursor-grabbing animate-card-fade-in
-        ${isOverlay ? 'shadow-2xl scale-105 opacity-95' : (isDragging ? '' : 'shadow-xs hover:shadow-xl hover:-translate-y-1')}`}
+      ref={observerTargetRef}
+      onAnimationEnd={() => setShouldAnimate(false)}
+      className={`group border w-full border-gray-700 rounded-[20px] md:rounded-3xl p-3 md:p-4 bg-[#f8ecdc] note-card
+        ${shouldAnimate && !isOverlay ? 'animate-card-fade-in' : ''}
+        ${isDragging ? 'opacity-30' : 'opacity-100'}
+        ${isOverlay ? 'shadow-2xl scale-105 opacity-95' : (isDragging ? '' : 'shadow-xs')}`}
     >
       <div className="flex flex-col">
         <div className="flex justify-between items-start gap-1">
@@ -161,12 +123,10 @@ const NoteCard = ({
             }}
           >
             {hasBeenVisible ? (
-              // Full markdown render — only reached once the card is on-screen
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={CARD_MD_COMPONENTS}>
                 {(content || '').slice(0, 500)}
               </ReactMarkdown>
             ) : (
-              // Lightweight off-screen placeholder — plain text, zero parse cost
               <span className="whitespace-pre-wrap">{(content || '').slice(0, PREVIEW_CHARS)}{(content || '').length > PREVIEW_CHARS ? '…' : ''}</span>
             )}
           </div>
@@ -181,7 +141,6 @@ const NoteCard = ({
             maskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
           }}
         >
-          {/* Folder Badge with subtle matching tinted background */}
           {folder && !hideFolderBadge && (
             <div 
               style={{ color: folder.color, backgroundColor: `${folder.color}15` }}
@@ -193,7 +152,6 @@ const NoteCard = ({
             </div>
           )}
 
-          {/* Tags with soft neutral background */}
           {tags.map((item) => (
             <span key={item} className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-black/5 text-stone-600 font-semibold shrink-0 select-none no-card-click">
               #{item}
@@ -231,29 +189,111 @@ const NoteCard = ({
           )}
         </div>
       </div>
- 
+
+      {linkPreviews && linkPreviews.length > 0 && (
+        <div className="mt-4 -mx-4 sm:-mx-5 -mb-4 sm:-mb-5 flex flex-col no-card-click border-t border-stone-200/80 rounded-b-[23px] overflow-hidden" style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}>
+          {linkPreviews.slice(0, 3).map((preview, idx) => (
+            <a 
+              key={idx}
+              href={preview.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className={`flex items-center gap-3 px-4 py-3 sm:px-5 sm:py-3.5 bg-black/[0.06] hover:bg-black/[0.12] transition-all duration-200 ${idx !== 0 ? 'border-t border-stone-200/80' : ''}`}
+            >
+              <MdArrowOutward size={18} className="text-black/30 flex-shrink-0 group-hover:text-black/50 transition-colors" />
+              {preview.image && (
+                <img 
+                  src={preview.image} 
+                  alt={preview.title}
+                  className="w-10 h-10 object-cover rounded-md flex-shrink-0 border border-black/5 shadow-sm"
+                />
+              )}
+              <div className="flex-grow min-w-0 pr-1">
+                <div className="text-xs font-bold text-black/70 truncate leading-snug">{preview.title || preview.url}</div>
+                <div className="text-[10px] text-black/50 font-bold truncate mt-0.5 uppercase tracking-wider">{preview.siteName}</div>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
-};
- 
-// ── React.memo with value-aware comparator ────────────────────────────────────
-// After every getAllNotes() call, the server returns fresh JSON so tag arrays
-// are new references even when values haven't changed, defeating === equality.
-// JSON.stringify checks VALUE equality so unchanged tags don't trigger a re-render.
-// the problem actually is that the tags are not being updated when the tags are updated
-// the solution is to use JSON.stringify to compare the tags
-// the efficiency is not compromised because the tags are not updated very often
-export default memo(NoteCard, (prev, next) =>
-  prev.id === next.id &&
+}, (prev, next) =>
   prev.title === next.title &&
   prev.content === next.content &&
-  prev.folderId === next.folderId &&
+  prev.folder?._id === next.folder?._id &&
+  prev.folder?.color === next.folder?.color &&
+  prev.folder?.name === next.folder?.name &&
   prev.isArchived === next.isArchived &&
   prev.isChecklist === next.isChecklist &&
-  prev.checklist === next.checklist &&
-  JSON.stringify(prev.tags) === JSON.stringify(next.tags) &&  // what happens here is 
+  JSON.stringify(prev.checklist) === JSON.stringify(next.checklist) &&
+  JSON.stringify(prev.tags) === JSON.stringify(next.tags) &&
   prev.isTrash === next.isTrash &&
   prev.isDragging === next.isDragging &&
   prev.isOverlay === next.isOverlay &&
-  prev.hideFolderBadge === next.hideFolderBadge
+  prev.hideFolderBadge === next.hideFolderBadge &&
+  JSON.stringify(prev.linkPreviews) === JSON.stringify(next.linkPreviews)
 );
+
+// ── Outer dynamic draggable wrapper component ───────────────────────────────
+const NoteCard = ({
+  id, title, content, tags,
+  onEdit, onDelete,
+  isChecklist, checklist, onChecklistToggle,
+  isTrash, onRestore, isArchived, onArchive,
+  isOverlay, index = 0,
+  folderId,
+  hideFolderBadge = false,
+  linkPreviews = [],
+}) => {
+  const {
+    attributes, listeners, setNodeRef, transform, transition, isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    zIndex: isOverlay ? 100 : (isDragging ? 0 : 'auto'),
+    opacity: 1,
+  };
+
+  const { folders } = useFoldersStore();
+  const folder = folderId ? folders.find(f => f._id === folderId) : null;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={(e) => {
+        if (e.target.closest('.no-card-click') || isDragging || isOverlay) return;
+        onEdit();
+      }}
+      className={`w-full note-card-wrapper cursor-grab active:cursor-grabbing ${isDragging ? 'is-dragging-active' : ''}`}
+    >
+      <InnerNoteCard
+        title={title}
+        content={content}
+        tags={tags}
+        folder={folder}
+        isChecklist={isChecklist}
+        checklist={checklist}
+        isTrash={isTrash}
+        isArchived={isArchived}
+        isDragging={isDragging}
+        isOverlay={isOverlay}
+        hideFolderBadge={hideFolderBadge}
+        linkPreviews={linkPreviews}
+        onDelete={onDelete}
+        onArchive={onArchive}
+        onChecklistToggle={onChecklistToggle}
+        onRestore={onRestore}
+        index={index}
+      />
+    </div>
+  );
+};
+
+export default NoteCard;

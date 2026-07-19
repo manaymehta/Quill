@@ -32,6 +32,11 @@ const triggerEmbed = (note, userId) => {
         embedText = embedText ? `${embedText}\n\n${checklistStr}` : checklistStr;
     }
 
+    if (note.linkPreviews && note.linkPreviews.length > 0) {
+        const previewsStr = note.linkPreviews.map(p => `[Link Preview] ${p.title || ""} - ${p.description || ""}`).join('\n');
+        embedText = embedText ? `${embedText}\n\n${previewsStr}` : previewsStr;
+    }
+
     // Skip embedding if note is completely blank
     if (!embedText.trim() && !(note.title && note.title.trim())) return;
 
@@ -47,7 +52,7 @@ const deleteEmbed = (noteId) => {
 };
 
 const addNote = async (req, res) => {
-    const { title, content, tags, isChecklist, checklist, folderId, showInHome } = req.body;
+    const { title, content, tags, isChecklist, checklist, folderId, showInHome, linkPreviews } = req.body;
     const userId = req.user._id;
 
     if (!title && !content && (!checklist || checklist.length === 0)) {
@@ -77,6 +82,7 @@ const addNote = async (req, res) => {
             folderId: targetFolderId,
             showInHome: typeof showInHome !== "undefined" ? showInHome : false,
             homeOrderIndex,
+            linkPreviews: linkPreviews || []
         });
 
         await note.save();
@@ -99,7 +105,7 @@ const addNote = async (req, res) => {
 
 const editNote = async (req, res) => {
     const noteId = req.params.noteId;
-    const { title, content, tags, isChecklist, checklist, folderId, showInHome } = req.body;
+    const { title, content, tags, isChecklist, checklist, folderId, showInHome, linkPreviews } = req.body;
     const userId = req.user._id;
 
     try {
@@ -122,11 +128,14 @@ const editNote = async (req, res) => {
         if (typeof showInHome !== "undefined") {
             note.showInHome = showInHome;
         }
+        if (linkPreviews) {
+            note.linkPreviews = linkPreviews;
+        }
 
         await note.save();
 
         // Only re-embed when semantic content actually changed — not for pin/tag-only edits
-        const contentChanged = title || content || checklist || typeof isChecklist !== "undefined";
+        const contentChanged = title || content || checklist || typeof isChecklist !== "undefined" || linkPreviews;
         if (contentChanged) {
             triggerEmbed(note, userId);
         }
