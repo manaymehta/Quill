@@ -2,7 +2,6 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
-import { MdKeyboardArrowRight, MdOutlineFolder } from 'react-icons/md';
 
 const Breadcrumb = ({ folderId }) => {
     const { getFolderPath } = useFoldersStore();
@@ -13,9 +12,7 @@ const Breadcrumb = ({ folderId }) => {
     const path = getFolderPath(folders, folderId);
 
     return (
-        <div className="flex items-center text-[13px] font-semibold text-stone-400 uppercase tracking-widest py-0.5 select-none">
-            <MdOutlineFolder className="mr-2 text-stone-400 flex-shrink-0" size={16} />
-
+        <div className="inline-flex items-center bg-white/[0.04] border border-white/[0.05] shadow-sm backdrop-blur-md px-3 py-1.5 rounded-full text-[11px] sm:text-[12px] font-bold text-stone-400 uppercase tracking-[0.15em] select-none">
             <Link
                 to="/dashboard?view=folders"
                 className="hover:text-stone-200 transition-colors"
@@ -27,7 +24,7 @@ const Breadcrumb = ({ folderId }) => {
                 const isLast = index === path.length - 1;
                 return (
                     <React.Fragment key={folder._id}>
-                        <MdKeyboardArrowRight size={16} className="text-stone-500 mx-1 flex-shrink-0" />
+                        <span className="text-stone-600 mx-1.5 font-normal">/</span>
                         {isLast ? (
                             <span className="text-[#e85d56] truncate max-w-[120px] md:max-w-[200px]">
                                 {folder.name}

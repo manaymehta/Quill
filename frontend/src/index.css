@@ -147,17 +147,23 @@
   --color-secondary: #EF863E;
 }
 
-/* Exact translation of the user's custom tabbed folder card design */
+.folder-card-wrapper {
+  container-type: inline-size;
+  width: 100%;
+}
+
+/* Fluid, reactive physical folder card design using Container Queries */
 .physical-folder-card {
-  padding: 1.25rem;
+  padding: clamp(0.625rem, 7cqi, 1.25rem);
   background-color: #f8ecdc;
   display: flex;
   flex-direction: column;
-  border-radius: 0 1rem 1rem 1rem !important;
+  border-radius: 0 clamp(0.625rem, 8cqi, 1rem) clamp(0.625rem, 8cqi, 1rem) clamp(0.625rem, 8cqi, 1rem) !important;
   position: relative;
-  margin-top: 1.5rem;
+  margin-top: clamp(0.6rem, 10cqi, 1.25rem);
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.22));
   border: none !important;
+  height: clamp(105px, 70cqi, 150px);
   transition: transform 150ms cubic-bezier(0.25, 1, 0.5, 1), filter 150ms cubic-bezier(0.25, 1, 0.5, 1), opacity 300ms ease-out;
   animation: cardFadeIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -211,22 +217,22 @@
   top: 1px;
   left: 0;
   width: 50%;
-  height: 1.5rem;
+  height: clamp(0.85rem, 13cqi, 1.5rem);
 }
 
 .physical-folder-card::before {
-  width: 3rem;
-  left: calc(50% - 6px);
+  width: clamp(1.6rem, 24cqi, 3rem);
+  left: calc(50% - clamp(3px, 2.5cqi, 6px));
   transform: translateY(-100%);
   background: transparent;
-  border-bottom-left-radius: 1.5rem;
-  box-shadow: -1rem 0.75rem 0 #f8ecdc;
+  border-bottom-left-radius: clamp(0.75rem, 11cqi, 1.5rem);
+  box-shadow: calc(-1 * clamp(0.5rem, 8cqi, 1rem)) calc(0.5 * clamp(0.85rem, 13cqi, 1.5rem)) 0 #f8ecdc;
 }
 
 .physical-folder-card::after {
   transform: translateY(-100%);
   background: #f8ecdc;
-  border-radius: 1rem 1.5rem 0 0;
+  border-radius: clamp(0.5rem, 8cqi, 1rem) clamp(0.75rem, 11cqi, 1.5rem) 0 0;
 }
 
 .folder-card-wrapper:hover:not(:has(.no-card-click:hover)):not(.is-dragging-active) .physical-folder-card {

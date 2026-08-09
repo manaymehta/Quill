@@ -78,10 +78,10 @@ const Trash = () => {
             </p>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-3">
             {trashFolders.length > 0 && (
               <div>
-                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-4 flex items-center">
+                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
                   <MdOutlineFolder className="mr-2" size={16} />
                   Folders
                 </h3>
@@ -96,7 +96,7 @@ const Trash = () => {
 
             {individualTrashNotes.length > 0 && (
               <div>
-                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-4 flex items-center">
+                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
                   <MdOutlineStickyNote2 className="mr-2" size={16} />
                   Notes
                 </h3>

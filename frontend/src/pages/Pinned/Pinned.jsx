@@ -51,7 +51,7 @@ const Pinned = () => {
 
   const handleEdit = (note) => {
     openTab(note);
-    navigate('/dashboard');
+    navigate('/dashboard', { state: { preserveTab: true } });
   };
 
   const handleDeleteNoteClick = (note) => {

@@ -76,7 +76,7 @@ const FoldersGrid = ({
 
     // Inner grid content
     const gridContent = (
-        <div className={`grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-4 ${activeId ? 'is-dragging-active' : ''}`}>
+        <div className={`grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 md:gap-4 ${activeId ? 'is-dragging-active' : ''}`}>
             {folders.map(folder => (
                 <FolderCard
                     key={folder._id}
@@ -92,67 +92,78 @@ const FoldersGrid = ({
 
             {/* Inline Adding Card (Not sortable/draggable, kept at the end) */}
             {isAddingFolder && (
-                <div 
-                    key="inline-add-folder-card"
-                    className="group relative physical-folder-card p-5 select-none flex flex-col h-[150px] justify-between z-10"
-                >
+                <div key="inline-add-folder-wrapper" className="folder-card-wrapper">
                     <div 
-                        className="p-3 rounded-xl inline-flex items-center justify-center shadow-sm self-start"
-                        style={{ backgroundColor: '#e85d5620', color: '#e85d56' }}
+                        className="group relative physical-folder-card select-none flex flex-col justify-between z-10"
                     >
-                        <MdFolder size={26} />
-                    </div>
-                    <div className="mt-auto relative z-10 no-card-click">
-                        <input
-                            autoFocus
-                            type="text"
-                            placeholder="Folder name..."
-                            value={newFolderNameInline}
-                            onChange={(e) => setNewFolderNameInline(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleCreateFolderInline();
-                                if (e.key === 'Escape') {
-                                    setIsAddingFolder(false);
-                                    setNewFolderNameInline('');
-                                }
-                            }}
-                            onBlur={handleCreateFolderInline}
-                            className="bg-[#2a2b2e] text-white text-md outline-none border border-[#e85d56] px-3 py-1.5 rounded-lg w-full font-medium shadow-inner"
-                        />
+                        <div 
+                            className="p-2 sm:p-3 rounded-xl inline-flex items-center justify-center shadow-sm self-start"
+                            style={{ backgroundColor: '#e85d5620', color: '#e85d56' }}
+                        >
+                            <MdFolder className="text-[16cqi] sm:text-2xl" />
+                        </div>
+                        <div className="mt-auto relative z-10 no-card-click">
+                            <input
+                                autoFocus
+                                type="text"
+                                placeholder="Folder name..."
+                                value={newFolderNameInline}
+                                onChange={(e) => setNewFolderNameInline(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleCreateFolderInline();
+                                    if (e.key === 'Escape') {
+                                        setIsAddingFolder(false);
+                                        setNewFolderNameInline('');
+                                    }
+                                }}
+                                onBlur={handleCreateFolderInline}
+                                className="bg-[#2a2b2e] text-white text-[11cqi] sm:text-md outline-none border border-[#e85d56] px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl w-full font-medium shadow-inner"
+                            />
+                        </div>
                     </div>
                 </div>
             )}
 
             {/* New Folder Placeholder Card (Not sortable/draggable, kept at the end) */}
             {!isAddingFolder && !isTrash && (
-                <div 
-                    key="new-folder-placeholder-card"
-                    onClick={() => setIsAddingFolder(true)}
-                    className="group relative cursor-pointer transition-transform duration-300 select-none flex flex-col h-[150px] items-center justify-center hover:-translate-y-1 mt-6"
-                >
-                    <svg
-                        className="absolute w-full pointer-events-none"
-                        style={{ height: '174px', top: '-24px', left: 0, overflow: 'visible' }}
-                        viewBox="0 0 320 174"
-                        preserveAspectRatio="none"
-                        xmlns="http://www.w3.org/2000/svg"
+                <div key="new-folder-placeholder-wrapper" className="folder-card-wrapper">
+                    <div 
+                        onClick={() => setIsAddingFolder(true)}
+                        className="group relative cursor-pointer transition-transform duration-300 select-none flex flex-col items-center justify-center hover:-translate-y-1"
+                        style={{
+                            marginTop: 'clamp(0.6rem, 10cqi, 1.25rem)',
+                            height: 'clamp(105px, 70cqi, 150px)',
+                        }}
                     >
-                        <path
-                            className="transition-colors duration-300 group-hover:stroke-[#5a5f63]"
-                            d="M 0,158 L 0,16 A 16,16 0 0 1 16,0 L 136,0 C 152,0 160,24 176,24 L 304,24 A 16,16 0 0 1 320,40 L 320,158 A 16,16 0 0 1 304,174 L 16,174 A 16,16 0 0 1 0,158 Z"
-                            fill="none"
-                            stroke="#3c4043"
-                            strokeWidth="2"
-                            strokeDasharray="6 4"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            vectorEffect="non-scaling-stroke"
-                        />
-                    </svg>
-                    <div className="relative z-10 p-4 rounded-full bg-[#3c4043]/30 text-gray-400 group-hover:text-[#e85d56] group-hover:bg-[#e85d56]/10 transition-colors duration-300">
-                        <MdAdd size={32} />
+                        <svg
+                            className="absolute w-full pointer-events-none"
+                            style={{
+                                height: 'calc(100% + clamp(0.6rem, 10cqi, 1.25rem))',
+                                top: 'calc(-1 * clamp(0.6rem, 10cqi, 1.25rem))',
+                                left: 0,
+                                overflow: 'visible'
+                            }}
+                            viewBox="0 0 320 174"
+                            preserveAspectRatio="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                        >
+                            <path
+                                className="transition-colors duration-300 group-hover:stroke-[#5a5f63]"
+                                d="M 0,158 L 0,16 A 16,16 0 0 1 16,0 L 136,0 C 152,0 160,24 176,24 L 304,24 A 16,16 0 0 1 320,40 L 320,158 A 16,16 0 0 1 304,174 L 16,174 A 16,16 0 0 1 0,158 Z"
+                                fill="none"
+                                stroke="#3c4043"
+                                strokeWidth="2"
+                                strokeDasharray="6 4"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                vectorEffect="non-scaling-stroke"
+                            />
+                        </svg>
+                        <div className="relative z-10 p-[6cqi] sm:p-4 rounded-full bg-[#3c4043]/30 text-gray-400 group-hover:text-[#e85d56] group-hover:bg-[#e85d56]/10 transition-colors duration-300">
+                            <MdAdd className="text-[18cqi] sm:text-3xl" />
+                        </div>
+                        <span className="relative z-10 mt-1.5 sm:mt-3 text-[10cqi] sm:text-sm font-medium text-gray-500 group-hover:text-gray-300 transition-colors">New Folder</span>
                     </div>
-                    <span className="relative z-10 mt-3 text-sm font-medium text-gray-500 group-hover:text-gray-300 transition-colors">New Folder</span>
                 </div>
             )}
         </div>
