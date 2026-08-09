@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useFoldersStore } from '../../store/useFoldersStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useModalStore } from '../Modals/useModalStore';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useFoldersQuery } from '../../hooks/useNotesQuery';
+import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdEdit, MdDelete, MdPalette, MdFolder, MdFolderOpen } from 'react-icons/md';
 
 const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'];
@@ -20,7 +21,8 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { isSidebarOpen } = useUIStore();
-    const { folders, editFolder } = useFoldersStore();
+    const { data: folders = [] } = useFoldersQuery();
+    const editFolderMutation = useEditFolderMutation();
     const { openFolderDeleteModal } = useModalStore();
     const [isEditing, setIsEditing] = useState(false);
     const [nameVal, setNameVal] = useState(folder.name);
@@ -34,7 +36,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
     const handleBlurOrSubmit = () => {
         setIsEditing(false);
         if (nameVal.trim() && nameVal.trim() !== folder.name) {
-            editFolder(folder._id, { name: nameVal.trim() });
+            editFolderMutation.mutate({ folderId: folder._id, patch: { name: nameVal.trim() } });
         } else {
             setNameVal(folder.name);
         }
@@ -184,7 +186,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
                         onMouseDown={(e) => e.stopPropagation()}
                     >
                         {COLORS.map(c => (
-                            <div key={c} onClick={() => { editFolder(folder._id, { color: c }); setShowColorPicker(false); }} style={{ backgroundColor: c }} className="w-5 h-5 rounded-full cursor-pointer hover:scale-110 transition-transform" />
+                            <div key={c} onClick={() => { editFolderMutation.mutate({ folderId: folder._id, patch: { color: c } }); setShowColorPicker(false); }} style={{ backgroundColor: c }} className="w-5 h-5 rounded-full cursor-pointer hover:scale-110 transition-transform" />
                         ))}
                     </div>
                 </>
@@ -196,7 +198,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
 // FolderTree renders rows — each row is a motion.div that inherits variants from the
 // AnimatePresence parent in Sidebar. No local initial/animate — the parent drives everything.
 const FolderTree = ({ parentId = null, depth = 0, expandedFolders, onToggleExpand, activeFolderId }) => {
-    const { folders } = useFoldersStore();
+    const { data: folders = [] } = useFoldersQuery();
     const siblingFolders = folders
         .filter(f => f.parentId === parentId && !f.isDeleted)
         .sort((a, b) => a.orderIndex - b.orderIndex);

@@ -3,13 +3,14 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import AiSearchPanel from '../../components/Cards/AiSearchPanel';
-import useNoteOperations from '../../hooks/useNoteOperations';
 import AddEditNotes from '../Home/AddEditNotes';
 import Toast from '../../components/ToastMessage/Toast';
-import { useNotesStore } from '../../store/useNotesStore';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
+import { useFolderNotesQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation } from '../../hooks/useNoteMutations';
+import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import Breadcrumb from '../../components/Cards/Breadcrumb';
 import { useModalStore } from '../../components/Modals/useModalStore';
@@ -54,13 +55,14 @@ const FolderView = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { getViewNotes, isViewLoading, refreshActiveView } = useNotesStore();
-  // Read notes directly from the per-folder cache — no stale cross-view data
-  const folderNotes = getViewNotes(folderId);
-  const isLoading = isViewLoading(folderId);
-  const { searchMode, semanticResult, isSearchingAI, setSearchScope, setScopeFolderIds } = useSearchStore();
+  const { data: folders = [] } = useFoldersQuery();
+  const { getSubtreeIds, setActiveFolderId } = useFoldersStore();
+
+  const subtreeIds = useMemo(() => getSubtreeIds(folders, folderId), [folders, folderId, getSubtreeIds]);
+  const { data: folderNotes = [], isLoading } = useFolderNotesQuery(subtreeIds, folderId);
+
+  const { searchQuery, searchMode, semanticResult, isSearchingAI, setSearchScope, setScopeFolderIds } = useSearchStore();
   const { openTabs, activeTabId, openTab, closeTab } = useTabsStore();
-  const { folders, editFolder, getSubtreeIds, setActiveFolderId } = useFoldersStore();
 
   const [showToast, setShowToast] = useState(false);
   const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
@@ -79,7 +81,15 @@ const FolderView = () => {
     type: 'add',
   });
 
-  const subtreeIds = useMemo(() => getSubtreeIds(folderId), [folderId, getSubtreeIds]);
+  const showToastMessage = useCallback((message, type) => {
+    setToastMessageVisibility({ isShown: true, message, type });
+    setShowToast(true);
+  }, []);
+
+  const deleteNoteMutation = useDeleteNoteMutation(showToastMessage);
+  const archiveNoteMutation = useArchiveNoteMutation(showToastMessage);
+  const checklistToggleMutation = useChecklistToggleMutation();
+  const editFolderMutation = useEditFolderMutation(showToastMessage);
 
   // Redirect if folder doesn't exist
   useEffect(() => {
@@ -100,25 +110,11 @@ const FolderView = () => {
     };
   }, [folderId, subtreeIds, setSearchScope, setScopeFolderIds, setActiveFolderId]);
 
-  // Fetch this folder's notes; cache means re-visiting shows old data instantly
-  const loadNotes = useCallback(() => {
-    refreshActiveView();
-  }, [refreshActiveView]);
-
-  useEffect(() => {
-    loadNotes();
-  }, [loadNotes]);
-
   // Reset side panel when switching between tabs
   useEffect(() => {
     setIsMockPanelOpen(false);
     setPanelContent("");
   }, [activeTabId]);
-
-  const showToastMessage = useCallback((message, type) => {
-    setToastMessageVisibility({ isShown: true, message, type });
-    setShowToast(true);
-  }, []);
 
   const handleCloseToast = useCallback(() => {
     setToastMessageVisibility((prev) => ({ ...prev, isShown: false }));
@@ -127,8 +123,7 @@ const FolderView = () => {
 
   const handleNoteSaved = useCallback((tabId) => {
     closeTab(tabId);
-    loadNotes();
-  }, [closeTab, loadNotes]);
+  }, [closeTab]);
 
   useEffect(() => {
     if (toastMessageVisibility.isShown) {
@@ -144,9 +139,6 @@ const FolderView = () => {
     setIsMockPanelOpen(true);
   }, []);
 
-  // Use hook note operations
-  const { deleteNote, updateNoteArchive, handleChecklistToggle } = useNoteOperations(loadNotes, showToastMessage);
-
   const isEditorOpen = activeTabId !== 'home';
   const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
   const activeIndex = openTabs.findIndex(t => t._id === activeTabId);
@@ -155,28 +147,51 @@ const FolderView = () => {
   const subfolders = folders.filter(f => f.parentId === folderId && !f.isDeleted)
     .sort((a, b) => a.orderIndex - b.orderIndex);
   
-  // folderNotes is already the subtree for this folder from the cache
-  // For explorer mode: direct notes only; for flat mode: the full subtree
+  // For explorer mode: direct notes only
   const directNotes = folderNotes.filter(n => n.folderId === folderId);
 
-  const handleRenameFolder = async (id, newName) => {
-    await editFolder(id, { name: newName });
+  const displayedDirectNotes = useMemo(() => {
+    if (searchMode === 'keyword' && searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      return directNotes.filter(n =>
+        (n.title && n.title.toLowerCase().includes(q)) ||
+        (n.content && n.content.toLowerCase().includes(q)) ||
+        (n.tags && n.tags.some(t => t.toLowerCase().includes(q)))
+      );
+    }
+    return directNotes;
+  }, [directNotes, searchMode, searchQuery]);
+
+  const handleRenameFolder = (id, newName) => {
+    editFolderMutation.mutate({ folderId: id, patch: { name: newName } });
   };
 
-  const handleColorChangeFolder = async (id, color) => {
-    await editFolder(id, { color });
+  const handleColorChangeFolder = (id, color) => {
+    editFolderMutation.mutate({ folderId: id, patch: { color } });
   };
 
   const handleDeleteFolder = (folderObj) => {
-    openFolderDeleteModal(folderObj, () => showToastMessage("Folder moved to Trash", "delete"));
+    openFolderDeleteModal(folderObj);
   };
 
   const handleDeleteNoteClick = (note) => {
     openConfirmModal({
       title: "Delete note?",
       message: "This moves the note to Trash.",
-      onConfirm: () => deleteNote(note)
+      onConfirm: () => deleteNoteMutation.mutate(note._id)
     });
+  };
+
+  const handleArchiveToggle = (note) => {
+    archiveNoteMutation.mutate({ noteId: note._id, isArchived: !note.isArchived });
+  };
+
+  const handleChecklist = (note, index) => {
+    const newChecklist = [...(note.checklist || [])];
+    if (newChecklist[index]) {
+      newChecklist[index] = { ...newChecklist[index], completed: !newChecklist[index].completed };
+    }
+    checklistToggleMutation.mutate({ noteId: note._id, checklist: newChecklist });
   };
 
   return (
@@ -203,8 +218,8 @@ const FolderView = () => {
                     emptyMessage="No matching notes found."
                     onEdit={handleEdit}
                     onDelete={handleDeleteNoteClick}
-                    onArchive={updateNoteArchive}
-                    onChecklistToggle={handleChecklistToggle}
+                    onArchive={handleArchiveToggle}
+                    onChecklistToggle={handleChecklist}
                   />
                 )}
               </div>
@@ -231,20 +246,20 @@ const FolderView = () => {
                   />
                 </div>
 
-                {directNotes.length > 0 && (
+                {displayedDirectNotes.length > 0 && (
                   <div>
                     <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-4 flex items-center">
                       <MdOutlineStickyNote2 className="mr-2" size={16} />
                       Notes
                     </h3>
                     <NotesGrid
-                      notes={directNotes}
+                      notes={displayedDirectNotes}
                       loading={isLoading}
                       emptyMessage="No notes in this folder."
                       onEdit={handleEdit}
                       onDelete={handleDeleteNoteClick}
-                      onArchive={updateNoteArchive}
-                      onChecklistToggle={handleChecklistToggle}
+                      onArchive={handleArchiveToggle}
+                      onChecklistToggle={handleChecklist}
                       hideFolderBadge={true}
                     />
                   </div>

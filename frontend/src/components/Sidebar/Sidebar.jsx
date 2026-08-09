@@ -1,10 +1,12 @@
-import React, { forwardRef, useState, useEffect } from 'react';
+import React, { forwardRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUIStore } from '../../store/useUIStore';
 import { MdOutlineStickyNote2, MdOutlineDelete, MdOutlineAutoGraph, MdOutlineArchive, MdAdd, MdOutlineFolder } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useTabsStore } from '../../store/useTabsStore';
+import { useFoldersQuery } from '../../hooks/useNotesQuery';
+import { useCreateFolderMutation } from '../../hooks/useFolderMutations';
 import FolderTree from './FolderTree';
 
 const Sidebar = forwardRef((props, ref) => {
@@ -12,20 +14,13 @@ const Sidebar = forwardRef((props, ref) => {
   const { isSidebarOpen } = useUIStore();
   const location = useLocation();
 
-  const {
-    folders,
-    getFolders,
-    createFolder
-  } = useFoldersStore();
+  const { data: folders = [] } = useFoldersQuery();
+  const createFolderMutation = useCreateFolderMutation();
 
   const [isFoldersCollapsed, setIsFoldersCollapsed] = useState(false);
   const [showAddFolderInput, setShowAddFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [expandedFolders, setExpandedFolders] = useState({});
-
-  useEffect(() => {
-    getFolders();
-  }, [getFolders]);
 
   const toggleExpand = (id) => {
     setExpandedFolders(prev => ({ ...prev, [id]: !prev[id] }));
@@ -190,10 +185,10 @@ const Sidebar = forwardRef((props, ref) => {
                           setShowAddFolderInput(false);
                           setNewFolderName('');
                         }}
-                        onKeyDown={async (e) => {
+                        onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             if (newFolderName.trim()) {
-                              await createFolder(newFolderName.trim());
+                              createFolderMutation.mutate({ name: newFolderName.trim() });
                             }
                             setShowAddFolderInput(false);
                             setNewFolderName('');

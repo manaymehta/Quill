@@ -1,14 +1,16 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useFoldersStore } from '../../store/useFoldersStore';
+import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { MdKeyboardArrowRight, MdOutlineFolder } from 'react-icons/md';
 
 const Breadcrumb = ({ folderId }) => {
     const { getFolderPath } = useFoldersStore();
+    const { data: folders = [] } = useFoldersQuery();
 
     if (!folderId) return null;
 
-    const path = getFolderPath(folderId);
+    const path = getFolderPath(folders, folderId);
 
     return (
         <div className="flex items-center text-[13px] font-semibold text-stone-400 uppercase tracking-widest py-0.5 select-none">

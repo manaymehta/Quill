@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { MdClose, MdSearch, MdOutlineFolder, MdHomeFilled } from 'react-icons/md';
-import { useFoldersStore } from '../../store/useFoldersStore';
+import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const MoveToPicker = ({ isOpen, onClose, noteId, currentFolderId, onMove }) => {
-    const { folders } = useFoldersStore();
+    const { data: folders = [] } = useFoldersQuery();
     const [searchVal, setSearchVal] = useState('');
 
     // Reset search when modal opens

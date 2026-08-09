@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { MdEdit, MdDelete, MdPalette, MdFolder, MdOutlineFolder, MdRestore, MdDeleteForever, MdMoreVert } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
-import { useNotesStore } from '../../store/useNotesStore';
+import { useFoldersQuery, useAllNotesQuery } from '../../hooks/useNotesQuery';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -11,8 +11,9 @@ const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'
 
 const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false, onRestore, onDeletePermanent, isOverlay = false }) => {
     const navigate = useNavigate();
-    const { folders, activeDropdownFolderId, setActiveDropdownFolderId } = useFoldersStore();
-    const { allNotes } = useNotesStore();
+    const { activeDropdownFolderId, setActiveDropdownFolderId } = useFoldersStore();
+    const { data: folders = [] } = useFoldersQuery();
+    const { data: allNotes = [] } = useAllNotesQuery();
     const [isEditing, setIsEditing] = useState(false);
     const [nameVal, setNameVal] = useState(folder.name);
     const [showColorPicker, setShowColorPicker] = useState(false);

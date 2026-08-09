@@ -3,7 +3,7 @@ import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSens
 import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { MdFolder, MdAdd } from 'react-icons/md';
 import FolderCard from './FolderCard';
-import { useFoldersStore } from '../../store/useFoldersStore';
+import { useCreateFolderMutation, useReorderFoldersMutation } from '../../hooks/useFolderMutations';
 
 const FoldersGrid = ({
     folders,
@@ -17,7 +17,8 @@ const FoldersGrid = ({
     onRestore,
     onDeletePermanent
 }) => {
-    const { reorderFolders, createFolder } = useFoldersStore();
+    const createFolderMutation = useCreateFolderMutation();
+    const reorderFoldersMutation = useReorderFoldersMutation();
     const [newFolderNameInline, setNewFolderNameInline] = useState('');
     const [activeId, setActiveId] = useState(null);
 
@@ -37,9 +38,9 @@ const FoldersGrid = ({
         })
     );
 
-    const handleCreateFolderInline = async () => {
+    const handleCreateFolderInline = () => {
         if (newFolderNameInline.trim()) {
-            await createFolder(newFolderNameInline.trim(), parentId);
+            createFolderMutation.mutate({ name: newFolderNameInline.trim(), parentId });
         }
         setIsAddingFolder(false);
         setNewFolderNameInline('');
@@ -63,7 +64,7 @@ const FoldersGrid = ({
                 _id: f._id,
                 orderIndex: idx
             }));
-            reorderFolders(parentId, updates);
+            reorderFoldersMutation.mutate({ parentId, updates });
         }
     };
 

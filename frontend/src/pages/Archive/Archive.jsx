@@ -1,20 +1,18 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
-import useNoteOperations from '../../hooks/useNoteOperations';
-import axiosInstance from '../../utils/axiosInstance';
 import { useAuthStore } from '../../store/useAuthStore';
-import { useNotesStore } from '../../store/useNotesStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useNavigate } from 'react-router-dom';
 import Toast from '../../components/ToastMessage/Toast';
 import { useModalStore } from '../../components/Modals/useModalStore';
+import { useArchivedNotesQuery } from '../../hooks/useNotesQuery';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation } from '../../hooks/useNoteMutations';
 
 const Archive = () => {
-    const [archivedNotes, setArchivedNotes] = useState([]);
+    const { data: archivedNotes = [] } = useArchivedNotesQuery();
     const [showToast, setShowToast] = useState(false);
 
     const { getUser } = useAuthStore();
-    const { getAllNotes } = useNotesStore();
     const { openTab } = useTabsStore();
     const navigate = useNavigate();
     const { openConfirmModal } = useModalStore();
@@ -29,6 +27,10 @@ const Archive = () => {
         setToastMessageVisibility({ isShown: true, message, type });
         setShowToast(true);
     };
+
+    const deleteNoteMutation = useDeleteNoteMutation(showToastMessage);
+    const archiveNoteMutation = useArchiveNoteMutation(showToastMessage);
+    const checklistToggleMutation = useChecklistToggleMutation();
 
     const handleCloseToast = () => {
         setToastMessageVisibility((prev) => ({ ...prev, isShown: false }));
@@ -45,41 +47,34 @@ const Archive = () => {
         }
     }, [toastMessageVisibility.isShown]);
 
-    const getArchivedNotes = async () => {
-        try {
-            const response = await axiosInstance.get("/get-all-archived-notes");
-            if (response.data && response.data.notes) {
-                setArchivedNotes(response.data.notes);
-            }
-        }
-        catch (error) {
-            console.log("Unexpected error. Please try again", error);
-        }
-    }
-
     const handleEdit = (note) => {
         openTab(note);
         navigate('/dashboard');
     };
 
-    const {
-        deleteNote,
-        updateNoteArchive,
-        handleChecklistToggle
-    } = useNoteOperations(getArchivedNotes, showToastMessage, getAllNotes);
-
     const handleDeleteNoteClick = (note) => {
         openConfirmModal({
             title: "Delete note?",
             message: "This moves the note to Trash.",
-            onConfirm: () => deleteNote(note)
+            onConfirm: () => deleteNoteMutation.mutate(note._id)
         });
     };
 
+    const handleArchiveToggle = (note) => {
+        archiveNoteMutation.mutate({ noteId: note._id, isArchived: !note.isArchived });
+    };
+
+    const handleChecklist = (note, index) => {
+        const newChecklist = [...(note.checklist || [])];
+        if (newChecklist[index]) {
+            newChecklist[index] = { ...newChecklist[index], completed: !newChecklist[index].completed };
+        }
+        checklistToggleMutation.mutate({ noteId: note._id, checklist: newChecklist });
+    };
+
     useEffect(() => {
-        getArchivedNotes();
         getUser();
-    }, [getUser])
+    }, [getUser]);
 
     return (
         <>
@@ -89,10 +84,9 @@ const Archive = () => {
                     emptyMessage={"No Archived Notes..."}
                     onEdit={handleEdit}
                     onDelete={handleDeleteNoteClick}
-                    onArchive={updateNoteArchive}
-                    onChecklistToggle={handleChecklistToggle}
+                    onArchive={handleArchiveToggle}
+                    onChecklistToggle={handleChecklist}
                     allowDrag={false}
-                // onPin not passed because archived notes typically aren't pinned, or it unarchives them (handled in backend/hook)
                 />
             </div>
 

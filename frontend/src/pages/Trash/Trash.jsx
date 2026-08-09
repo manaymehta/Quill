@@ -1,15 +1,18 @@
-import React, { useEffect, useState } from 'react'
-import { useNotesStore } from '../../store/useNotesStore';
+import React, { useState } from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import Toast from '../../components/ToastMessage/Toast';
 import { useModalStore } from '../../components/Modals/useModalStore';
-import { useFoldersStore } from '../../store/useFoldersStore';
+import { useTrashNotesQuery, useTrashFoldersQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
+import { useRestoreNoteMutation, useDeleteTrashNotePermanentMutation } from '../../hooks/useNoteMutations';
+import { useRestoreFolderMutation, useDeleteFolderPermanentMutation } from '../../hooks/useFolderMutations';
 import { MdOutlineFolder, MdOutlineStickyNote2 } from 'react-icons/md';
 
 const Trash = () => {
-  const { trashNotes, getTrashNotes, restoreNote, deleteNotePermanent } = useNotesStore();
-  const { folders, getFolders, trashFolders, getTrashFolders, restoreFolder, deleteFolderPermanent } = useFoldersStore();
+  const { data: trashNotes = [] } = useTrashNotesQuery();
+  const { data: trashFolders = [] } = useTrashFoldersQuery();
+  const { data: folders = [] } = useFoldersQuery();
+
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState({ message: '', type: '' });
   const { openConfirmModal } = useModalStore();
@@ -23,15 +26,13 @@ const Trash = () => {
     setShowToast(false);
   };
 
-  useEffect(() => {
-    getTrashNotes();
-    getTrashFolders();
-    getFolders();
-  }, [getTrashNotes, getTrashFolders, getFolders]);
+  const restoreNoteMutation = useRestoreNoteMutation(showToastMsg);
+  const deleteTrashNotePermanentMutation = useDeleteTrashNotePermanentMutation(showToastMsg);
+  const restoreFolderMutation = useRestoreFolderMutation(showToastMsg);
+  const deleteFolderPermanentMutation = useDeleteFolderPermanentMutation(showToastMsg);
 
-  const handleRestoreNote = async (note) => {
-    await restoreNote(note._id);
-    showToastMsg("Note restored successfully", "success");
+  const handleRestoreNote = (note) => {
+    restoreNoteMutation.mutate(note._id);
   };
 
   const handleDeleteNotePermanentClick = (note) => {
@@ -40,16 +41,12 @@ const Trash = () => {
       message: "This cannot be undone. Are you sure you want to permanently delete this note?",
       confirmLabel: "Delete forever",
       variant: "danger",
-      onConfirm: async () => {
-        await deleteNotePermanent(note._id);
-        showToastMsg("Note permanently deleted", "delete");
-      }
+      onConfirm: () => deleteTrashNotePermanentMutation.mutate(note._id)
     });
   };
 
-  const handleRestoreFolder = async (folder) => {
-    await restoreFolder(folder._id);
-    showToastMsg("Folder restored successfully", "success");
+  const handleRestoreFolder = (folder) => {
+    restoreFolderMutation.mutate(folder._id);
   };
 
   const handleDeleteFolderPermanentClick = (folder) => {
@@ -58,10 +55,7 @@ const Trash = () => {
       message: `Are you sure you want to permanently delete "${folder.name}"? This action cannot be undone.`,
       confirmLabel: "Delete forever",
       variant: "danger",
-      onConfirm: async () => {
-        await deleteFolderPermanent(folder._id);
-        showToastMsg("Folder permanently deleted", "delete");
-      }
+      onConfirm: () => deleteFolderPermanentMutation.mutate(folder._id)
     });
   };
 

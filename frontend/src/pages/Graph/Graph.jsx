@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { forceCollide } from 'd3-force';
 import ForceGraph2D from 'react-force-graph-2d';
-import { useNotesStore } from '../../store/useNotesStore';
+import { useAllNotesQuery } from '../../hooks/useNotesQuery';
 import { useUIStore } from '../../store/useUIStore';
-
-// Mock data removed
 
 const Graph = () => {
   const fgRef = useRef();
   const { isSidebarOpen } = useUIStore();
-  const { allNotes } = useNotesStore();
+  const { data: allNotes = [] } = useAllNotesQuery();
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [hoveredNode, setHoveredNode] = useState(null);
   const [highlightedNodes, setHighlightedNodes] = useState(new Set());

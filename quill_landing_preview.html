@@ -1,0 +1,1665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quill — cinematic narrative preview</title>
+    <style>
+        /* ==========================================================================
+           QUILL LANDING PREVIEW - CINEMATIC NARRATIVE STYLE
+           ========================================================================== */
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        :root {
+            --lp-bg: #090a0b;
+            --lp-bg-elevated: #111214;
+            --lp-text-p: #f5f5f5;
+            --lp-text-s: #8c8e94;
+            --lp-text-code: rgba(255, 255, 255, 0.4);
+
+            --lp-accent-coral: #e85d56;
+            --lp-accent-amber: #EF863E;
+            --lp-accent-glow: rgba(232, 93, 86, 0.35);
+
+            --lp-glass-card: rgba(18, 19, 21, 0.45);
+            --lp-glass-border: rgba(255, 255, 255, 0.05);
+            --lp-glass-hover-border: rgba(232, 93, 86, 0.3);
+
+            --lp-font-disp: 'Playfair Display', Georgia, serif;
+            --lp-font-base: 'Poppins', sans-serif;
+            --lp-font-mono: 'JetBrains Mono', monospace;
+
+            --lp-cream-edit: #f4eadc;
+            --lp-text-dark: #333333;
+            --lp-text-muted-dark: #666666;
+            --lp-rule-cream: #e8dcc8;
+
+            --lp-ease: cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--lp-bg);
+            color: var(--lp-text-s);
+            font-family: var(--lp-font-base);
+            font-size: 16px;
+            line-height: 1.6;
+            overflow-x: clip;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Background grid canvas */
+        #networkCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.5;
+        }
+
+        /* Preloader terminal */
+        .landing-preloader {
+            position: fixed;
+            inset: 0;
+            background-color: var(--lp-bg);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: var(--lp-font-mono);
+            color: var(--lp-accent-coral);
+            gap: 1.5rem;
+            transition: opacity 0.8s var(--lp-ease), transform 0.8s var(--lp-ease);
+        }
+
+        .landing-preloader.fade-out {
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(1.05);
+        }
+
+        .landing-loader-console {
+            width: 320px;
+            height: 120px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 4px;
+            font-size: 11px;
+            color: var(--lp-text-s);
+        }
+
+        .landing-loader-line {
+            white-space: nowrap;
+        }
+
+        .landing-loader-bar-wrap {
+            width: 320px;
+            height: 2px;
+            background: rgba(255,255,255,0.05);
+            position: relative;
+        }
+
+        .landing-loader-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0;
+            background: var(--lp-accent-coral);
+            box-shadow: 0 0 10px var(--lp-accent-coral);
+        }
+
+        /* Logo link */
+        .landing-nav-logo-pill {
+            position: fixed;
+            top: 1.5rem;
+            left: 3rem;
+            font-family: var(--lp-font-disp);
+            font-weight: 600;
+            font-size: 1.6rem;
+            color: var(--lp-text-p);
+            z-index: 500;
+            text-decoration: none;
+            letter-spacing: -0.02em;
+            opacity: 0; /* Hidden at start */
+            pointer-events: none;
+            will-change: opacity;
+        }
+
+        .landing-eyebrow {
+            font-family: var(--lp-font-mono);
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 0.10em;
+            text-transform: uppercase;
+            color: var(--lp-text-p);
+            opacity: 0.55;
+        }
+
+        h2, h3, h4 {
+            font-family: var(--lp-font-disp);
+            font-weight: 500;
+            color: var(--lp-text-p);
+            line-height: 1.05;
+        }
+
+        /* SECTION 00: Scroll Hero Overture */
+        .landing-hero-scroll-track {
+            height: 350vh; /* Extremely tall to allow a very long draw animation and a long text lock duration */
+            position: relative;
+        }
+
+        .landing-hero-sticky-view {
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            perspective: 1200px;
+        }
+
+        .landing-hero-spotlight {
+            position: absolute;
+            width: 50vw;
+            height: 50vw;
+            background: radial-gradient(circle, rgba(232, 93, 86, 0.28) 0%, transparent 65%);
+            filter: blur(80px);
+            z-index: 1;
+            pointer-events: none;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 0.3;
+            will-change: transform, opacity;
+        }
+
+        /* Unified word display heading matching the original look exactly */
+        .landing-hero-title {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            z-index: 10;
+            margin: 0; /* Clear default browser margins pushing the text down */
+            padding: 0;
+            font-family: var(--lp-font-disp);
+            font-size: clamp(6.5rem, 17vw, 19rem);
+            font-weight: 500;
+            color: var(--lp-text-p);
+            line-height: 0.8;
+            letter-spacing: -0.015em;
+            text-align: center;
+            will-change: transform, opacity;
+            opacity: 0;
+            transform: translate3d(-50%, calc(-50% + 60px), 0);
+        }
+
+        /* Procedural SVG Quill network outline styled classes */
+        .landing-hero-vector-silhouette {
+            position: absolute;
+            width: 480px;
+            height: 480px;
+            pointer-events: none;
+            z-index: 5;
+            top: 50%; /* Center vertically relative to the black marquee bars */
+            left: 50%;
+            transform: translate(-50%, -50%) scale(1);
+            will-change: transform, opacity;
+            opacity: 0.75;
+            overflow: visible;
+        }
+
+        .landing-quill-path {
+            fill: transparent;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            will-change: stroke-dashoffset;
+        }
+
+        .feather-spine-glow {
+            stroke: var(--lp-accent-coral);
+            stroke-width: 4px;
+            filter: drop-shadow(0 0 8px var(--lp-accent-coral));
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+        }
+
+        .feather-spine-core {
+            stroke: #fff;
+            stroke-width: 1.5px;
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+        }
+
+        .feather-nib-glow {
+            stroke: var(--lp-accent-coral);
+            stroke-width: 2px;
+            filter: drop-shadow(0 0 6px var(--lp-accent-coral));
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+        }
+
+        .feather-barb {
+            stroke: rgba(255, 107, 107, 0.55);
+            stroke-width: 1.5px;
+            stroke-dasharray: 400;
+            stroke-dashoffset: 400;
+        }
+
+        .feather-network-link {
+            stroke: rgba(244, 234, 220, 0.15);
+            stroke-width: 0.8px;
+            stroke-dasharray: 150;
+            stroke-dashoffset: 150;
+        }
+
+        .landing-node {
+            will-change: opacity;
+        }
+
+        .landing-node.landing-pulse {
+            filter: drop-shadow(0 0 4px #fff);
+        }
+
+        .landing-node.landing-highlight {
+            filter: drop-shadow(0 0 3px var(--lp-accent-amber));
+        }
+
+        .landing-hero-marquee-ribbon {
+            position: absolute;
+            width: 120%;
+            left: -10%;
+            padding-block: 0.5rem;
+            border-block: 1px solid rgba(255,255,255,0.03);
+            background: rgba(9, 10, 11, 0.6);
+            backdrop-filter: blur(12px);
+            z-index: 20;
+            font-family: var(--lp-font-mono);
+            font-size: 10px;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--lp-text-s);
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .landing-hero-marquee-ribbon--top {
+            top: 15vh;
+        }
+
+        .landing-hero-marquee-ribbon--bottom {
+            bottom: 15vh;
+        }
+
+        .landing-marquee-inner {
+            display: inline-block;
+            padding-left: 100%;
+            animation: marquee-scroll 30s linear infinite;
+        }
+
+        @keyframes marquee-scroll {
+            0% { transform: translate3d(0, 0, 0); }
+            100% { transform: translate3d(-100%, 0, 0); }
+        }
+
+        /* SECTION 01: The Kinetic Note Stream (Thoughts rainfall) */
+        .landing-stream-track {
+            height: 350vh; /* Increased to allow note stream texts to stay visible much longer */
+            position: relative;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .landing-stream-sticky {
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .landing-stream-heading-overlay {
+            position: absolute;
+            top: 6rem;
+            left: 3rem;
+            z-index: 10;
+            pointer-events: none;
+            max-width: 340px;
+        }
+
+        .landing-stream-canvas-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Large, editorial-styled note fragments */
+        .landing-stream-fragment {
+            position: absolute;
+            font-family: var(--lp-font-disp);
+            font-size: clamp(1.4rem, 2.8vw, 3.2rem);
+            font-weight: 500;
+            color: var(--lp-text-p);
+            text-shadow: 0 0 15px rgba(239, 134, 62, 0.2);
+            white-space: nowrap;
+            pointer-events: none;
+            will-change: transform, opacity;
+            opacity: 0;
+        }
+
+        .landing-stream-fragment.italicized {
+            font-style: italic;
+        }
+
+        /* Magnetizing connector lines */
+        .landing-stream-thread-svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .landing-stream-thread-svg line {
+            stroke: rgba(232, 93, 86, 0.35);
+            stroke-width: 1px;
+            stroke-dasharray: 4 4;
+            opacity: 0;
+            will-change: opacity, x2, y2;
+        }
+
+        /* High-res center core node (blob) scaled down to prevent pixelation */
+        .landing-stream-core-node {
+            width: 120px;
+            height: 120px;
+            background: var(--lp-accent-coral);
+            border-radius: 50%;
+            box-shadow: 0 0 32px var(--lp-accent-coral), 0 0 64px rgba(232, 93, 86, 0.4);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            z-index: 10;
+            will-change: transform;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+            transform-style: preserve-3d;
+        }
+
+        /* SECTION 02: Fullscreen Constellation Mind Map */
+        .landing-map-scroll-track {
+            height: 180vh;
+            position: relative;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .landing-map-sticky {
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            overflow: hidden;
+            background-color: var(--lp-bg);
+        }
+
+        .landing-map-header-overlay {
+            position: absolute;
+            top: 6rem;
+            left: 3rem;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .landing-map-canvas-layer {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+
+        .landing-map-canvas-layer:active {
+            cursor: grabbing;
+        }
+
+        .landing-map-detail-card {
+            position: absolute;
+            bottom: 3rem;
+            right: 3rem;
+            width: 320px;
+            background: var(--lp-glass-card);
+            border: 1px solid var(--lp-glass-border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            transition: opacity 0.3s;
+        }
+
+        .landing-map-detail-title {
+            font-size: 1.2rem;
+            color: var(--lp-accent-coral);
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .landing-map-detail-snippet {
+            font-size: 0.875rem;
+            color: var(--lp-text-s);
+            line-height: 1.5;
+        }
+
+        /* SECTION 03: Notebook Accordions */
+        .landing-faq-section {
+            padding-block: 6rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            position: relative;
+            z-index: 20;
+            background-color: var(--lp-bg);
+        }
+
+        .landing-faq-layout {
+            display: grid;
+            grid-template-columns: 0.8fr 1.2fr;
+            gap: 3rem;
+            width: 90%;
+            max-width: 1200px;
+            margin-inline: auto;
+        }
+
+        .landing-faq-list {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .landing-faq-section details {
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.15);
+            padding-block: 1.5rem;
+        }
+
+        .landing-faq-section details:first-of-type {
+            padding-block-start: 0;
+        }
+
+        .landing-faq-section details:last-of-type {
+            border-bottom: none;
+        }
+
+        .landing-faq-section summary {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            list-style: none;
+            font-size: 1.0625rem;
+            font-weight: 600;
+            color: var(--lp-text-p);
+            cursor: pointer;
+        }
+
+        .landing-faq-section summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .landing-faq-section summary::after {
+            content: "→";
+            font-family: var(--lp-font-mono);
+            font-size: 0.875rem;
+            color: var(--lp-accent-coral);
+            transition: transform 0.22s var(--lp-ease);
+        }
+
+        .landing-faq-section details[open] summary::after {
+            transform: rotate(90deg);
+        }
+
+        .landing-faq-section details .faq-answer-card {
+            margin-top: 1rem;
+            background-color: var(--lp-cream-edit);
+            border: 1px solid var(--lp-rule-cream);
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) inset;
+            background-image: linear-gradient(to bottom, transparent 23px, var(--lp-rule-cream) 23px);
+            background-size: 100% 24px;
+            line-height: 24px;
+            padding-top: 8px;
+        }
+
+        .landing-faq-section details p {
+            color: var(--lp-text-dark);
+            font-size: 0.9375rem;
+            line-height: 24px;
+            margin-bottom: 0;
+        }
+
+        /* SECTION 04: Cinematic Footer */
+        .landing-footer-wrapper {
+            background:
+              linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 48px 48px,
+              linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 48px 48px,
+              var(--lp-bg);
+            position: relative;
+            z-index: 20;
+        }
+
+        .landing-foot-stmt {
+            padding-top: 6rem;
+            padding-bottom: 3rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4.5rem;
+            width: 90%;
+            max-width: 1200px;
+            margin-inline: auto;
+        }
+
+        .landing-foot-stmt-line {
+            font-family: var(--lp-font-disp);
+            font-size: clamp(2.25rem, 5.5vw, 4.5rem);
+            line-height: 1.1;
+            letter-spacing: -0.025em;
+            max-width: 24ch;
+            color: var(--lp-text-p);
+            font-weight: 500;
+        }
+
+        .landing-foot-stmt-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding-block-start: 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .landing-foot-stmt-meta .wordmark {
+            font-family: var(--lp-font-disp);
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--lp-text-p);
+            letter-spacing: -0.02em;
+        }
+
+        .landing-foot-stmt-meta .meta-links {
+            display: flex;
+            gap: 1.5rem;
+            list-style: none;
+        }
+
+        .landing-foot-stmt-meta .meta-links a {
+            font-size: 0.8125rem;
+            color: var(--lp-text-s);
+            text-decoration: none;
+        }
+
+        .landing-foot-stmt-meta .meta-links a:hover {
+            color: var(--lp-text-p);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Plucking grid lines background -->
+    <canvas id="networkCanvas"></canvas>
+
+    <!-- Terminal boot preloader -->
+    <div id="preloader" class="landing-preloader">
+        <div class="landing-loader-console" id="loaderConsole"></div>
+        <div class="landing-loader-bar-wrap">
+            <div class="landing-loader-bar" id="loaderBar"></div>
+        </div>
+        <span style="font-size: 11px;">booting system: <span id="progressText">0</span>%</span>
+    </div>
+
+    <!-- Header logo -->
+    <a href="#" class="landing-nav-logo-pill" id="navLogoPill">Quill</a>
+
+    <!-- PHASE 1: Scroll Pinned Hero Overture -->
+    <section class="landing-hero-scroll-track" id="heroSection">
+        <div class="landing-hero-sticky-view">
+            <div class="landing-hero-spotlight" id="heroSpotlight"></div>
+
+            <div class="landing-hero-marquee-ribbon landing-hero-marquee-ribbon--top">
+                <div class="landing-marquee-inner">
+                    * capture raw thoughts * distill long notes * connect topics in constellations * private markdown records * instant summaries *
+                </div>
+            </div>
+
+            <!-- Procedural original network quill generated on load -->
+            <svg class="landing-hero-vector-silhouette" id="heroFeather" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+                <!-- Content injected dynamically via script -->
+            </svg>
+
+            <!-- Unified word header matching the original beautiful letter kerning and display layout -->
+            <h1 class="landing-hero-title" id="heroTitle">Qu<span id="dotlessISpan">ı</span>ll</h1>
+
+            <div class="landing-hero-marquee-ribbon landing-hero-marquee-ribbon--bottom">
+                <div class="landing-marquee-inner" style="animation-direction: reverse;">
+                    * private database encryption * cross-device sync * secure folder directories * visual tag topologies *
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- PHASE 2: The Kinetic Note Stream (Thoughts rainfall) -->
+    <section class="landing-stream-track" id="streamSection">
+        <div class="landing-stream-sticky">
+            <div class="landing-stream-heading-overlay">
+                <span class="landing-eyebrow">01 · stream of thoughts</span>
+                <h2 style="margin-top: 8px;">unstructured note logs.</h2>
+                <p style="font-size: 0.8125rem; margin-top: 8px;">scroll down to accelerate drift and watch note shards magnetize sequentially towards the center core database.</p>
+            </div>
+
+            <div class="landing-stream-canvas-container" id="streamContainer">
+                <div class="landing-stream-core-node" id="streamCore"></div>
+                
+                <svg class="landing-stream-thread-svg" id="streamThreadSvg">
+                    <line id="line0" x1="0" y1="0" x2="50%" y2="50%" />
+                    <line id="line1" x1="0" y1="0" x2="50%" y2="50%" />
+                    <line id="line2" x1="0" y1="0" x2="50%" y2="50%" />
+                    <line id="line3" x1="0" y1="0" x2="50%" y2="50%" />
+                    <line id="line4" x1="0" y1="0" x2="50%" y2="50%" />
+                    <line id="line5" x1="0" y1="0" x2="50%" y2="50%" />
+                </svg>
+
+                <div class="landing-stream-fragment" id="frag0">
+                    capture raw, unstructured thoughts
+                </div>
+                <div class="landing-stream-fragment italicized" id="frag1">
+                    distill pages into clear summaries
+                </div>
+                <div class="landing-stream-fragment" id="frag2">
+                    find tag connections across journals
+                </div>
+                <div class="landing-stream-fragment italicized" id="frag3">
+                    build your personal knowledge map
+                </div>
+                <div class="landing-stream-fragment" id="frag4">
+                    keep your private journals secured
+                </div>
+                <div class="landing-stream-fragment italicized" id="frag5">
+                    access your second brain anywhere
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- PHASE 3: Fullscreen Constellation Mind Map -->
+    <section class="landing-map-scroll-track" id="mapSection">
+        <div class="landing-map-sticky">
+            <div class="landing-map-header-overlay">
+                <span class="landing-eyebrow">02 · connection constellations</span>
+                <h2 style="margin-top: 8px; max-width: 14ch;">visualize your second brain.</h2>
+                <p style="max-width: 30ch; font-size: 0.875rem;">scroll down to cluster nodes. drag elements to warp connections or click for readouts.</p>
+            </div>
+
+            <canvas id="mapCanvas" class="landing-map-canvas-layer"></canvas>
+
+            <div class="landing-map-detail-card" id="mapDetailCard" style="opacity: 0; pointer-events: none;">
+                <h4 class="landing-map-detail-title" id="detailTitle">node</h4>
+                <p class="landing-map-detail-snippet" id="detailSnippet">description</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Accordion section -->
+    <section id="faq" class="landing-faq-section">
+        <div class="landing-faq-layout">
+            <div class="landing-faq-intro">
+                <span class="landing-eyebrow">03 · user guide</span>
+                <h2>frequently questioned responses.</h2>
+            </div>
+            
+            <div class="landing-faq-list">
+                <details>
+                    <summary>is my note content processed securely?</summary>
+                    <div class="faq-answer-card">
+                        <p>yes. your note contents are processed temporarily in-memory when summarizing or analyzing connections. your documents are housed securely in isolated databases and are never used to train external models.</p>
+                    </div>
+                </details>
+                <details>
+                    <summary>how does the map link my notes?</summary>
+                    <div class="faq-answer-card">
+                        <p>Quill monitors the hashtags you attach to notes. when multiple notes share identical hashtags, the interactive mind map automatically draws connection lines between them to construct your knowledge network.</p>
+                    </div>
+                </details>
+                <details>
+                    <summary>does the editor support text formatting?</summary>
+                    <div class="faq-answer-card">
+                        <p>yes. our note editor supports live markdown editing. you can format headings, build interactive checklists, write links, and structure lists with real-time styling that updates automatically as you type.</p>
+                    </div>
+                </details>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <div class="landing-footer-wrapper">
+        <footer class="landing-foot-stmt">
+            <p class="landing-foot-stmt-line">built to think in real time.</p>
+            <div class="landing-foot-stmt-meta">
+                <span class="wordmark">Quill</span>
+                <ul class="meta-links">
+                    <li><a href="#heroSection">overview</a></li>
+                    <li><a href="#faq">faq</a></li>
+                </ul>
+                <span class="landing-eyebrow">© 2026 · mit license · Quill notes</span>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Preloader console messages
+        const bootMessages = [
+            "[status] initiating Quill ledger core...",
+            "[modules] loading vector graph topologies...",
+            "[modules] connecting FastAPI summarization nodes...",
+            "[sync] mapping secure isolated databases...",
+            "[render] parsing carbon webGL shaders...",
+            "[status] Quill second brain ready."
+        ];
+
+        const loader = document.getElementById('preloader');
+        const loaderConsole = document.getElementById('loaderConsole');
+        const loaderBar = document.getElementById('loaderBar');
+        const progressText = document.getElementById('progressText');
+
+        let lineIdx = 0;
+        let progressVal = 0;
+
+        const progressInt = setInterval(() => {
+            progressVal += Math.floor(Math.random() * 8) + 4;
+            if (progressVal >= 100) {
+                progressVal = 100;
+                clearInterval(progressInt);
+                setTimeout(() => {
+                    loader.classList.add('fade-out');
+                }, 500);
+            }
+            loaderBar.style.width = progressVal + '%';
+            progressText.innerText = progressVal;
+        }, 70);
+
+        const msgInt = setInterval(() => {
+            if (lineIdx < bootMessages.length) {
+                const el = document.createElement('div');
+                el.className = 'landing-loader-line';
+                el.innerText = bootMessages[lineIdx];
+                loaderConsole.appendChild(el);
+                lineIdx++;
+            } else {
+                clearInterval(msgInt);
+            }
+        }, 320);
+
+        // Grid canvas plucked strings physics
+        const canvas = document.getElementById('networkCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let particles = [];
+        const plucksX = {};
+        const plucksY = {};
+        let mx = -1000, my = -1000;
+        let pmx = -1000, pmy = -1000;
+
+        const resize = () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        };
+        window.addEventListener('resize', resize);
+        resize();
+
+        class Particle {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.vx = (Math.random() - 0.5) * 0.4;
+                this.vy = (Math.random() - 0.5) * 0.4;
+                this.radius = Math.random() * 1.5 + 0.5;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                if (this.x < 0) this.x = width;
+                if (this.x > width) this.x = 0;
+                if (this.y < 0) this.y = height;
+                if (this.y > height) this.y = 0;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+                ctx.fillStyle = Math.random() > 0.85 ? 'rgba(232, 93, 86, 0.4)' : 'rgba(255, 255, 255, 0.08)';
+                ctx.fill();
+            }
+        }
+
+        for (let i = 0; i < 45; i++) particles.push(new Particle());
+
+        window.addEventListener('mousemove', (e) => {
+            pmx = mx;
+            pmy = my;
+            mx = e.clientX;
+            my = e.clientY;
+
+            const spacing = 80;
+            if (pmx > 0 && pmy > 0) {
+                // Cross vertical X lines
+                const startX = Math.floor(Math.min(pmx, mx) / spacing);
+                const endX = Math.floor(Math.max(pmx, mx) / spacing);
+                for (let i = startX; i <= endX; i++) {
+                    const c = i * spacing;
+                    if (c > Math.min(pmx, mx) && c < Math.max(pmx, mx)) {
+                        plucksX[c] = { mouseY: my, amplitude: Math.min(24, Math.abs(mx - pmx) * 0.7), phase: 0 };
+                    }
+                }
+                // Cross horizontal Y lines
+                const startY = Math.floor(Math.min(pmy, my) / spacing);
+                const endY = Math.floor(Math.max(pmy, my) / spacing);
+                for (let j = startY; j <= endY; j++) {
+                    const r = j * spacing;
+                    if (r > Math.min(pmy, my) && r < Math.max(pmy, my)) {
+                        plucksY[r] = { mouseX: mx, amplitude: Math.min(24, Math.abs(my - pmy) * 0.7), phase: 0 };
+                    }
+                }
+            }
+        });
+
+        // Animation frame loops
+        const runGridAnim = () => {
+            requestAnimationFrame(runGridAnim);
+            ctx.clearRect(0, 0, width, height);
+
+            ctx.lineWidth = 0.5;
+            const spacing = 80;
+
+            // Draw X lines
+            for (let cx = 0; cx < width; cx += spacing) {
+                const p = plucksX[cx];
+                ctx.beginPath();
+                ctx.strokeStyle = p ? 'rgba(232, 93, 86, 0.15)' : 'rgba(255, 255, 255, 0.02)';
+                if (p && p.amplitude > 0.15) {
+                    p.amplitude *= 0.94;
+                    p.phase += 0.35;
+                    ctx.moveTo(cx, 0);
+                    for (let cy = 0; cy < height; cy += 12) {
+                        let dx = 0;
+                        const dist = Math.abs(cy - p.mouseY);
+                        if (dist < 180) {
+                            const env = Math.cos((cy - p.mouseY) / 180 * Math.PI / 2);
+                            dx = p.amplitude * Math.sin(cy * 0.06 + p.phase) * env;
+                        }
+                        ctx.lineTo(cx + dx, cy);
+                    }
+                    ctx.lineTo(cx, height);
+                } else {
+                    ctx.moveTo(cx, 0);
+                    ctx.lineTo(cx, height);
+                }
+                ctx.stroke();
+            }
+
+            // Draw Y lines
+            for (let cy = 0; cy < height; cy += spacing) {
+                const p = plucksY[cy];
+                ctx.beginPath();
+                ctx.strokeStyle = p ? 'rgba(232, 93, 86, 0.15)' : 'rgba(255, 255, 255, 0.02)';
+                if (p && p.amplitude > 0.15) {
+                    p.amplitude *= 0.94;
+                    p.phase += 0.35;
+                    ctx.moveTo(0, cy);
+                    for (let cx = 0; cx < width; cx += 12) {
+                        let dy = 0;
+                        const dist = Math.abs(cx - p.mouseX);
+                        if (dist < 180) {
+                            const env = Math.cos((cx - p.mouseX) / 180 * Math.PI / 2);
+                            dy = p.amplitude * Math.sin(cx * 0.06 + p.phase) * env;
+                        }
+                        ctx.lineTo(cx, cy + dy);
+                    }
+                    ctx.lineTo(width, cy);
+                } else {
+                    ctx.moveTo(0, cy);
+                    ctx.lineTo(width, cy);
+                }
+                ctx.stroke();
+            }
+
+            // Draw particles
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    const dist = Math.sqrt(Math.pow(particles[i].x - particles[j].x, 2) + Math.pow(particles[i].y - particles[j].y, 2));
+                    if (dist < 150) {
+                        ctx.strokeStyle = `rgba(255,255,255, ${(1 - dist/150)*0.12})`;
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+        };
+        runGridAnim();
+
+        // Cached references for procedural quill paths/nodes
+        let cachedSpines = [];
+        let cachedBarbs = [];
+        let cachedLinks = [];
+        let cachedNodes = [];
+
+        // Procedural Original Network Quill SVG Generation
+        const generateProceduralQuill = () => {
+            const feather = document.getElementById('heroFeather');
+            if (!feather) return;
+
+            let svgContent = "";
+
+            const nodes = [];
+            const topPoint = [420, 50];
+            const basePoint = [120, 400];
+            const nibTip = [80, 450];
+            const stemDX = basePoint[0] - topPoint[0];
+            const stemDY = basePoint[1] - topPoint[1];
+
+            const getStemPoint = (t) => [
+                topPoint[0] + stemDX * t,
+                topPoint[1] + stemDY * t
+            ];
+
+            const len = Math.sqrt(stemDX * stemDX + stemDY * stemDY);
+            const tang = [stemDX / len, stemDY / len];
+            const normL = [-tang[1], tang[0]];
+            const normR = [tang[1], -tang[0]];
+
+            // Stem core and glow lines
+            svgContent += `<line class="landing-quill-path feather-spine-glow" x1="${topPoint[0]}" y1="${topPoint[1]}" x2="${basePoint[0]}" y2="${basePoint[1]}" />`;
+            svgContent += `<line class="landing-quill-path feather-spine-core" x1="${topPoint[0]}" y1="${topPoint[1]}" x2="${basePoint[0]}" y2="${basePoint[1]}" />`;
+
+            for (let t = 0; t <= 1; t += 0.05) {
+                nodes.push([...getStemPoint(t), 'spine']);
+            }
+
+            // Metal Nib paths
+            const innerNibBase = [basePoint[0] - tang[0] * 20, basePoint[1] - tang[1] * 20];
+            const nibTopL = [basePoint[0] + normL[0] * 22 - tang[0] * 5, basePoint[1] + normL[1] * 22 - tang[1] * 5];
+            const nibTopR = [basePoint[0] + normR[0] * 22 - tang[0] * 5, basePoint[1] + normR[1] * 22 - tang[1] * 5];
+
+            const nibPath = `M ${innerNibBase[0]} ${innerNibBase[1]} L ${nibTopL[0]} ${nibTopL[1]} L ${nibTip[0]} ${nibTip[1]} L ${nibTopR[0]} ${nibTopR[1]} Z`;
+            svgContent += `<path class="landing-quill-path feather-nib-glow" d="${nibPath}" />`;
+
+            const rib1L = [basePoint[0] + normL[0] * 26 - tang[0] * 15, basePoint[1] + normL[1] * 26 - tang[1] * 15];
+            const rib1R = [basePoint[0] + normR[0] * 26 - tang[0] * 15, basePoint[1] + normR[1] * 26 - tang[1] * 15];
+            const rib2L = [basePoint[0] + normL[0] * 24 - tang[0] * 8, basePoint[1] + normL[1] * 24 - tang[1] * 8];
+            const rib2R = [basePoint[0] + normR[0] * 24 - tang[0] * 8, basePoint[1] + normR[1] * 24 - tang[1] * 8];
+
+            svgContent += `<line class="landing-quill-path feather-spine-glow" x1="${rib1L[0]}" y1="${rib1L[1]}" x2="${rib1R[0]}" y2="${rib1R[1]}" />`;
+            svgContent += `<line class="landing-quill-path feather-spine-glow" x1="${rib2L[0]}" y1="${rib2L[1]}" x2="${rib2R[0]}" y2="${rib2R[1]}" />`;
+            svgContent += `<line class="landing-quill-path feather-spine-glow" x1="${innerNibBase[0]}" y1="${innerNibBase[1]}" x2="${nibTip[0]}" y2="${nibTip[1]}" />`;
+
+            nodes.push([...nibTip, 'nib']);
+            nodes.push([...basePoint, 'nib']);
+
+            // Barbs
+            let barbPathStr = "";
+            const numBarbs = 28;
+            const barbPointsL = [];
+            const barbPointsR = [];
+
+            const getQuad = (t, p0, p1, p2) => {
+                const u = 1 - t;
+                return [
+                    u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0],
+                    u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]
+                ];
+            };
+
+            for (let i = 1; i < numBarbs; i++) {
+                const t = i / numBarbs;
+                const pt = getStemPoint(t);
+                const envFactor = Math.pow(t, 1.2) * Math.pow(1 - t, 0.5) * 2.8;
+                const maxEnvL = 110 * envFactor;
+                const maxEnvR = 80 * envFactor;
+                const sweepFactor = 0.4 + Math.pow(1 - t, 2.0) * 2.5;
+                const sweepDir = [-tang[0] * sweepFactor, -tang[1] * sweepFactor];
+
+                // Left side
+                const startL = [pt[0], pt[1]];
+                const endL = [
+                    pt[0] + normL[0] * maxEnvL + sweepDir[0] * maxEnvL,
+                    pt[1] + normL[1] * maxEnvL + sweepDir[1] * maxEnvL
+                ];
+                const cpL = [
+                    pt[0] + normL[0] * maxEnvL * 0.4 + sweepDir[0] * maxEnvL * 0.2,
+                    pt[1] + normL[1] * maxEnvL * 0.4 + sweepDir[1] * maxEnvL * 0.2
+                ];
+
+                barbPathStr += `<path class="landing-quill-path feather-barb" d="M ${startL[0]} ${startL[1]} Q ${cpL[0]} ${cpL[1]} ${endL[0]} ${endL[1]}" />`;
+
+                const rowL = [];
+                for (let j = 0.2; j <= 1.0; j += 0.2) {
+                    const bPt = getQuad(j, startL, cpL, endL);
+                    rowL.push(bPt);
+                    nodes.push([...bPt, 'barb']);
+                }
+                barbPointsL.push(rowL);
+
+                // Right side
+                const startR = [pt[0], pt[1]];
+                const endR = [
+                    pt[0] + normR[0] * maxEnvR + sweepDir[0] * maxEnvR,
+                    pt[1] + normR[1] * maxEnvR + sweepDir[1] * maxEnvR
+                ];
+                const cpR = [
+                    pt[0] + normR[0] * maxEnvR * 0.4 + sweepDir[0] * maxEnvR * 0.2,
+                    pt[1] + normR[1] * maxEnvR * 0.4 + sweepDir[1] * maxEnvR * 0.2
+                ];
+
+                barbPathStr += `<path class="landing-quill-path feather-barb" d="M ${startR[0]} ${startR[1]} Q ${cpR[0]} ${cpR[1]} ${endR[0]} ${endR[1]}" />`;
+
+                const rowR = [];
+                for (let j = 0.2; j <= 1.0; j += 0.2) {
+                    const bPt = getQuad(j, startR, cpR, endR);
+                    rowR.push(bPt);
+                    nodes.push([...bPt, 'barb']);
+                }
+                barbPointsR.push(rowR);
+            }
+            svgContent += barbPathStr;
+
+            // Network links
+            let linkStr = "";
+            const addPathLine = (p1, p2) => {
+                linkStr += `<line class="landing-quill-path feather-network-link" x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}" />`;
+            };
+
+            for (let arr of [barbPointsL, barbPointsR]) {
+                for (let r = 0; r < arr.length - 1; r++) {
+                    let currRow = arr[r];
+                    let nextRow = arr[r + 1];
+                    for (let c = 0; c < currRow.length; c++) {
+                        if (c < nextRow.length) addPathLine(currRow[c], nextRow[c]);
+                        if (c < nextRow.length - 1) addPathLine(currRow[c], nextRow[c + 1]);
+                    }
+                }
+            }
+            svgContent += linkStr;
+
+            // Intersecting nodes
+            let nodeStr = "";
+            nodes.forEach((node, index) => {
+                let type = node[2];
+                let isHighlight = (Math.random() > 0.65);
+                let isPulse = isHighlight && (Math.random() > 0.5);
+
+                let radius = 2.0;
+                if (type === 'nib') radius = 3.5;
+                if (type === 'spine') radius = 3.0;
+                if (isPulse) radius += 1.5;
+
+                let classes = "landing-node";
+                if (isHighlight) classes += " landing-highlight";
+                if (isPulse) classes += " landing-pulse";
+
+                let fill = 'rgba(244, 234, 220, 0.1)';
+                if (isHighlight) fill = 'var(--lp-accent-amber)';
+                if (isPulse) fill = '#fff';
+
+                nodeStr += `<circle class="${classes}" cx="${node[0]}" cy="${node[1]}" r="${radius}" fill="${fill}" style="opacity: 0.001;" />`;
+            });
+            svgContent += nodeStr;
+
+            feather.innerHTML = svgContent;
+
+            // Cache element references to eliminate QuerySelector layout thrashing inside the tick function
+            cachedSpines = Array.from(feather.querySelectorAll('.feather-spine-glow, .feather-spine-core, .feather-nib-glow'));
+            cachedBarbs = Array.from(feather.querySelectorAll('.feather-barb'));
+            cachedLinks = Array.from(feather.querySelectorAll('.feather-network-link'));
+            cachedNodes = Array.from(feather.querySelectorAll('.landing-node'));
+        };
+
+        // Initialize logo on load
+        generateProceduralQuill();
+
+        // Setup Floating stream fragments coordinates (Editorial layout)
+        const fragsData = [
+            { id: 'frag0', baseLeft: 16, baseTop: 22, startOffset: 0.05, endOffset: 0.50, speed: -120, rot: -7 },
+            { id: 'frag1', baseLeft: 70, baseTop: 32, startOffset: 0.15, endOffset: 0.60, speed: -160, rot: 5 },
+            { id: 'frag2', baseLeft: 22, baseTop: 52, startOffset: 0.25, endOffset: 0.70, speed: -90, rot: -10 },
+            { id: 'frag3', baseLeft: 74, baseTop: 62, startOffset: 0.35, endOffset: 0.80, speed: -180, rot: 8 },
+            { id: 'frag4', baseLeft: 18, baseTop: 78, startOffset: 0.45, endOffset: 0.90, speed: -110, rot: -4 },
+            { id: 'frag5', baseLeft: 64, baseTop: 84, startOffset: 0.55, endOffset: 1.00, speed: -140, rot: 11 }
+        ];
+
+        // Fullscreen Constellation Canvas physics (Section 03)
+        const mapCanvas = document.getElementById('mapCanvas');
+        const mapCtx = mapCanvas.getContext('2d');
+        const mapSection = document.getElementById('mapSection');
+        const mapCard = document.getElementById('mapDetailCard');
+        const detailTitle = document.getElementById('detailTitle');
+        const detailSnippet = document.getElementById('detailSnippet');
+
+        let mapW, mapH;
+        let mapNodes = [];
+        let mapMx = -1000, mapMy = -1000;
+        let scrollProgress = 0;
+        let activeGrabNode = null;
+        let dragOffset = { x: 0, y: 0 };
+
+        const mapResize = () => {
+            if (!mapCanvas) return;
+            mapW = mapCanvas.width = mapCanvas.parentElement.offsetWidth;
+            mapH = mapCanvas.height = mapCanvas.parentElement.offsetHeight;
+        };
+        window.addEventListener('resize', mapResize);
+        mapResize();
+
+        const setupMapNodes = () => {
+            const data = [
+                { id: '1', label: 'fastapi_api', snippet: 'FastAPI microservice executing abstractive LLaMA note summaries in port 8000.' },
+                { id: '2', label: 'react_core', snippet: 'Vite frontend built on declarative states, React hooks, and Zustand store management.' },
+                { id: '3', label: 'mongodb_vault', snippet: 'NoSQL document database storing secured notes, folders, and checklist records.' },
+                { id: '4', label: 'jwt_security', snippet: 'Bearer authorization tokens verifying API headers and isolating user directories.' },
+                { id: '5', label: 'groq_summarizer', snippet: 'API requests forwarding document payloads to Groq servers for 100ms summaries.' },
+                { id: '6', label: 'docker_compose', snippet: 'Isolated local containers orchestration mounting node apps and databases.' },
+                { id: '7', label: 'css_glassmorphism', snippet: 'Tactile interfaces rendering frosted blurs, hairline rules, and radial cursor gradients.' }
+            ];
+            mapNodes = data.map((note, index) => {
+                const angle = (index / data.length) * Math.PI * 2;
+                return {
+                    id: note.id,
+                    label: note.label,
+                    snippet: note.snippet,
+                    baseX: mapW / 2 + Math.cos(angle) * 160,
+                    baseY: mapH / 2 + Math.sin(angle) * 160,
+                    x: Math.random() * mapW,
+                    y: Math.random() * mapH,
+                    vx: 0,
+                    vy: 0,
+                    radius: 6
+                };
+            });
+        };
+        setupMapNodes();
+
+        mapCanvas.addEventListener('mousemove', (e) => {
+            const rect = mapCanvas.getBoundingClientRect();
+            mapMx = e.clientX - rect.left;
+            mapMy = e.clientY - rect.top;
+
+            if (activeGrabNode) {
+                activeGrabNode.x = mapMx - dragOffset.x;
+                activeGrabNode.y = mapMy - dragOffset.y;
+            }
+        });
+
+        mapCanvas.addEventListener('mousedown', (e) => {
+            const rect = mapCanvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            for (let node of mapNodes) {
+                const dist = Math.sqrt(Math.pow(clickX - node.x, 2) + Math.pow(clickY - node.y, 2));
+                if (dist < 15) {
+                    activeGrabNode = node;
+                    dragOffset.x = clickX - node.x;
+                    dragOffset.y = clickY - node.y;
+                    
+                    mapCard.style.opacity = '1';
+                    detailTitle.innerText = node.label;
+                    detailSnippet.innerText = node.snippet;
+                    return;
+                }
+            }
+            mapCard.style.opacity = '0';
+        });
+
+        window.addEventListener('mouseup', () => activeGrabNode = null);
+
+        const runMapAnim = () => {
+            requestAnimationFrame(runMapAnim);
+            mapCtx.clearRect(0, 0, mapW, mapH);
+
+            const centerX = mapW / 2;
+            const centerY = mapH / 2;
+
+            // Recalculate target positions based on scroll
+            mapNodes.forEach((node, index) => {
+                const angle = (index / mapNodes.length) * Math.PI * 2;
+                const rad = (1 - scrollProgress * 0.45) * 160;
+                node.baseX = centerX + Math.cos(angle) * rad;
+                node.baseY = centerY + Math.sin(angle) * rad;
+            });
+
+            // Physics update
+            mapNodes.forEach(node => {
+                if (node === activeGrabNode) return;
+                const ax = (node.baseX - node.x) * 0.045;
+                const ay = (node.baseY - node.y) * 0.045;
+
+                const dx = mapMx - node.x;
+                const dy = mapMy - node.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                let gx = 0, gy = 0;
+                if (dist < 180 && dist > 10) {
+                    const f = (1 - dist / 180) * 0.55;
+                    gx = dx * f * 0.08;
+                    gy = dy * f * 0.08;
+                }
+
+                node.vx = (node.vx + ax + gx) * 0.85;
+                node.vy = (node.vy + ay + gy) * 0.85;
+                node.x += node.vx;
+                node.y += node.vy;
+            });
+
+            // Draw links
+            mapCtx.strokeStyle = 'rgba(232, 93, 86, 0.12)';
+            mapCtx.lineWidth = 1;
+            for (let i = 0; i < mapNodes.length; i++) {
+                mapCtx.beginPath();
+                mapCtx.moveTo(centerX, centerY);
+                mapCtx.lineTo(mapNodes[i].x, mapNodes[i].y);
+                mapCtx.stroke();
+
+                for (let j = i+1; j < mapNodes.length; j++) {
+                    const dist = Math.sqrt(Math.pow(mapNodes[i].x - mapNodes[j].x, 2) + Math.pow(mapNodes[i].y - mapNodes[j].y, 2));
+                    if (dist < 160) {
+                        mapCtx.beginPath();
+                        mapCtx.moveTo(mapNodes[i].x, mapNodes[i].y);
+                        mapCtx.lineTo(mapNodes[j].x, mapNodes[j].y);
+                        mapCtx.strokeStyle = `rgba(232, 93, 86, ${(1 - dist/160)*0.15})`;
+                        mapCtx.stroke();
+                    }
+                }
+            }
+
+            // Draw center node
+            mapCtx.beginPath();
+            mapCtx.arc(centerX, centerY, 12 * (0.6 + scrollProgress * 0.4), 0, Math.PI*2);
+            mapCtx.fillStyle = '#e85d56';
+            mapCtx.fill();
+
+            // Draw nodes
+            mapNodes.forEach(node => {
+                mapCtx.beginPath();
+                mapCtx.arc(node.x, node.y, node.radius, 0, Math.PI*2);
+                mapCtx.fillStyle = '#f4eadc';
+                mapCtx.strokeStyle = '#e85d56';
+                mapCtx.lineWidth = 2;
+                mapCtx.fill();
+                mapCtx.stroke();
+
+                mapCtx.font = "10px monospace";
+                mapCtx.fillStyle = "rgba(255, 255, 255, 0.45)";
+                mapCtx.textAlign = "center";
+                mapCtx.fillText(node.label, node.x, node.y + 16);
+            });
+        };
+        runMapAnim();
+
+        // 4. Scroll Timeline calculations
+        let targetScrollY = window.scrollY;
+        let interpScrollY = window.scrollY;
+
+        window.addEventListener('scroll', () => {
+            targetScrollY = window.scrollY;
+        });
+
+        const tick = () => {
+            const diff = targetScrollY - interpScrollY;
+            if (Math.abs(diff) < 0.1) {
+                interpScrollY = targetScrollY;
+            } else {
+                interpScrollY += diff * 0.035;
+            }
+
+            // A. HERO OVERTURE (Feather draw -> Feather morphs into dot of "i" -> Text stays locked & scrolls away)
+            const heroSection = document.getElementById('heroSection');
+            const heroHeight = heroSection ? (heroSection.offsetHeight - window.innerHeight) : (window.innerHeight * 0.6);
+            const rHero = Math.min(1, Math.max(0, interpScrollY / heroHeight));
+
+            const title = document.getElementById('heroTitle');
+            const spotlight = document.getElementById('heroSpotlight');
+            const feather = document.getElementById('heroFeather');
+            const iSpan = document.getElementById('dotlessISpan');
+            const stickyView = document.querySelector('.landing-hero-sticky-view');
+            const navLogoPill = document.getElementById('navLogoPill');
+
+            let featherOpacity = 0;
+            let textOpacity = 0;
+            let featherTransform = "";
+            let titleTransform = "";
+
+            // Calculate the exact target offset to align the logo's nib tip to the dotless "i"
+            let targetOffsetX = 0;
+            let targetOffsetY = 0;
+            const targetScale = 0.22; // Ideal scale so the feather matches a dot's scale context
+
+            // Merging target coordinates to match the nav logo pill at top-left
+            let titleMergeOffsetX = 0;
+            let titleMergeOffsetY = 0;
+            let titleTargetScale = 0.08;
+            let featherMergeOffsetX = 0;
+            let featherMergeOffsetY = 0;
+            let featherTargetScale = 0.018;
+
+            if (iSpan && stickyView && navLogoPill) {
+                const iRect = iSpan.getBoundingClientRect();
+                const sRect = stickyView.getBoundingClientRect();
+                const navRect = navLogoPill.getBoundingClientRect();
+
+                // Get the computed font size to correct offsets dynamically
+                const fontSize = parseFloat(window.getComputedStyle(title).fontSize);
+
+                // Screen coordinates of the top of the dotless "i" stem (shifted left to clear adjacent "l")
+                const targetX = ((iRect.left + iRect.right) / 2 - sRect.left) - (fontSize * 0.08);
+                const targetY = (iRect.top - sRect.top) + (fontSize * 0.465);
+
+                // Center of viewport
+                const screenCenterX = sRect.width / 2;
+                const screenCenterY = sRect.height / 2;
+
+                // SVG coordinates offset for the pen nib tip [80, 450] relative to SVG center [250, 250]
+                const dx = 80 - 250;
+                const dy = 450 - 250;
+
+                // Screen-pixel offset of the nib tip from the SVG center at targetScale
+                const nibOffsetX = dx * targetScale;
+                const nibOffsetY = dy * targetScale;
+
+                // Target center of the SVG container to align the nib tip with the stem top
+                const svgCenterX = targetX - nibOffsetX;
+                const svgCenterY = targetY - nibOffsetY;
+
+                // Final offset translation from the centered top: 50% left: 50% position
+                targetOffsetX = svgCenterX - screenCenterX;
+                targetOffsetY = svgCenterY - screenCenterY;
+
+                // Nav Logo Pill center coordinates relative to viewport
+                const navCenterX = navRect.left + navRect.width / 2 - sRect.left;
+                const navCenterY = navRect.top + navRect.height / 2 - sRect.top;
+
+                titleMergeOffsetX = navCenterX - screenCenterX;
+                titleMergeOffsetY = navCenterY - screenCenterY;
+
+                const navFontSize = parseFloat(window.getComputedStyle(navLogoPill).fontSize);
+                titleTargetScale = navFontSize / fontSize;
+
+                // Align the feather center to the dot of the "i" in the nav logo pill
+                const navIcenterX = navRect.left + navRect.width * 0.58 - sRect.left;
+                const navIcenterY = navRect.top + navRect.height * 0.35 - sRect.top;
+
+                featherTargetScale = targetScale * titleTargetScale;
+                const fdx = dx * featherTargetScale;
+                const fdy = dy * featherTargetScale;
+                const fSvgCenterX = navIcenterX - fdx;
+                const fSvgCenterY = navIcenterY - fdy;
+
+                featherMergeOffsetX = fSvgCenterX - screenCenterX;
+                featherMergeOffsetY = fSvgCenterY - screenCenterY;
+            }
+
+            if (rHero <= 0.40) {
+                // Phase 1: Procedural Quill draws itself on scroll (0.0 to 0.40)
+                const rFeatherDraw = rHero / 0.40;
+                
+                // Spine lines
+                cachedSpines.forEach(p => {
+                    p.style.strokeDashoffset = 1000 - (rFeatherDraw * 1000);
+                });
+
+                // Barbs
+                cachedBarbs.forEach(p => {
+                    p.style.strokeDashoffset = 400 - (rFeatherDraw * 400);
+                });
+
+                // Network links
+                cachedLinks.forEach(p => {
+                    p.style.strokeDashoffset = 150 - (rFeatherDraw * 150);
+                });
+
+                // Glowing nodes (fade in progressively alongside drawing paths)
+                const nodeOpacity = Math.min(1, rFeatherDraw * 1.15);
+                cachedNodes.forEach(p => {
+                    p.style.opacity = nodeOpacity.toString();
+                });
+
+                featherOpacity = 0.75;
+                textOpacity = 0;
+
+                const yOffset = rHero * 80;
+                const scale = 1 - rHero * 0.15;
+                featherTransform = `translate3d(-50%, calc(-50% + ${yOffset}px), 0) scale(${scale})`;
+                titleTransform = `translate3d(-50%, calc(-50% + 80px), 0)`;
+
+                if (navLogoPill) {
+                    navLogoPill.style.opacity = "0";
+                    navLogoPill.style.pointerEvents = "none";
+                }
+            } 
+            else if (rHero > 0.40 && rHero <= 0.70) {
+                // Phase 2: Feather glides to dock as the dot of "i", Text pops up centered (0.40 to 0.70)
+                const rFade = (rHero - 0.40) / 0.30;
+                featherOpacity = 0.75;
+
+                // Lock all paths in fully drawn state
+                cachedSpines.forEach(p => p.style.strokeDashoffset = "0");
+                cachedBarbs.forEach(p => p.style.strokeDashoffset = "0");
+                cachedLinks.forEach(p => p.style.strokeDashoffset = "0");
+                cachedNodes.forEach(p => p.style.opacity = "1");
+
+                // Sine ease-in-out (Harmonic motion) for an organic, cushiony deceleration
+                const eased = 0.5 * (1 - Math.cos(rFade * Math.PI));
+                textOpacity = eased;
+
+                const textYOffset = (1 - eased) * 80;
+                titleTransform = `translate3d(-50%, calc(-50% + ${textYOffset}px), 0)`;
+
+                const startOffsetX = 0;
+                const startOffsetY = 0.40 * 80;
+                const startScale = 1 - 0.40 * 0.15;
+
+                const offsetX = startOffsetX * (1 - eased) + targetOffsetX * eased;
+                const offsetY = startOffsetY * (1 - eased) + targetOffsetY * eased;
+                const scale = startScale * (1 - eased) + targetScale * eased;
+                featherTransform = `translate3d(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px), 0) scale(${scale})`;
+
+                if (navLogoPill) {
+                    navLogoPill.style.opacity = "0";
+                    navLogoPill.style.pointerEvents = "none";
+                }
+            } 
+            else if (rHero > 0.70 && rHero <= 0.85) {
+                // Phase 3: Text and logo stay fully locked in place as the "i" dot (0.70 to 0.85)
+                featherOpacity = 0.75;
+
+                cachedSpines.forEach(p => p.style.strokeDashoffset = "0");
+                cachedBarbs.forEach(p => p.style.strokeDashoffset = "0");
+                cachedLinks.forEach(p => p.style.strokeDashoffset = "0");
+                cachedNodes.forEach(p => p.style.opacity = "1");
+
+                textOpacity = 1.0;
+                titleTransform = `translate3d(-50%, -50%, 0)`;
+                featherTransform = `translate3d(calc(-50% + ${targetOffsetX}px), calc(-50% + ${targetOffsetY}px), 0) scale(${targetScale})`;
+
+                if (navLogoPill) {
+                    navLogoPill.style.opacity = "0";
+                    navLogoPill.style.pointerEvents = "none";
+                }
+            }
+            else {
+                // Phase 4: Centered brand lockup glides to top-left & merges into navLogoPill (0.85 to 1.0)
+                const rMerge = (rHero - 0.85) / 0.15;
+                const easeMerge = 0.5 * (1 - Math.cos(rMerge * Math.PI));
+
+                cachedSpines.forEach(p => p.style.strokeDashoffset = "0");
+                cachedBarbs.forEach(p => p.style.strokeDashoffset = "0");
+                cachedLinks.forEach(p => p.style.strokeDashoffset = "0");
+                cachedNodes.forEach(p => p.style.opacity = "1");
+
+                textOpacity = 1.0 * (1 - easeMerge);
+                featherOpacity = 0.75 * (1 - easeMerge);
+
+                // Interpolate title to top-left nav position
+                const titleX = titleMergeOffsetX * easeMerge;
+                const titleY = titleMergeOffsetY * easeMerge;
+                const titleScale = 1.0 * (1 - easeMerge) + titleTargetScale * easeMerge;
+                titleTransform = `translate3d(calc(-50% + ${titleX}px), calc(-50% + ${titleY}px), 0) scale(${titleScale})`;
+
+                // Interpolate feather to top-left nav position
+                const fX = targetOffsetX * (1 - easeMerge) + featherMergeOffsetX * easeMerge;
+                const fY = targetOffsetY * (1 - easeMerge) + featherMergeOffsetY * easeMerge;
+                const fScale = targetScale * (1 - easeMerge) + featherTargetScale * easeMerge;
+                featherTransform = `translate3d(calc(-50% + ${fX}px), calc(-50% + ${fY}px), 0) scale(${fScale})`;
+
+                if (navLogoPill) {
+                    navLogoPill.style.opacity = easeMerge.toString();
+                    navLogoPill.style.pointerEvents = easeMerge > 0.5 ? "auto" : "none";
+                }
+            }
+
+            // Apply style updates
+            if (feather) {
+                feather.style.opacity = featherOpacity;
+                feather.style.transform = featherTransform;
+            }
+
+            if (title) {
+                title.style.transform = titleTransform;
+                title.style.opacity = textOpacity.toString();
+            }
+
+            if (spotlight) {
+                spotlight.style.transform = `translate(-50%, -50%) scale(${1 + rHero * 1.5})`;
+                spotlight.style.opacity = `${0.3 + rHero * 0.7}`;
+            }
+
+            // B. KINETIC STAGGERED NOTE STREAM (Absorption flow)
+            const streamContainer = document.getElementById('streamSection');
+            const streamCore = document.getElementById('streamCore');
+
+            if (streamContainer && streamCore) {
+                const top = streamContainer.offsetTop;
+                const hVal = streamContainer.offsetHeight;
+                let progress = (interpScrollY - top) / (hVal - window.innerHeight);
+                progress = Math.max(0, Math.min(1, progress));
+
+                let coreScale = 0;
+                let absorbedCount = 0;
+
+                fragsData.forEach((frag, idx) => {
+                    const el = document.getElementById(frag.id);
+                    const line = document.getElementById('line' + idx);
+                    if (!el) return;
+
+                    let pFrag = (progress - frag.startOffset) / (frag.endOffset - frag.startOffset);
+                    pFrag = Math.max(0, Math.min(1, pFrag));
+
+                    // Base drifting coords
+                    const xStart = frag.baseLeft;
+                    const yStart = frag.baseTop + (pFrag * frag.speed / 10);
+
+                    let xFinal = xStart;
+                    let yFinal = yStart;
+                    let opacity = 0;
+
+                    // Stays fully visible longer: fade-in fast, fade-out late
+                    if (pFrag > 0.02 && pFrag < 0.98) {
+                        opacity = Math.min(1, pFrag * 8) * Math.min(1, (0.98 - pFrag) * 12);
+                    }
+
+                    // Magnetize to center only during the very end (last 18% of fragment path)
+                    if (pFrag > 0.82) {
+                        const t = (pFrag - 0.82) / 0.18;
+                        xFinal = xStart + (50 - xStart) * t;
+                        yFinal = yStart + (50 - yStart) * t;
+
+                        if (line) {
+                            line.setAttribute('x1', xFinal + '%');
+                            line.setAttribute('y1', yFinal + '%');
+                            line.style.opacity = (t * 0.4).toString();
+                        }
+
+                        if (t > 0.92) {
+                            absorbedCount++;
+                        }
+
+                        // Swallow pulse animation
+                        if (t > 0.82 && t < 1.0) {
+                            const pulseRatio = (t - 0.82) / 0.18;
+                            coreScale += Math.sin(pulseRatio * Math.PI) * 0.09; // Adjusted spring pulse amplitude for 120px node
+                        }
+                    } else {
+                        if (line) line.style.opacity = '0';
+                    }
+
+                    el.style.left = xFinal + '%';
+                    el.style.top = yFinal + '%';
+                    el.style.transform = `translate(-50%, -50%) rotate(${frag.rot * (1 - pFrag)}deg) scale(${1 - pFrag * 0.2})`;
+                    el.style.opacity = opacity.toString();
+                });
+
+                if (progress > 0) {
+                    const targetBase = 0.08 + (absorbedCount * 0.07);
+                    
+                    // 1. Intro smooth ease-in (from progress 0.0 to 0.2)
+                    const introRatio = Math.min(1, progress / 0.2);
+                    const easedIntro = Math.sin(introRatio * Math.PI / 2);
+                    
+                    // 2. Poppy elastic overshoot bounce (peaks at progress 0.22, settles at 0.3)
+                    let popFactor = 1.0;
+                    if (progress > 0 && progress < 0.32) {
+                        popFactor = 1.0 + Math.sin(progress / 0.32 * Math.PI) * 0.3;
+                    }
+                    
+                    const baseCoreScale = targetBase * easedIntro * popFactor;
+                    coreScale += baseCoreScale;
+                    streamCore.style.transform = `translate(-50%, -50%) scale(${coreScale})`;
+                } else {
+                    streamCore.style.transform = `translate(-50%, -50%) scale(0)`;
+                }
+            }
+
+            // C. FULLSCREEN CONSTELLATION MAP ZOOM
+            if (mapSection) {
+                const top = mapSection.offsetTop;
+                const hVal = mapSection.offsetHeight;
+                let progress = (interpScrollY - top) / (hVal - window.innerHeight);
+                progress = Math.max(0, Math.min(1, progress));
+                scrollProgress = progress;
+            }
+
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    </script>
+</body>
+</html>

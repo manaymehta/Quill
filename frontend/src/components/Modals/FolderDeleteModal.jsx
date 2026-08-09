@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MdClose, MdWarning, MdDelete, MdOutlineFolder, MdOutlineStickyNote2 } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
-import { useNotesStore } from '../../store/useNotesStore';
+import { useFoldersQuery, useAllNotesQuery } from '../../hooks/useNotesQuery';
+import { useDeleteFolderMutation } from '../../hooks/useFolderMutations';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { useModalStore } from './useModalStore';
@@ -10,8 +11,10 @@ const FolderDeleteModal = () => {
     const { folderDeleteModal, closeFolderDeleteModal } = useModalStore();
     const { isOpen, folder, onConfirm } = folderDeleteModal;
 
-    const { getSubtreeIds, getFolderPath, folders, deleteFolder } = useFoldersStore();
-    const { allNotes } = useNotesStore();
+    const { getSubtreeIds, getFolderPath } = useFoldersStore();
+    const { data: folders = [] } = useFoldersQuery();
+    const { data: allNotes = [] } = useAllNotesQuery();
+    const deleteFolderMutation = useDeleteFolderMutation();
 
     const [step, setStep] = useState(1);
     const [typedPath, setTypedPath] = useState('');
@@ -24,27 +27,28 @@ const FolderDeleteModal = () => {
             setTypedPath('');
 
             // Calculate subtree stats
-            const subtreeIds = getSubtreeIds(folder._id);
+            const subtreeIds = getSubtreeIds(folders, folder._id);
             const notesCount = allNotes.filter(n => subtreeIds.includes(n.folderId) && !n.isDeleted).length;
             const foldersCount = subtreeIds.length - 1; // exclude current folder
             setStats({ notesCount, foldersCount });
 
             // Calculate path
-            const path = getFolderPath(folder._id);
+            const path = getFolderPath(folders, folder._id);
             const pathStr = path.map(f => f.name).join('/');
             setFullPath(pathStr);
         }
     }, [folder, folders, allNotes, getSubtreeIds, getFolderPath]);
 
-    const handleConfirm = async () => {
+    const handleConfirm = () => {
+        const subtreeIds = getSubtreeIds(folders, folder._id);
         if (stats.notesCount === 0 && stats.foldersCount === 0) {
-            await deleteFolder(folder._id);
+            deleteFolderMutation.mutate({ folderId: folder._id, subtreeIds });
             if (onConfirm) onConfirm();
             closeFolderDeleteModal();
         } else if (step === 1) {
             setStep(2);
         } else if (step === 2 && typedPath === fullPath) {
-            await deleteFolder(folder._id);
+            deleteFolderMutation.mutate({ folderId: folder._id, subtreeIds });
             if (onConfirm) onConfirm();
             closeFolderDeleteModal();
         }

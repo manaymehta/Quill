@@ -14,7 +14,7 @@ import { useModalStore } from "../Modals/useModalStore";
 const MainLayout = () => {
     const { isSidebarOpen, toggleSidebar } = useUIStore();
     const { getUser } = useAuthStore();
-    const { getAllNotes, onSearch, handleClearSearch, onAiSearch } = useNotesStore();
+    const { onSearch, handleClearSearch, onAiSearch } = useNotesStore();
     const { activeTabId, setActiveTab } = useTabsStore();
     const location = useLocation();
     const { closeConfirmModal, closeFolderDeleteModal } = useModalStore();
@@ -40,9 +40,8 @@ const MainLayout = () => {
     }, [location.pathname, location.search, location.state, closeConfirmModal, closeFolderDeleteModal, setActiveTab]);
 
     useEffect(() => {
-        getAllNotes();
         getUser();
-    }, [getAllNotes, getUser]);
+    }, [getUser]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {

@@ -1,17 +1,18 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
-import useNoteOperations from '../../hooks/useNoteOperations';
-import axiosInstance from '../../utils/axiosInstance';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useNavigate } from 'react-router-dom';
 import Toast from '../../components/ToastMessage/Toast';
 import { useModalStore } from '../../components/Modals/useModalStore';
+import { useHomeNotesQuery } from '../../hooks/useNotesQuery';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation } from '../../hooks/useNoteMutations';
 
 const Pinned = () => {
-  const [allPinnedNotes, setAllPinnedNotes] = useState([]);
-  const [showToast, setShowToast] = useState(false);
+  const { data: homeNotes = [] } = useHomeNotesQuery();
+  const allPinnedNotes = homeNotes.filter(n => n.showInHome || n.isPinned);
 
+  const [showToast, setShowToast] = useState(false);
   const { getUser } = useAuthStore();
   const { openTab } = useTabsStore();
   const navigate = useNavigate();
@@ -28,6 +29,11 @@ const Pinned = () => {
     setShowToast(true);
   };
 
+  const deleteNoteMutation = useDeleteNoteMutation(showToastMessage);
+  const archiveNoteMutation = useArchiveNoteMutation(showToastMessage);
+  const checklistToggleMutation = useChecklistToggleMutation();
+  const toggleHomePinMutation = useToggleHomePinMutation(showToastMessage);
+
   const handleCloseToast = () => {
     setToastMessageVisibility((prev) => ({ ...prev, isShown: false }));
     setTimeout(() => {
@@ -43,42 +49,38 @@ const Pinned = () => {
     }
   }, [toastMessageVisibility.isShown]);
 
-  const getAllPinnedNotes = async () => {
-    try {
-      const response = await axiosInstance.get("/get-all-pinned-notes");
-      if (response.data && response.data.notes) {
-        setAllPinnedNotes(response.data.notes);
-      }
-    }
-    catch (error) {
-      console.log("Unexpected error. Please try again", error);
-    }
-  }
-
   const handleEdit = (note) => {
     openTab(note);
     navigate('/dashboard');
   };
 
-  const {
-    deleteNote,
-    updateIsPinned,
-    updateNoteArchive,
-    handleChecklistToggle
-  } = useNoteOperations(getAllPinnedNotes, showToastMessage);
-
   const handleDeleteNoteClick = (note) => {
     openConfirmModal({
       title: "Delete note?",
       message: "This moves the note to Trash.",
-      onConfirm: () => deleteNote(note)
+      onConfirm: () => deleteNoteMutation.mutate(note._id)
     });
   };
 
+  const handlePinToggle = (noteData) => {
+    toggleHomePinMutation.mutate(noteData._id);
+  };
+
+  const handleArchiveToggle = (note) => {
+    archiveNoteMutation.mutate({ noteId: note._id, isArchived: !note.isArchived });
+  };
+
+  const handleChecklist = (note, index) => {
+    const newChecklist = [...(note.checklist || [])];
+    if (newChecklist[index]) {
+      newChecklist[index] = { ...newChecklist[index], completed: !newChecklist[index].completed };
+    }
+    checklistToggleMutation.mutate({ noteId: note._id, checklist: newChecklist });
+  };
+
   useEffect(() => {
-    getAllPinnedNotes();
     getUser();
-  }, [getUser])
+  }, [getUser]);
 
   return (
     <>
@@ -88,9 +90,9 @@ const Pinned = () => {
           emptyMessage={"No Pinned Notes..."}
           onEdit={handleEdit}
           onDelete={handleDeleteNoteClick}
-          onPin={updateIsPinned}
-          onArchive={updateNoteArchive}
-          onChecklistToggle={handleChecklistToggle}
+          onPin={handlePinToggle}
+          onArchive={handleArchiveToggle}
+          onChecklistToggle={handleChecklist}
           allowDrag={false}
         />
       </div>

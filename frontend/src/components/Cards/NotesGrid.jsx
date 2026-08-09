@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import NoteCard from './NoteCard';
 import EmptyCard from './EmptyCard';
-import { useNotesStore } from '../../store/useNotesStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useSearchStore } from '../../store/useSearchStore';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
+import { useReorderNotesMutation, useReorderHomeNotesMutation } from '../../hooks/useNoteMutations';
 
 const getCols = (isAIMode) => {
     if (typeof window === 'undefined') return 2;
@@ -28,7 +28,8 @@ const NotesGrid = ({
     allowDrag = true,
     hideFolderBadge = false,
 }) => {
-    const { reorderNotes, reorderHomeNotes } = useNotesStore();
+    const reorderNotesMutation = useReorderNotesMutation();
+    const reorderHomeNotesMutation = useReorderHomeNotesMutation();
     const { activeFolderId } = useFoldersStore();
     const { searchMode, isSearchingAI, semanticResult } = useSearchStore();
     const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
@@ -76,9 +77,11 @@ const NotesGrid = ({
         const newOrder = arrayMove(notes, oldIndex, newIndex);
 
         if (activeFolderId === null) {
-            reorderHomeNotes(newOrder);
+            const updates = newOrder.map((n, idx) => ({ _id: n._id, homeOrderIndex: idx }));
+            reorderHomeNotesMutation.mutate({ updates });
         } else {
-            reorderNotes(newOrder, activeFolderId);
+            const updates = newOrder.map((n, idx) => ({ _id: n._id, orderIndex: idx }));
+            reorderNotesMutation.mutate({ updates });
         }
     };
 

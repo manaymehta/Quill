@@ -9,7 +9,8 @@ import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { quillTheme, quillMarkdownHighlight, hideMarkdownSyntax, lineWrap } from '../../utils/markdownEditor';
 import MoveToPicker from '../../components/Cards/MoveToPicker';
-import { useFoldersStore } from '../../store/useFoldersStore';
+import { useQueryClient } from '@tanstack/react-query';
+import { useFoldersQuery } from '../../hooks/useNotesQuery';
 
 
 const EDITOR_EXTENSIONS = [
@@ -58,7 +59,8 @@ const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChe
 
 
 const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess, showToastMessage, isActive, onToggleMockPanel, onSummaryReceived }) => {
-  const { folders } = useFoldersStore();
+  const queryClient = useQueryClient();
+  const { data: folders = [] } = useFoldersQuery();
   const [tags, setTags] = useState(noteData?.tags || []);
   const [content, setContent] = useState(noteData?.content || "");
   const [title, setTitle] = useState(noteData?.title || "");
@@ -298,12 +300,14 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       if (noteData.isDraft) {
         const response = await axiosInstance.post("/add-note", payload);
         if (response.data && response.data.note) {
+          queryClient.invalidateQueries({ queryKey: ['notes'] });
           onSaveSuccess();
           showToastMessage("Note added successfully", "add");
         }
       } else {
         const response = await axiosInstance.put("/edit-note/" + noteId, payload);
         if (response.data && response.data.note) {
+          queryClient.invalidateQueries({ queryKey: ['notes'] });
           onSaveSuccess();
           showToastMessage("Note updated successfully", "edit");
         }
@@ -314,7 +318,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         setError(error.response.data.message);
       }
     }
-  }, [noteData, title, content, isChecklist, tags, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getFinalPreviewsBeforeSave]);
+  }, [noteData, title, content, isChecklist, tags, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getFinalPreviewsBeforeSave, queryClient]);
 
   const addNewNote = useCallback(async () => {
     try {
@@ -338,6 +342,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
       const response = await axiosInstance.post("/add-note", payload);
       if (response.data && response.data.note) {
+        queryClient.invalidateQueries({ queryKey: ['notes'] });
         onSaveSuccess();
         showToastMessage("Note added successfully", "add");
       }
@@ -347,7 +352,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         setError(error.response.data.message);
       }
     }
-  }, [title, content, tags, isChecklist, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getFinalPreviewsBeforeSave]);
+  }, [title, content, tags, isChecklist, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getFinalPreviewsBeforeSave, queryClient]);
 
   const handleAddNote = useCallback(() => {
     if (!isChecklist && !content && !title) {

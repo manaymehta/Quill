@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback, memo, Fragment } from 'react';
+import { useState, useEffect, useCallback, memo, useMemo, Fragment } from 'react';
 import { useLocation } from 'react-router-dom';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import AiSearchPanel from '../../components/Cards/AiSearchPanel';
-import useNoteOperations from '../../hooks/useNoteOperations';
 import AddEditNotes from './AddEditNotes';
 import Toast from '../../components/ToastMessage/Toast';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import { useModalStore } from '../../components/Modals/useModalStore';
-import { useNotesStore } from '../../store/useNotesStore';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
-import { useFoldersStore } from '../../store/useFoldersStore';
+import { useHomeNotesQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation } from '../../hooks/useNoteMutations';
+import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import { MdOutlineFolder, MdOutlineStickyNote2, MdAdd, MdFolder } from 'react-icons/md';
 import './Modal.css';
 
@@ -56,12 +56,23 @@ const Home = () => {
   const queryParams = new URLSearchParams(location.search);
   const isFoldersView = queryParams.get("view") === "folders";
 
-  const { getViewNotes, isViewLoading, getHomeNotes } = useNotesStore();
-  const allNotes = getViewNotes('home');
-  const isLoading = isViewLoading('home');
-  const { folders, editFolder } = useFoldersStore();
-  const { searchMode, semanticResult, isSearchingAI, setSearchScope, setScopeFolderIds } = useSearchStore();
+  const { data: allNotes = [], isLoading } = useHomeNotesQuery();
+  const { data: folders = [] } = useFoldersQuery();
+
+  const { searchQuery, searchMode, semanticResult, isSearchingAI, setSearchScope, setScopeFolderIds } = useSearchStore();
   const { openTabs, activeTabId, openTab, closeTab } = useTabsStore();
+
+  const displayedNotes = useMemo(() => {
+    if (searchMode === 'keyword' && searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      return allNotes.filter(n =>
+        (n.title && n.title.toLowerCase().includes(q)) ||
+        (n.content && n.content.toLowerCase().includes(q)) ||
+        (n.tags && n.tags.some(t => t.toLowerCase().includes(q)))
+      );
+    }
+    return allNotes;
+  }, [allNotes, searchMode, searchQuery]);
 
   const [showToast, setShowToast] = useState(false);
   const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
@@ -74,15 +85,20 @@ const Home = () => {
     type: 'add',
   });
 
+  const showToastMessage = useCallback((message, type) => {
+    setToastMessageVisibility({ isShown: true, message, type });
+    setShowToast(true);
+  }, []);
+
+  const deleteNoteMutation = useDeleteNoteMutation(showToastMessage);
+  const archiveNoteMutation = useArchiveNoteMutation(showToastMessage);
+  const checklistToggleMutation = useChecklistToggleMutation();
+  const editFolderMutation = useEditFolderMutation(showToastMessage);
+
   // Reset inline folder creation state on route/navigation changes
   useEffect(() => {
     setIsAddingFolder(false);
   }, [location]);
-
-  // Load home notes
-  useEffect(() => {
-    getHomeNotes();
-  }, [getHomeNotes]);
 
   // Set search scope context
   useEffect(() => {
@@ -90,24 +106,36 @@ const Home = () => {
     setScopeFolderIds([]);
   }, [setSearchScope, setScopeFolderIds]);
 
-  const handleRenameFolder = async (folderId, newName) => {
-    await editFolder(folderId, { name: newName });
+  const handleRenameFolder = (folderId, newName) => {
+    editFolderMutation.mutate({ folderId, patch: { name: newName } });
   };
 
-  const handleColorChangeFolder = async (folderId, newColor) => {
-    await editFolder(folderId, { color: newColor });
+  const handleColorChangeFolder = (folderId, newColor) => {
+    editFolderMutation.mutate({ folderId, patch: { color: newColor } });
   };
 
   const handleDeleteFolder = (folderObj) => {
-    openFolderDeleteModal(folderObj, () => showToastMessage("Folder moved to Trash", "delete"));
+    openFolderDeleteModal(folderObj);
   };
 
   const handleDeleteNoteClick = (note) => {
     openConfirmModal({
       title: "Delete note?",
       message: "This moves the note to Trash.",
-      onConfirm: () => deleteNote(note)
+      onConfirm: () => deleteNoteMutation.mutate(note._id)
     });
+  };
+
+  const handleArchiveToggle = (note) => {
+    archiveNoteMutation.mutate({ noteId: note._id, isArchived: !note.isArchived });
+  };
+
+  const handleChecklist = (note, index) => {
+    const newChecklist = [...(note.checklist || [])];
+    if (newChecklist[index]) {
+      newChecklist[index] = { ...newChecklist[index], completed: !newChecklist[index].completed };
+    }
+    checklistToggleMutation.mutate({ noteId: note._id, checklist: newChecklist });
   };
 
   // Reset side panel when switching between tabs
@@ -117,21 +145,14 @@ const Home = () => {
   }, [activeTabId]);
 
 
-  const showToastMessage = useCallback((message, type) => {
-    setToastMessageVisibility({ isShown: true, message, type });
-    setShowToast(true);
-  }, []);
-
   const handleCloseToast = useCallback(() => {
     setToastMessageVisibility((prev) => ({ ...prev, isShown: false }));
     setTimeout(() => setShowToast(false), 400);
   }, []);
 
-  // Zustand actions are stable references — safe as useCallback deps
   const handleNoteSaved = useCallback((tabId) => {
     closeTab(tabId);
-    getHomeNotes();
-  }, [closeTab, getHomeNotes]);
+  }, [closeTab]);
 
   useEffect(() => {
     if (toastMessageVisibility.isShown) {
@@ -146,9 +167,6 @@ const Home = () => {
     setPanelContent(summary);
     setIsMockPanelOpen(true);
   }, []);
-
-  const { deleteNote, updateNoteArchive, handleChecklistToggle } =
-    useNoteOperations(getHomeNotes, showToastMessage);
 
   const isEditorOpen = activeTabId !== 'home';
   const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
@@ -199,8 +217,8 @@ const Home = () => {
                     emptyMessage="No matching notes found."
                     onEdit={handleEdit}
                     onDelete={handleDeleteNoteClick}
-                    onArchive={updateNoteArchive}
-                    onChecklistToggle={handleChecklistToggle}
+                    onArchive={handleArchiveToggle}
+                    onChecklistToggle={handleChecklist}
                   />
                 )}
               </div>
@@ -210,13 +228,13 @@ const Home = () => {
             </div>
           ) : (
             <NotesGrid
-              notes={allNotes}
+              notes={displayedNotes}
               loading={isLoading}
               emptyMessage={"It's quiet here… Start by adding a note."}
               onEdit={handleEdit}
               onDelete={handleDeleteNoteClick}
-              onArchive={updateNoteArchive}
-              onChecklistToggle={handleChecklistToggle}
+              onArchive={handleArchiveToggle}
+              onChecklistToggle={handleChecklist}
             />
           )}
         </div>

@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { MdDelete, MdCheckBoxOutlineBlank, MdCheckBox, MdRestore, MdDeleteForever, MdOutlineArchive, MdOutlineUnarchive, MdOutlineFolder, MdArrowOutward } from "react-icons/md";
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useFoldersStore } from '../../store/useFoldersStore';
+import { useFoldersQuery } from '../../hooks/useNotesQuery';
 
 // ── Markdown component overrides for the compact card preview ────────────────
 const CARD_MD_COMPONENTS = {
@@ -258,7 +258,7 @@ const NoteCard = ({
     opacity: 1,
   };
 
-  const { folders } = useFoldersStore();
+  const { data: folders = [] } = useFoldersQuery();
   const folder = folderId ? folders.find(f => f._id === folderId) : null;
 
   return (
