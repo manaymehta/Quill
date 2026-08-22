@@ -9,6 +9,7 @@ import { useAuthStore } from "../../store/useAuthStore";
 import { useNotesStore } from "../../store/useNotesStore";
 import { useTabsStore } from "../../store/useTabsStore";
 import TabDock from "../TabDock/TabDock";
+import GlobalEditorOverlay from "../Editor/GlobalEditorOverlay";
 import { useModalStore } from "../Modals/useModalStore";
 
 const MainLayout = () => {
@@ -180,26 +181,32 @@ const MainLayout = () => {
     return (
         <div className="relative min-h-screen">
             <canvas ref={canvasRef} className="fixed top-0 left-0 w-full h-screen pointer-events-none"></canvas>
-            <div className="relative z-10">
-                {!isEditorActive && (
-                    <Navbar
-                        onSearch={onSearch}
-                        handleClearSearch={handleClearSearch}
-                        onAiSearch={onAiSearch}
-                    />
-                )}
-                <div className={`transition-all duration-200 ease-in-out pt-[60px] md:pt-[72px] ${isSidebarOpen ? "pl-0 sm:pl-55" : "pl-0 sm:pl-16"}`}>
-                    <Outlet />
-                </div>
-                
-                {/* Mobile Backdrop overlay (continuous transition instead of conditional rendering) */}
-                <div 
-                    className={`fixed inset-0 bg-black/60 z-30 sm:hidden transition-opacity duration-200 ease-in-out ${isSidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
-                    onClick={toggleSidebar}
+            
+            {/* Navbar rendered on normal pages at z-[100] */}
+            {!isEditorActive && (
+                <Navbar
+                    onSearch={onSearch}
+                    handleClearSearch={handleClearSearch}
+                    onAiSearch={onAiSearch}
                 />
+            )}
 
-                <Sidebar ref={sidebarRef} />
+            {/* Main Outlet content (hidden when editor is active) */}
+            <div className={`transition-all duration-200 ease-in-out pt-[60px] md:pt-[72px] ${isSidebarOpen ? "pl-0 sm:pl-55" : "pl-0 sm:pl-16"} ${isEditorActive ? "hidden" : ""}`}>
+                <Outlet />
             </div>
+
+            {/* Global Note Editor Overlay (z-20) */}
+            <GlobalEditorOverlay />
+            
+            {/* Mobile Backdrop overlay (z-[75]) */}
+            <div 
+                className={`fixed inset-0 bg-black/60 z-[75] sm:hidden transition-opacity duration-200 ease-in-out ${isSidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+                onClick={toggleSidebar}
+            />
+
+            {/* Sidebar (z-[80] — above editor z-20, under Navbar z-[100]) */}
+            <Sidebar ref={sidebarRef} />
 
             <TabDock />
             <ConfirmModal />

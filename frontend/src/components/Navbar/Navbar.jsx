@@ -21,7 +21,7 @@ const Navbar = ({ onSearch, handleClearSearch, onAiSearch }) => {
   }
 
   return (
-    <div className="bg-[#202124]/80 backdrop-blur-sm px-5 py-2 flex items-center justify-between z-50 fixed top-0 left-0 w-full">
+    <div className="bg-[#202124]/80 backdrop-blur-sm px-5 py-2 flex items-center justify-between z-[100] fixed top-0 left-0 w-full">
       <div className="flex items-center gap-4 text-[#dd5e57]">
         {isLoggedIn && (
           <FiMenu

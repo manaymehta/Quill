@@ -47,7 +47,7 @@ const Sidebar = forwardRef((props, ref) => {
       ref={ref}
       className={`
         fixed top-0 left-0 h-full bg-[#202124] 
-        transform transition-all duration-200 ease-in-out z-40
+        transform transition-all duration-200 ease-in-out z-[80]
         sm:translate-x-0 overflow-y-auto overflow-x-hidden scrollbar-thin
         ${isSidebarOpen ? 'translate-x-0 w-55' : '-translate-x-full w-55 sm:w-16'}
       `}

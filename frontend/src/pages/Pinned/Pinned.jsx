@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useTabsStore } from '../../store/useTabsStore';
-import { useNavigate } from 'react-router-dom';
 import Toast from '../../components/ToastMessage/Toast';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { useHomeNotesQuery } from '../../hooks/useNotesQuery';
@@ -15,7 +14,6 @@ const Pinned = () => {
   const [showToast, setShowToast] = useState(false);
   const { getUser } = useAuthStore();
   const { openTab } = useTabsStore();
-  const navigate = useNavigate();
   const { openConfirmModal } = useModalStore();
 
   const [toastMessageVisibility, setToastMessageVisibility] = useState({
@@ -51,7 +49,6 @@ const Pinned = () => {
 
   const handleEdit = (note) => {
     openTab(note);
-    navigate('/dashboard', { state: { preserveTab: true } });
   };
 
   const handleDeleteNoteClick = (note) => {
@@ -83,8 +80,8 @@ const Pinned = () => {
   }, [getUser]);
 
   return (
-    <>
-      <div className="p-2">
+    <div className="relative min-h-0">
+      <div className="pb-24 px-2 md:px-4">
         <NotesGrid
           notes={allPinnedNotes}
           emptyMessage={"No Pinned Notes..."}
@@ -97,8 +94,6 @@ const Pinned = () => {
         />
       </div>
 
-
-
       {showToast && (
         <Toast
           isShown={toastMessageVisibility.isShown}
@@ -107,7 +102,7 @@ const Pinned = () => {
           onClose={handleCloseToast}
         />
       )}
-    </>
+    </div>
   )
 }
 

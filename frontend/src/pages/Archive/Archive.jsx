@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useTabsStore } from '../../store/useTabsStore';
-import { useNavigate } from 'react-router-dom';
 import Toast from '../../components/ToastMessage/Toast';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { useArchivedNotesQuery } from '../../hooks/useNotesQuery';
@@ -14,7 +13,6 @@ const Archive = () => {
 
     const { getUser } = useAuthStore();
     const { openTab } = useTabsStore();
-    const navigate = useNavigate();
     const { openConfirmModal } = useModalStore();
 
     const [toastMessageVisibility, setToastMessageVisibility] = useState({
@@ -49,7 +47,6 @@ const Archive = () => {
 
     const handleEdit = (note) => {
         openTab(note);
-        navigate('/dashboard', { state: { preserveTab: true } });
     };
 
     const handleDeleteNoteClick = (note) => {
@@ -77,8 +74,8 @@ const Archive = () => {
     }, [getUser]);
 
     return (
-        <>
-            <div className="p-2">
+        <div className="relative min-h-0">
+            <div className="pb-24 px-2 md:px-4">
                 <NotesGrid
                     notes={archivedNotes}
                     emptyMessage={"No Archived Notes..."}
@@ -100,7 +97,7 @@ const Archive = () => {
                     onClose={handleCloseToast}
                 />
             )}
-        </>
+        </div>
     )
 }
 

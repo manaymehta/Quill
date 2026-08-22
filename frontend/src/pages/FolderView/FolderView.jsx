@@ -1,9 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo, memo, Fragment } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { motion as Motion, AnimatePresence } from 'framer-motion';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import AiSearchPanel from '../../components/Cards/AiSearchPanel';
-import AddEditNotes from '../Home/AddEditNotes';
 import Toast from '../../components/ToastMessage/Toast';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
@@ -14,41 +12,7 @@ import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import Breadcrumb from '../../components/Cards/Breadcrumb';
 import { useModalStore } from '../../components/Modals/useModalStore';
-import { MdFolderOpen, MdOutlineFolder, MdOutlineStickyNote2, MdAdd, MdFolder } from 'react-icons/md';
-
-const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, showToastMessage, onToggleMockPanel, onSummaryReceived }) => {
-  const { closeTab, updateTabState } = useTabsStore();
-
-  const handleUpdateTabState = useCallback(
-    (patchedFields) => {
-      updateTabState(tab._id, patchedFields);
-    },
-    [tab._id, updateTabState]
-  );
-
-  const handleClose = useCallback(() => {
-    closeTab(tab._id);
-  }, [tab._id, closeTab]);
-
-  const handleSaveSuccess = useCallback(() => {
-    onNoteSaved(tab._id);
-  }, [tab._id, onNoteSaved]);
-
-  return (
-    <AddEditNotes
-      type={tab.isDraft ? 'add' : 'edit'}
-      noteData={tab}
-      isActive={isActive}
-      onUpdateTabState={handleUpdateTabState}
-      onClose={handleClose}
-      onSaveSuccess={handleSaveSuccess}
-      showToastMessage={showToastMessage}
-      onToggleMockPanel={onToggleMockPanel}
-      onSummaryReceived={onSummaryReceived}
-    />
-  );
-});
-TabEditorSlot.displayName = 'TabEditorSlot';
+import { MdOutlineFolder, MdOutlineStickyNote2 } from 'react-icons/md';
 
 const FolderView = () => {
   const { folderId } = useParams();
@@ -62,17 +26,10 @@ const FolderView = () => {
   const { data: folderNotes = [], isLoading } = useFolderNotesQuery(subtreeIds, folderId);
 
   const { searchQuery, searchMode, semanticResult, isSearchingAI, setSearchScope, setScopeFolderIds } = useSearchStore();
-  const { openTabs, activeTabId, openTab, closeTab } = useTabsStore();
+  const { openTab } = useTabsStore();
 
   const [showToast, setShowToast] = useState(false);
-  const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
-  const [panelContent, setPanelContent] = useState("");
   const [isAddingFolder, setIsAddingFolder] = useState(false);
-
-  // Reset inline folder creation state on route/navigation changes
-  useEffect(() => {
-    setIsAddingFolder(false);
-  }, [location]);
 
   const { openFolderDeleteModal, openConfirmModal } = useModalStore();
   const [toastMessageVisibility, setToastMessageVisibility] = useState({
@@ -110,20 +67,10 @@ const FolderView = () => {
     };
   }, [folderId, subtreeIds, setSearchScope, setScopeFolderIds, setActiveFolderId]);
 
-  // Reset side panel when switching between tabs
-  useEffect(() => {
-    setIsMockPanelOpen(false);
-    setPanelContent("");
-  }, [activeTabId]);
-
   const handleCloseToast = useCallback(() => {
     setToastMessageVisibility((prev) => ({ ...prev, isShown: false }));
     setTimeout(() => setShowToast(false), 400);
   }, []);
-
-  const handleNoteSaved = useCallback((tabId) => {
-    closeTab(tabId);
-  }, [closeTab]);
 
   useEffect(() => {
     if (toastMessageVisibility.isShown) {
@@ -134,14 +81,7 @@ const FolderView = () => {
 
   const handleEdit = useCallback((note) => openTab(note), [openTab]);
 
-  const handleSummaryReceived = useCallback((summary) => {
-    setPanelContent(summary);
-    setIsMockPanelOpen(true);
-  }, []);
-
-  const isEditorOpen = activeTabId !== 'home';
   const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
-  const activeIndex = openTabs.findIndex(t => t._id === activeTabId);
 
   // Subfolders list (direct children only)
   const subfolders = folders.filter(f => f.parentId === folderId && !f.isDeleted)
@@ -195,194 +135,85 @@ const FolderView = () => {
   };
 
   return (
-    <div className={`relative ${isEditorOpen ? 'h-screen overflow-hidden' : 'min-h-0'}`}>
-      {/* Main Content Area */}
-      {!isEditorOpen && (
-        <div className="pb-24 px-2 md:px-4">
-          <div className="mb-3">
-            <Breadcrumb folderId={folderId} />
+    <div className="relative min-h-0">
+      <div className="pb-24 px-2 md:px-4">
+        <div className="mb-3">
+          <Breadcrumb folderId={folderId} />
+        </div>
+        {isAIMode ? (
+          <div className="flex flex-col-reverse md:flex-row gap-4">
+            <div className="flex-1 min-w-0">
+              {isSearchingAI ? (
+                <div className="flex flex-col items-center justify-center mt-20 opacity-50 animate-pulse">
+                  <p className="text-sm font-medium text-slate-400 text-center">
+                    Analyzing context across your notes...
+                  </p>
+                </div>
+              ) : (
+                <NotesGrid
+                  notes={semanticResult?.sourceNotes || []}
+                  loading={isLoading}
+                  emptyMessage="No matching notes found."
+                  onEdit={handleEdit}
+                  onDelete={handleDeleteNoteClick}
+                  onArchive={handleArchiveToggle}
+                  onChecklistToggle={handleChecklist}
+                />
+              )}
+            </div>
+            <div className="w-full md:w-1/3 shrink-0">
+              <AiSearchPanel />
+            </div>
           </div>
-          {isAIMode ? (
-            <div className="flex flex-col-reverse md:flex-row gap-4">
-              <div className="flex-1 min-w-0">
-                {isSearchingAI ? (
-                  <div className="flex flex-col items-center justify-center mt-20 opacity-50 animate-pulse">
-                    <p className="text-sm font-medium text-slate-400 text-center">
-                      Analyzing context across your notes...
-                    </p>
-                  </div>
-                ) : (
+        ) : (
+          <div>
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
+                  <MdOutlineFolder className="mr-2" size={16} />
+                  Folders
+                </h3>
+                <FoldersGrid
+                  folders={subfolders}
+                  parentId={folderId}
+                  onRename={handleRenameFolder}
+                  onColorChange={handleColorChangeFolder}
+                  onDelete={handleDeleteFolder}
+                  isAddingFolder={isAddingFolder}
+                  setIsAddingFolder={setIsAddingFolder}
+                />
+              </div>
+
+              {displayedDirectNotes.length > 0 && (
+                <div>
+                  <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
+                    <MdOutlineStickyNote2 className="mr-2" size={16} />
+                    Notes
+                  </h3>
                   <NotesGrid
-                    notes={semanticResult?.sourceNotes || []}
+                    notes={displayedDirectNotes}
                     loading={isLoading}
-                    emptyMessage="No matching notes found."
+                    emptyMessage="No notes in this folder."
                     onEdit={handleEdit}
                     onDelete={handleDeleteNoteClick}
                     onArchive={handleArchiveToggle}
                     onChecklistToggle={handleChecklist}
-                  />
-                )}
-              </div>
-              <div className="w-full md:w-1/3 shrink-0">
-                <AiSearchPanel />
-              </div>
-            </div>
-          ) : (
-            <div>
-              <div className="space-y-3">
-                <div>
-                  <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
-                    <MdOutlineFolder className="mr-2" size={16} />
-                    Folders
-                  </h3>
-                  <FoldersGrid
-                    folders={subfolders}
-                    parentId={folderId}
-                    onRename={handleRenameFolder}
-                    onColorChange={handleColorChangeFolder}
-                    onDelete={handleDeleteFolder}
-                    isAddingFolder={isAddingFolder}
-                    setIsAddingFolder={setIsAddingFolder}
+                    hideFolderBadge={true}
                   />
                 </div>
+              )}
 
-                {displayedDirectNotes.length > 0 && (
-                  <div>
-                    <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
-                      <MdOutlineStickyNote2 className="mr-2" size={16} />
-                      Notes
-                    </h3>
-                    <NotesGrid
-                      notes={displayedDirectNotes}
-                      loading={isLoading}
-                      emptyMessage="No notes in this folder."
-                      onEdit={handleEdit}
-                      onDelete={handleDeleteNoteClick}
-                      onArchive={handleArchiveToggle}
-                      onChecklistToggle={handleChecklist}
-                      hideFolderBadge={true}
-                    />
-                  </div>
-                )}
-
-                {!isLoading && subfolders.length === 0 && directNotes.length === 0 && (
-                  <div className="flex flex-col items-center justify-center mt-20 opacity-50">
-                    <p className="text-sm font-medium text-slate-400 text-center">
-                      This folder is empty.
-                    </p>
-                  </div>
-                )}
-              </div>
+              {!isLoading && subfolders.length === 0 && directNotes.length === 0 && (
+                <div className="flex flex-col items-center justify-center mt-20 opacity-50">
+                  <p className="text-sm font-medium text-slate-400 text-center">
+                    This folder is empty.
+                  </p>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      )}
-
-      {openTabs.map((tab, index) => {
-        const offset = isEditorOpen ? index - activeIndex : Infinity;
-        const isActive = offset === 0;
-        const isAdjacent = Math.abs(offset) === 1;
-
-        return (
-          <Fragment key={tab._id}>
-            {!isActive && (
-              <div className="hidden">
-                <TabEditorSlot
-                  tab={tab}
-                  isActive={false}
-                  onNoteSaved={handleNoteSaved}
-                  showToastMessage={showToastMessage}
-                />
-              </div>
-            )}
-
-            {isActive && (
-              <div className="fixed inset-0 flex justify-center px-2 md:px-4 pt-2 md:pt-4 pb-16 md:pb-14 z-10 animate-scale-up pointer-events-none">
-                <div className={`flex flex-col md:flex-row gap-4 h-full pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full ${isMockPanelOpen ? 'md:max-w-[1150px] max-w-3xl' : 'max-w-3xl'}`}>
-                  <div className="w-full h-full md:max-w-3xl shrink-0">
-                    <TabEditorSlot
-                      tab={tab}
-                      isActive={true}
-                      onNoteSaved={handleNoteSaved}
-                      showToastMessage={showToastMessage}
-                      onToggleMockPanel={() => setIsMockPanelOpen(prev => !prev)}
-                      onSummaryReceived={handleSummaryReceived}
-                    />
-                  </div>
-
-                  <AnimatePresence>
-                    {isMockPanelOpen && (
-                      <>
-                        <Motion.div
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] md:hidden"
-                          onClick={() => setIsMockPanelOpen(false)}
-                        />
-
-                        <Motion.div
-                          initial={{ y: window.innerWidth < 768 ? '100%' : 0, scale: window.innerWidth < 768 ? 1 : 0.95, opacity: window.innerWidth < 768 ? 1 : 0 }}
-                          animate={{ y: 0, scale: 1, opacity: 1 }}
-                          exit={{ y: window.innerWidth < 768 ? '100%' : 0, scale: window.innerWidth < 768 ? 1 : 0.95, opacity: window.innerWidth < 768 ? 1 : 0 }}
-                          transition={{ type: 'tween', ease: 'easeOut', duration: 0.25 }}
-                          drag={window.innerWidth < 768 ? "y" : false}
-                          dragConstraints={{ top: 0, bottom: 0 }}
-                          dragElastic={0.2}
-                          onDragEnd={(e, info) => {
-                            if (info.offset.y > 100 || info.velocity.y > 500) {
-                              setIsMockPanelOpen(false);
-                            }
-                          }}
-                          className="fixed md:static inset-x-0 bottom-0 md:bottom-auto md:w-[350px] shrink-0 h-[60vh] md:h-full bg-[#1e1e1e] rounded-t-[32px] md:rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] md:shadow-xl border-t md:border border-[#333] p-6 md:p-8 flex flex-col text-stone-200 origin-bottom md:origin-left z-[70]"
-                        >
-                          <div className="w-12 h-1.5 bg-[#444] rounded-full mx-auto mb-6 md:hidden cursor-grab active:cursor-grabbing" onClick={() => setIsMockPanelOpen(false)}></div>
-                          <h3 className={`text-2xl font-medium mb-4 ${panelContent ? 'text-[#d97757]' : 'text-white'}`} style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>{panelContent ? 'Summary' : 'Mock Panel'}</h3>
-                          {panelContent ? (
-                            <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-5 overflow-y-auto editor-scrollbar text-sm text-stone-300 leading-relaxed font-serif whitespace-pre-wrap">
-                              {panelContent}
-                            </div>
-                          ) : (
-                            <>
-                              <p className="text-sm text-stone-400 leading-relaxed mb-6">This is a temporary side panel with a dark color scheme.</p>
-                              <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-4 flex items-center justify-center">
-                                <span className="text-stone-500 text-xs tracking-widest uppercase">Content Area</span>
-                              </div>
-                            </>
-                          )}
-                        </Motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
-            )}
-
-            {isAdjacent && isEditorOpen && !isMockPanelOpen && (
-              <div
-                className="fixed z-0 animate-ghost-in cursor-pointer group"
-                onClick={() => openTab(tab)}
-                style={{
-                  top: window.innerWidth < 768 ? '1rem' : '2rem',
-                  bottom: window.innerWidth < 768 ? '5.5rem' : '4.5rem',
-                  width: window.innerWidth < 768 ? '90vw' : '350px',
-                  ...(offset < 0
-                    ? { right: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 390px)', transformOrigin: 'right center' }
-                    : { left: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 390px)', transformOrigin: 'left center' }
-                  ),
-                  transform: window.innerWidth < 768 ? 'scale(0.85)' : 'scale(0.65)',
-                }}
-              >
-                <div className="h-full bg-[#f4eadc] opacity-15 md:opacity-30 group-hover:opacity-100 transition-all duration-150 ease-out rounded-[32px] border border-[#e8dcc8] overflow-hidden p-6 md:p-10 shadow-sm group-hover:shadow-2xl">
-                  <h2 className="text-3xl font-medium text-[#333] leading-tight mb-4" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
-                    {tab.title || 'Untitled Note'}
-                  </h2>
-                </div>
-              </div>
-            )}
-          </Fragment>
-        );
-      })}
+          </div>
+        )}
+      </div>
 
       {showToast && (
         <Toast

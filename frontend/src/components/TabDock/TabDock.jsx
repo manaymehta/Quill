@@ -23,18 +23,10 @@ const TabDock = () => {
 
   const handleNewNote = () => {
     createDraftTab(activeFolderId);
-    const isEditorPage = location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/folder/');
-    if (!isEditorPage) {
-      navigate('/dashboard', { state: { preserveTab: true } });
-    }
   };
 
   const handleTabClick = (tabId) => {
     setActiveTab(tabId);
-    const isEditorPage = location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/folder/');
-    if (!isEditorPage) {
-      navigate('/dashboard', { state: { preserveTab: true } });
-    }
   };
 
   return (
