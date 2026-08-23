@@ -32,8 +32,8 @@ const FoldersGrid = ({
         }),
         useSensor(TouchSensor, {
             activationConstraint: {
-                delay: 250,
-                tolerance: 5,
+                delay: 300,
+                tolerance: 6,
             },
         })
     );

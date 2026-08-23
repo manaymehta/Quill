@@ -17,6 +17,8 @@ const ConfirmModal = () => {
     // Variant mapping for styling
     const confirmBtnStyles = variant === 'danger'
         ? 'bg-[#e85d56] text-white hover:bg-opacity-90 shadow-lg shadow-[#e85d56]/20'
+        : variant === 'warning'
+        ? 'bg-[#f2994a] text-white hover:bg-opacity-90 shadow-lg shadow-[#f2994a]/20'
         : 'bg-[#f4eadc] text-stone-900 hover:bg-opacity-90';
 
     return createPortal(
@@ -29,7 +31,13 @@ const ConfirmModal = () => {
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15 }}
                     className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-[2px]"
-                    onClick={closeConfirmModal}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        closeConfirmModal();
+                    }}
                 >
                     <motion.div
                         initial={{ scale: 0.88 }}

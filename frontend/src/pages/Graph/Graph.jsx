@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { forceCollide } from 'd3-force';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useAllNotesQuery } from '../../hooks/useNotesQuery';
 import { useUIStore } from '../../store/useUIStore';
@@ -8,10 +7,7 @@ const Graph = () => {
   const fgRef = useRef();
   const { isSidebarOpen } = useUIStore();
   const { data: allNotes = [] } = useAllNotesQuery();
-  const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [hoveredNode, setHoveredNode] = useState(null);
-  const [highlightedNodes, setHighlightedNodes] = useState(new Set());
-  const [highlightedLinks, setHighlightedLinks] = useState(new Set());
   const [selectedTag, setSelectedTag] = useState(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [animTick, setAnimTick] = useState(0);
@@ -33,28 +29,24 @@ const Graph = () => {
       });
     };
 
-    handleResize(); // Sync dimensions immediately on mount or sidebar toggle
+    handleResize();
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [isSidebarOpen]);
 
-  // Stores animated values per node: { [nodeId]: { opacity, radius } }
   const nodeAnimRef = useRef({});
-  // Stores animated link opacity per link key
   const linkAnimRef = useRef({});
 
-  // Helper: lerp a → b with factor t (higher t = snappier)
   const lerp = (a, b, t) => a + (b - a) * t;
-  const LERP_FACTOR = 0.5; // snappy: ~98% in ~5 frames
+  const LERP_FACTOR = 0.5;
 
-  // unique tags from all notes
   const uniqueTags = useMemo(() => {
     const allTags = allNotes.flatMap(note => note.tags);
     return [...new Set(allTags)];
   }, [allNotes]);
 
-  useEffect(() => {
+  const graphData = useMemo(() => {
     // calculate tag frequencies to find connecting tags
     const tagFrequencies = allNotes.flatMap(note => note.tags).reduce((acc, tag) => {
       acc[tag] = (acc[tag] || 0) + 1;
@@ -106,76 +98,67 @@ const Graph = () => {
       }
     }
 
-    setGraphData({ nodes, links });
-  }, [allNotes]); // runs when allNotes changes
+    return { nodes, links };
+  }, [allNotes]);
 
   const handleTagClick = (tag) => {
     setSelectedTag(tag);
   };
 
-  useEffect(() => {
-    if (selectedTag) {
-      const newHighlightedNodes = new Set();
-      const newHighlightedLinks = new Set();
-
-      graphData.nodes.forEach(node => {
-        if (node.tags.includes(selectedTag)) {
-          newHighlightedNodes.add(node);
-        }
-      });
-
-      graphData.links.forEach(link => {
-        const sourceNode = graphData.nodes.find(n => n.id === link.source.id);
-        const targetNode = graphData.nodes.find(n => n.id === link.target.id);
-        if (sourceNode && targetNode && sourceNode.tags.includes(selectedTag) && targetNode.tags.includes(selectedTag)) {
-          newHighlightedLinks.add(link);
-        }
-      });
-
-      setHighlightedNodes(newHighlightedNodes);
-      setHighlightedLinks(newHighlightedLinks);
-    } else {
-      setHighlightedNodes(new Set());
-      setHighlightedLinks(new Set());
-    }
-  }, [selectedTag, graphData]);
-
-  useEffect(() => {
-    if (fgRef.current) {
-      const isMobile = window.matchMedia('(max-width: 639px)').matches;
-      fgRef.current.d3Force('charge').strength(isMobile ? -6 : -12);
-      fgRef.current.d3Force('collide', forceCollide(isMobile ? 15 : 19));
-      // In D3 coordinate space, (0, 0) corresponds exactly to the center of the canvas viewport
-      fgRef.current.d3Force('center')
-        .x(0)
-        .y(0);
-    }
-  }, []);
-
   const handleNodeHover = (node) => {
-    if (selectedTag) return; // Disable hover effect if a tag is selected
-
+    if (selectedTag) return;
     if (hoveredNode !== node) {
       setHoveredNode(node);
-      if (node) {
-        const newHighlightedNodes = new Set();
-        newHighlightedNodes.add(node);
-        const newHighlightedLinks = new Set();
-        graphData.links.forEach(link => {
-          if (link.source === node || link.target === node) {
-            newHighlightedLinks.add(link);
-            newHighlightedNodes.add(link.source);
-            newHighlightedNodes.add(link.target);
-          }
-        });
-        setHighlightedNodes(newHighlightedNodes);
-        setHighlightedLinks(newHighlightedLinks);
-      } else {
-        setHighlightedNodes(new Set());
-        setHighlightedLinks(new Set());
-      }
     }
   };
+
+  const highlightedNodes = useMemo(() => {
+    if (selectedTag) {
+      const set = new Set();
+      graphData.nodes.forEach(node => {
+        if (node.tags.includes(selectedTag)) set.add(node);
+      });
+      return set;
+    }
+    if (hoveredNode) {
+      const set = new Set();
+      set.add(hoveredNode);
+      graphData.links.forEach(link => {
+        if (link.source === hoveredNode || link.target === hoveredNode) {
+          set.add(link.source);
+          set.add(link.target);
+        }
+      });
+      return set;
+    }
+    return new Set();
+  }, [selectedTag, hoveredNode, graphData]);
+
+  const highlightedLinks = useMemo(() => {
+    if (selectedTag) {
+      const set = new Set();
+      graphData.links.forEach(link => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        const sourceNode = graphData.nodes.find(n => n.id === sourceId);
+        const targetNode = graphData.nodes.find(n => n.id === targetId);
+        if (sourceNode && targetNode && sourceNode.tags.includes(selectedTag) && targetNode.tags.includes(selectedTag)) {
+          set.add(link);
+        }
+      });
+      return set;
+    }
+    if (hoveredNode) {
+      const set = new Set();
+      graphData.links.forEach(link => {
+        if (link.source === hoveredNode || link.target === hoveredNode) {
+          set.add(link);
+        }
+      });
+      return set;
+    }
+    return new Set();
+  }, [selectedTag, hoveredNode, graphData]);
 
   // Temporary frame pump to ensure canvas redraws smoothly during lerp transitions
   // even if the force graph physics engine has settled and stopped voluntarily redrawing.

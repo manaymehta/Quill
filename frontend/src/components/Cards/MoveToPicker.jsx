@@ -9,6 +9,7 @@ const MoveToPicker = ({ isOpen, onClose, noteId, currentFolderId, onMove }) => {
 
     // Reset search when modal opens
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (isOpen) setSearchVal('');
     }, [isOpen]);
 
@@ -47,7 +48,13 @@ const MoveToPicker = ({ isOpen, onClose, noteId, currentFolderId, onMove }) => {
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15 }}
                     className="fixed inset-0 z-[999] flex items-center justify-center p-4 sm:p-6 bg-stone-900/40 backdrop-blur-[2px]"
-                    onClick={onClose}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        onClose();
+                    }}
                 >
                     {/* Modal card — scale pops independently */}
                     <motion.div 

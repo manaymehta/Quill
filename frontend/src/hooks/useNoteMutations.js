@@ -91,8 +91,29 @@ export const useReorderNotesMutation = () => {
       const response = await axiosInstance.put('/reorder-notes', { updates });
       return response.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
+    onMutate: async ({ reorderedNotes, folderId }) => {
+      const queryKey = folderId ? QUERY_KEYS.FOLDER_NOTES(folderId) : ['notes'];
+      const cancelPromise = queryClient.cancelQueries({ queryKey });
+      const previousNotes = queryClient.getQueryData(queryKey);
+
+      if (reorderedNotes) {
+        queryClient.setQueryData(queryKey, reorderedNotes);
+      }
+
+      await cancelPromise;
+      return { previousNotes, queryKey };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousNotes && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previousNotes);
+      }
+    },
+    onSettled: (data, error, variables, context) => {
+      if (context?.queryKey) {
+        queryClient.invalidateQueries({ queryKey: context.queryKey });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['notes'] });
+      }
     },
   });
 };
@@ -104,7 +125,23 @@ export const useReorderHomeNotesMutation = () => {
       const response = await axiosInstance.put('/reorder-home-notes', { updates });
       return response.data;
     },
-    onSuccess: () => {
+    onMutate: async ({ reorderedNotes }) => {
+      const cancelPromise = queryClient.cancelQueries({ queryKey: QUERY_KEYS.HOME_NOTES });
+      const previousNotes = queryClient.getQueryData(QUERY_KEYS.HOME_NOTES);
+
+      if (reorderedNotes) {
+        queryClient.setQueryData(QUERY_KEYS.HOME_NOTES, reorderedNotes);
+      }
+
+      await cancelPromise;
+      return { previousNotes };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousNotes) {
+        queryClient.setQueryData(QUERY_KEYS.HOME_NOTES, context.previousNotes);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.HOME_NOTES });
     },
   });

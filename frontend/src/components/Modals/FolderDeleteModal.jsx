@@ -23,6 +23,7 @@ const FolderDeleteModal = () => {
 
     useEffect(() => {
         if (folder) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setStep(1);
             setTypedPath('');
 
@@ -72,7 +73,13 @@ const FolderDeleteModal = () => {
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15 }}
                     className="fixed inset-0 z-[999] flex items-center justify-center p-4 sm:p-6 bg-stone-900/40 backdrop-blur-[2px]"
-                    onClick={closeFolderDeleteModal}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        closeFolderDeleteModal();
+                    }}
                 >
                     <motion.div
                         initial={{ scale: 0.88 }}

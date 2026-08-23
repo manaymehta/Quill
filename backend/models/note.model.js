@@ -11,7 +11,6 @@ const noteSchema = new Schema({
     homeOrderIndex: { type: Number, default: 0 },
     deletedBatchId: { type: String, default: null },
     isArchived: { type: Boolean, default: false },
-    createdOn: { type: Date, default: () => new Date() },
     isChecklist: { type: Boolean, default: false },
     checklist: [{
         text: { type: String },

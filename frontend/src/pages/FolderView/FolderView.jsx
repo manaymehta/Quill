@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import AiSearchPanel from '../../components/Cards/AiSearchPanel';
 import Toast from '../../components/ToastMessage/Toast';
@@ -7,7 +7,7 @@ import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useFolderNotesQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
-import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation } from '../../hooks/useNoteMutations';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import Breadcrumb from '../../components/Cards/Breadcrumb';
@@ -17,15 +17,17 @@ import { MdOutlineFolder, MdOutlineStickyNote2 } from 'react-icons/md';
 const FolderView = () => {
   const { folderId } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const { data: folders = [] } = useFoldersQuery();
-  const { getSubtreeIds, setActiveFolderId } = useFoldersStore();
+  const getSubtreeIds = useFoldersStore((state) => state.getSubtreeIds);
 
   const subtreeIds = useMemo(() => getSubtreeIds(folders, folderId), [folders, folderId, getSubtreeIds]);
   const { data: folderNotes = [], isLoading } = useFolderNotesQuery(subtreeIds, folderId);
 
-  const { searchQuery, searchMode, semanticResult, isSearchingAI, setSearchScope, setScopeFolderIds } = useSearchStore();
+  const searchQuery = useSearchStore((state) => state.searchQuery);
+  const searchMode = useSearchStore((state) => state.searchMode);
+  const semanticResult = useSearchStore((state) => state.semanticResult);
+  const isSearchingAI = useSearchStore((state) => state.isSearchingAI);
   const { openTab } = useTabsStore();
 
   const [showToast, setShowToast] = useState(false);
@@ -45,6 +47,8 @@ const FolderView = () => {
 
   const deleteNoteMutation = useDeleteNoteMutation(showToastMessage);
   const archiveNoteMutation = useArchiveNoteMutation(showToastMessage);
+  const toggleHomePinMutation = useToggleHomePinMutation(showToastMessage);
+  const moveNoteMutation = useMoveNoteMutation(showToastMessage);
   const checklistToggleMutation = useChecklistToggleMutation();
   const editFolderMutation = useEditFolderMutation(showToastMessage);
 
@@ -57,15 +61,21 @@ const FolderView = () => {
 
   // Set active folder & search scope context
   useEffect(() => {
-    setActiveFolderId(folderId);
-    setSearchScope("folder");
-    setScopeFolderIds(subtreeIds);
+    useFoldersStore.getState().setActiveFolderId(folderId);
+    useSearchStore.getState().setSearchScope("folder");
     return () => {
-      setActiveFolderId(null);
-      setSearchScope("home");
-      setScopeFolderIds([]);
+      useFoldersStore.getState().setActiveFolderId(null);
+      useSearchStore.getState().setSearchScope("home");
+      useSearchStore.getState().setScopeFolderIds([]);
     };
-  }, [folderId, subtreeIds, setSearchScope, setScopeFolderIds, setActiveFolderId]);
+  }, [folderId]);
+
+  const subtreeKey = useMemo(() => subtreeIds.join(','), [subtreeIds]);
+
+  // Sync search scope folder IDs with subtree
+  useEffect(() => {
+    useSearchStore.getState().setScopeFolderIds(subtreeIds);
+  }, [subtreeKey, subtreeIds]);
 
   const handleCloseToast = useCallback(() => {
     setToastMessageVisibility((prev) => ({ ...prev, isShown: false }));
@@ -123,7 +133,25 @@ const FolderView = () => {
   };
 
   const handleArchiveToggle = (note) => {
-    archiveNoteMutation.mutate({ noteId: note._id, isArchived: !note.isArchived });
+    if (note.isArchived) {
+      archiveNoteMutation.mutate({ noteId: note._id, isArchived: false });
+    } else {
+      openConfirmModal({
+        title: "Archive note?",
+        message: "This moves the note to Archive.",
+        confirmLabel: "Archive",
+        variant: "warning",
+        onConfirm: () => archiveNoteMutation.mutate({ noteId: note._id, isArchived: true })
+      });
+    }
+  };
+
+  const handleToggleHome = (note) => {
+    toggleHomePinMutation.mutate(note._id);
+  };
+
+  const handleMoveNote = (noteId, targetFolderId) => {
+    moveNoteMutation.mutate({ noteId, targetFolderId });
   };
 
   const handleChecklist = (note, index) => {
@@ -157,7 +185,10 @@ const FolderView = () => {
                   onEdit={handleEdit}
                   onDelete={handleDeleteNoteClick}
                   onArchive={handleArchiveToggle}
+                  onToggleHome={handleToggleHome}
+                  onMove={handleMoveNote}
                   onChecklistToggle={handleChecklist}
+                  allowDrag={false}
                 />
               )}
             </div>
@@ -197,6 +228,8 @@ const FolderView = () => {
                     onEdit={handleEdit}
                     onDelete={handleDeleteNoteClick}
                     onArchive={handleArchiveToggle}
+                    onToggleHome={handleToggleHome}
+                    onMove={handleMoveNote}
                     onChecklistToggle={handleChecklist}
                     hideFolderBadge={true}
                   />

@@ -3,9 +3,11 @@ import { create } from 'zustand';
 export const useFoldersStore = create((set) => ({
     activeFolderId: null,
     activeDropdownFolderId: null,
+    activeDropdownNoteId: null,
 
     setActiveFolderId: (id) => set({ activeFolderId: id }),
-    setActiveDropdownFolderId: (id) => set({ activeDropdownFolderId: id }),
+    setActiveDropdownFolderId: (id) => set({ activeDropdownFolderId: id, activeDropdownNoteId: null }),
+    setActiveDropdownNoteId: (id) => set({ activeDropdownNoteId: id, activeDropdownFolderId: null }),
 
     getSubtreeIds: (foldersList, folderId) => {
         const folders = Array.isArray(foldersList) ? foldersList : [];

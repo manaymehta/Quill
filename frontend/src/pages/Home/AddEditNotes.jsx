@@ -33,22 +33,22 @@ const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChe
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="flex flex-col gap-1 relative w-full group">
-      <div className={`flex items-center gap-3 mb-3 transition-colors ${isDragging ? '' : ''}`}>
-        <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-stone-300 hover:text-stone-500 transition-colors">
+    <div ref={setNodeRef} style={style} className="flex flex-col gap-1 relative w-full group min-w-0">
+      <div className={`flex items-center gap-2.5 mb-2.5 transition-colors ${isDragging ? '' : ''}`}>
+        <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-stone-300 hover:text-stone-500 transition-colors flex-shrink-0">
           <MdOutlineDragIndicator className="text-xl" />
         </button>
-        <button className='cursor-pointer text-stone-500 hover:text-[#e85d56] transition-colors text-xl' onClick={() => toggleChecklistItem(index)}>
+        <button className='cursor-pointer text-stone-500 hover:text-[#e85d56] transition-colors text-xl flex-shrink-0' onClick={() => toggleChecklistItem(index)}>
           {item.completed ? <MdCheckBox className="text-[#e85d56]" /> : <MdCheckBoxOutlineBlank />}
         </button>
         <input
           type="text"
           value={item.text}
           onChange={(e) => handleChecklistItemChange(index, e.target.value)}
-          className={`text-base bg-transparent outline-none w-full border-b border-transparent focus:border-black/10 transition-colors py-1 caret-[#e85d56] cursor-text ${item.completed ? 'line-through text-stone-400' : 'text-[#333]'}`}
+          className={`text-base bg-transparent outline-none w-full min-w-0 break-words border-b border-transparent focus:border-black/10 transition-colors py-1 caret-[#e85d56] cursor-text ${item.completed ? 'line-through text-stone-400' : 'text-[#333]'}`}
           placeholder='Checklist item'
         />
-        <button className='cursor-pointer text-stone-400 opacity-0 group-hover:opacity-100 transition-opacity hover:text-[#e85d56]' onClick={() => removeChecklistItem(index)}>
+        <button className='cursor-pointer text-stone-400 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-[#e85d56] flex-shrink-0 p-0.5' onClick={() => removeChecklistItem(index)} title="Remove item">
           <MdClose className="text-xl" />
         </button>
       </div>
@@ -69,12 +69,54 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const [error, setError] = useState("")
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isChecklist, setIsChecklist] = useState(noteData?.isChecklist || false);
-  const [checklist, setChecklist] = useState(noteData?.checklist || []);
+  const [checklist, setChecklist] = useState(() => (noteData?.checklist || []).map((item, i) => item.id ? item : { ...item, id: `item-${Date.now()}-${i}` }));
   const [tagInputValue, setTagInputValue] = useState("");
+  const [selectedTag, setSelectedTag] = useState(null);
   const [activeChecklistId, setActiveChecklistId] = useState(null);
 
   // Ref to the CodeMirror editor view for programmatic focus
   const cmViewRef = useRef(null);
+  const tagScrollContainerRef = useRef(null);
+  const tagInputRef = useRef(null);
+  const [showPinnedAddButton, setShowPinnedAddButton] = useState(false);
+
+  const checkTagOverflow = useCallback(() => {
+    const el = tagScrollContainerRef.current;
+    if (!el) return;
+    const isOverflowing = el.scrollWidth > el.clientWidth + 8;
+    const isScrolledToEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 16;
+    setShowPinnedAddButton(isOverflowing && !isScrolledToEnd);
+  }, []);
+
+  useEffect(() => {
+    checkTagOverflow();
+    window.addEventListener('resize', checkTagOverflow);
+    return () => window.removeEventListener('resize', checkTagOverflow);
+  }, [tags, checkTagOverflow]);
+
+  // Auto-collapse selected tag on outside click/tap
+  useEffect(() => {
+    if (!selectedTag) return;
+    const handleOutsidePointer = (e) => {
+      if (!e.target.closest('.group\\/removetag')) {
+        setSelectedTag(null);
+      }
+    };
+    document.addEventListener('pointerdown', handleOutsidePointer);
+    return () => document.removeEventListener('pointerdown', handleOutsidePointer);
+  }, [selectedTag]);
+
+  const handleScrollToTagInput = () => {
+    if (tagScrollContainerRef.current) {
+      tagScrollContainerRef.current.scrollTo({
+        left: tagScrollContainerRef.current.scrollWidth,
+        behavior: 'smooth',
+      });
+    }
+    setTimeout(() => {
+      tagInputRef.current?.focus();
+    }, 150);
+  };
 
   const [linkPreviews, setLinkPreviews] = useState(noteData?.linkPreviews || []);
   const fetchingUrls = useRef(new Set());
@@ -179,7 +221,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
   useEffect(() => {
     if (isChecklist) {
-      setLinkPreviews(prev => prev.length > 0 ? [] : prev);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLinkPreviews(prev => (prev.length > 0 ? [] : prev));
       return;
     }
     const urls = content.match(/(https?:\/\/[^\s]+)/g) || [];
@@ -188,6 +231,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
     // Sync linkPreviews state to only keep previews of URLs that actually still exist in content
     setLinkPreviews(prev => {
+      if (prev.length === 0) return prev;
       const filtered = prev.filter(p => uniqueUrls.includes(p.url));
       if (filtered.length !== prev.length) {
         return filtered;
@@ -198,15 +242,6 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
   const handleRemoveLinkPreview = useCallback((urlToRemove) => {
     setLinkPreviews(prev => prev.filter(p => p.url !== urlToRemove));
-  }, []);
-
-
-  // Ensure all checklist items have a unique ID for dnd-kit sorting
-  useEffect(() => {
-    if (checklist.length > 0 && !checklist[0].id) {
-      setChecklist(prev => prev.map((item, i) => ({ ...item, id: `item-${Date.now()}-${i}` })));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-focus the CodeMirror editor when this tab becomes the active tab
@@ -477,34 +512,82 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           }}
         />
 
-        {/* tags and tag input at the top */}
-        <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mb-3 md:mb-6 shrink-0 font-sans">
-          {tags.map((tag, index) => (
-            <span key={index} className="flex items-center px-2 md:px-2.5 py-0.5 bg-[#f2dfd2] text-[#d55343] text-[13px] md:text-[15px] font-normal tracking-wide rounded-full cursor-default group/removetag">
-              <span className="mr-0 opacity-100">#</span>{tag}
-              <MdClose
-                className="ml-0 text-[#e85d56]/60 opacity-0 group-hover/removetag:opacity-100 cursor-pointer hover:text-[#e85d56] transition-colors"
-                onClick={() => handleRemoveTag(tag)}
+        {/* tags and tag input at the top - single horizontal scrollable row with sticky pinned add button when overflowing */}
+        <div className="relative flex items-center mb-3 md:mb-6 shrink-0 font-sans">
+          <div
+            ref={tagScrollContainerRef}
+            onScroll={checkTagOverflow}
+            className="flex items-center gap-1.5 md:gap-2 overflow-x-auto scrollbar-none py-1 -my-1 w-full"
+          >
+            {tags.map((tag, index) => {
+              const isSelected = selectedTag === tag;
+              return (
+                <span
+                  key={index}
+                  onClick={() => setSelectedTag((prev) => (prev === tag ? null : tag))}
+                  className="inline-flex items-center px-2.5 py-0.5 bg-[#f2dfd2] text-[#d55343] text-[13px] md:text-[15px] font-normal tracking-wide rounded-full cursor-pointer shrink-0 whitespace-nowrap group/removetag transition-all duration-150"
+                >
+                  <span>#</span>{tag}
+                  <button
+                    type="button"
+                    className={`overflow-hidden transition-all duration-150 ease-out flex items-center justify-center rounded-full hover:bg-black/5 ${
+                      isSelected
+                        ? 'w-3.5 opacity-100 scale-100 ml-1 text-[#e85d56]'
+                        : 'w-0 opacity-0 scale-75 ml-0 md:group-hover/removetag:w-3.5 md:group-hover/removetag:opacity-100 md:group-hover/removetag:scale-100 md:group-hover/removetag:ml-1 text-[#e85d56]/70 hover:text-[#e85d56]'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveTag(tag);
+                      if (selectedTag === tag) setSelectedTag(null);
+                    }}
+                    title="Remove tag"
+                  >
+                    <MdClose className="text-xs" />
+                  </button>
+                </span>
+              );
+            })}
+            {/* inline tag input with explicit add button and onBlur trigger */}
+            <div className="inline-flex items-center gap-1 px-1.5 md:px-2 py-1 bg-transparent shrink-0">
+              <button
+                type="button"
+                onClick={handleAddTag}
+                className="text-stone-500 hover:text-[#e85d56] cursor-pointer transition-colors p-0.5 rounded-full hover:bg-black/5 flex items-center justify-center shrink-0"
+                title="Add tag"
+              >
+                <MdAdd className="text-sm md:text-base" />
+              </button>
+              <input
+                ref={tagInputRef}
+                type="text"
+                placeholder="Add tag"
+                className="bg-transparent text-[13px] md:text-[15px] font-normal tracking-wide outline-none w-20 md:w-28 placeholder-stone-500 text-stone-700 caret-[#e85d56] cursor-text shrink-0"
+                value={tagInputValue}
+                onChange={(e) => setTagInputValue(e.target.value)}
+                onBlur={handleAddTag}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddTag();
+                  }
+                }}
               />
-            </span>
-          ))}
-          {/* inline tag input */}
-          <div className="flex items-center gap-1 px-1.5 md:px-2 py-1 bg-transparent transition-all">
-            <MdAdd className="text-stone-500 text-sm md:text-base" />
-            <input
-              type="text"
-              placeholder="Add tag"
-              className="bg-transparent text-[13px] md:text-[15px] font-normal tracking-wide outline-none w-20 md:w-24 placeholder-stone-500 text-stone-700 caret-[#e85d56] cursor-text"
-              value={tagInputValue}
-              onChange={(e) => setTagInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddTag();
-                }
-              }}
-            />
+            </div>
           </div>
+
+          {/* Pinned Plus button on right when tag row overflows and input is scrolled out of view */}
+          {showPinnedAddButton && (
+            <div className="absolute right-0 top-0 bottom-0 flex items-center bg-gradient-to-l from-[#f4eadc] via-[#f4eadc]/95 to-transparent pl-6 pr-0.5 z-10 pointer-events-auto transition-opacity duration-200">
+              <button
+                type="button"
+                onClick={handleScrollToTagInput}
+                className="h-6 w-6 rounded-full bg-[#e85d56] text-white hover:bg-[#d55343] shadow-xs hover:shadow-md cursor-pointer transition-all duration-200 ease-out flex items-center justify-center border border-[#e85d56]/10 hover:scale-105 active:scale-95"
+                title="Scroll to add tag"
+              >
+                <MdAdd className="text-sm" />
+              </button>
+            </div>
+          )}
         </div>
 
         <div className='flex flex-col gap-2 flex-grow'>

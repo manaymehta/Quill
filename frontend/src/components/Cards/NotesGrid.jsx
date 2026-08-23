@@ -3,9 +3,19 @@ import NoteCard from './NoteCard';
 import EmptyCard from './EmptyCard';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useSearchStore } from '../../store/useSearchStore';
-import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
+import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay, defaultDropAnimationSideEffects } from '@dnd-kit/core';
 import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { useReorderNotesMutation, useReorderHomeNotesMutation } from '../../hooks/useNoteMutations';
+
+const dropAnimation = {
+  sideEffects: defaultDropAnimationSideEffects({
+    styles: {
+      active: {
+        opacity: '0.4',
+      },
+    },
+  }),
+};
 
 const getCols = (isAIMode) => {
     if (typeof window === 'undefined') return 2;
@@ -24,6 +34,9 @@ const NotesGrid = ({
     onArchive,
     onChecklistToggle,
     onRestore,
+    onToggleHome,
+    onPin,
+    onMove,
     isTrash,
     allowDrag = true,
     hideFolderBadge = false,
@@ -34,13 +47,21 @@ const NotesGrid = ({
     const { searchMode, isSearchingAI, semanticResult } = useSearchStore();
     const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
 
+    const [items, setItems] = useState(notes || []);
     const [activeId, setActiveId] = useState(null);
     const [cols, setCols] = useState(() => getCols(isAIMode));
 
-    const sortableItems = useMemo(() => (notes || []).map(n => n._id), [notes]);
+    // Keep local items synchronized with incoming notes prop
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setItems(notes || []);
+    }, [notes]);
+
+    const sortableItems = useMemo(() => (items || []).map(n => n._id), [items]);
 
     // Re-compute on window resize and whenever AI mode toggles
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCols(getCols(isAIMode));
         const onResize = () => setCols(getCols(isAIMode));
         window.addEventListener('resize', onResize);
@@ -49,12 +70,12 @@ const NotesGrid = ({
 
     const sensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
-        useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 6 } }),
     );
 
-    if (loading && (!notes || notes.length === 0)) return null;
+    if (loading && (!items || items.length === 0)) return null;
 
-    if (!notes || notes.length === 0) {
+    if (!items || items.length === 0) {
         return (
             <div className={`flex items-center justify-center ${isTrash ? 'mt-20' : ''} w-full`}>
                 <EmptyCard message={emptyMessage} />
@@ -64,7 +85,7 @@ const NotesGrid = ({
 
     // Distribute notes left-to-right into columns (index % cols preserves visual reading order)
     const columns = Array.from({ length: cols }, () => []);
-    notes.forEach((note, i) => columns[i % cols].push(note));
+    items.forEach((note, i) => columns[i % cols].push(note));
 
     const handleDragStart = ({ active }) => setActiveId(active.id);
 
@@ -72,22 +93,25 @@ const NotesGrid = ({
         setActiveId(null);
         if (!allowDrag || !over || active.id === over.id) return;
 
-        const oldIndex = notes.findIndex((n) => n._id === active.id);
-        const newIndex = notes.findIndex((n) => n._id === over.id);
-        const newOrder = arrayMove(notes, oldIndex, newIndex);
+        const oldIndex = items.findIndex((n) => n._id === active.id);
+        const newIndex = items.findIndex((n) => n._id === over.id);
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
+        const newOrder = arrayMove(items, oldIndex, newIndex);
+        setItems(newOrder);
 
         if (activeFolderId === null) {
             const updates = newOrder.map((n, idx) => ({ _id: n._id, homeOrderIndex: idx }));
-            reorderHomeNotesMutation.mutate({ updates });
+            reorderHomeNotesMutation.mutate({ updates, reorderedNotes: newOrder });
         } else {
             const updates = newOrder.map((n, idx) => ({ _id: n._id, orderIndex: idx }));
-            reorderNotesMutation.mutate({ updates });
+            reorderNotesMutation.mutate({ updates, reorderedNotes: newOrder, folderId: activeFolderId });
         }
     };
 
     const handleDragCancel = () => setActiveId(null);
 
-    const activeNote = notes.find(n => n._id === activeId) ?? null;
+    const activeNote = (items || []).find(n => n._id === activeId) ?? null;
 
     return (
         <DndContext
@@ -113,10 +137,13 @@ const NotesGrid = ({
                                     isChecklist={note.isChecklist}
                                     checklist={note.checklist}
                                     isArchived={note.isArchived}
+                                    showInHome={note.showInHome}
                                     isTrash={isTrash}
                                     onEdit={() => onEdit?.(note)}
                                     onDelete={() => onDelete?.(note)}
                                     onArchive={() => onArchive?.(note)}
+                                    onToggleHome={() => (onToggleHome || onPin)?.(note)}
+                                    onMove={(targetFolderId) => onMove?.(note._id, targetFolderId)}
                                     onChecklistToggle={(i) => onChecklistToggle?.(note, i)}
                                     onRestore={() => onRestore?.(note)}
                                     hideFolderBadge={hideFolderBadge}
@@ -128,7 +155,7 @@ const NotesGrid = ({
                 </div>
             </SortableContext>
 
-            <DragOverlay>
+            <DragOverlay dropAnimation={dropAnimation}>
                 {activeNote && (
                     <NoteCard
                         id={activeNote._id}

@@ -64,7 +64,17 @@ const Pinned = () => {
   };
 
   const handleArchiveToggle = (note) => {
-    archiveNoteMutation.mutate({ noteId: note._id, isArchived: !note.isArchived });
+    if (note.isArchived) {
+      archiveNoteMutation.mutate({ noteId: note._id, isArchived: false });
+    } else {
+      openConfirmModal({
+        title: "Archive note?",
+        message: "This moves the note to Archive.",
+        confirmLabel: "Archive",
+        variant: "warning",
+        onConfirm: () => archiveNoteMutation.mutate({ noteId: note._id, isArchived: true })
+      });
+    }
   };
 
   const handleChecklist = (note, index) => {

@@ -78,7 +78,7 @@ function readCatalogNames(workspaceRoot) {
   const yamlPath = path.join(workspaceRoot, 'pnpm-workspace.yaml');
   let lines;
   try { lines = fs.readFileSync(yamlPath, 'utf8').split(/\r?\n/); }
-  catch (error) { throw new Error('cannot read ' + yamlPath + ': ' + error.message); }
+  catch (error) { throw new Error('cannot read ' + yamlPath + ': ' + error.message, { cause: error }); }
 
   const names = new Set();
   let inCatalog = false;

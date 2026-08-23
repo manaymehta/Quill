@@ -8,7 +8,7 @@ import { useModalStore } from '../../components/Modals/useModalStore';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useHomeNotesQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
-import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation } from '../../hooks/useNoteMutations';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import { MdOutlineFolder } from 'react-icons/md';
 import './Modal.css';
@@ -52,6 +52,8 @@ const Home = () => {
 
   const deleteNoteMutation = useDeleteNoteMutation(showToastMessage);
   const archiveNoteMutation = useArchiveNoteMutation(showToastMessage);
+  const toggleHomePinMutation = useToggleHomePinMutation(showToastMessage);
+  const moveNoteMutation = useMoveNoteMutation(showToastMessage);
   const checklistToggleMutation = useChecklistToggleMutation();
   const editFolderMutation = useEditFolderMutation(showToastMessage);
 
@@ -82,7 +84,25 @@ const Home = () => {
   };
 
   const handleArchiveToggle = (note) => {
-    archiveNoteMutation.mutate({ noteId: note._id, isArchived: !note.isArchived });
+    if (note.isArchived) {
+      archiveNoteMutation.mutate({ noteId: note._id, isArchived: false });
+    } else {
+      openConfirmModal({
+        title: "Archive note?",
+        message: "This moves the note to Archive.",
+        confirmLabel: "Archive",
+        variant: "warning",
+        onConfirm: () => archiveNoteMutation.mutate({ noteId: note._id, isArchived: true })
+      });
+    }
+  };
+
+  const handleToggleHome = (note) => {
+    toggleHomePinMutation.mutate(note._id);
+  };
+
+  const handleMoveNote = (noteId, targetFolderId) => {
+    moveNoteMutation.mutate({ noteId, targetFolderId });
   };
 
   const handleChecklist = (note, index) => {
@@ -152,7 +172,10 @@ const Home = () => {
                   onEdit={handleEdit}
                   onDelete={handleDeleteNoteClick}
                   onArchive={handleArchiveToggle}
+                  onToggleHome={handleToggleHome}
+                  onMove={handleMoveNote}
                   onChecklistToggle={handleChecklist}
+                  allowDrag={false}
                 />
               )}
             </div>
@@ -168,6 +191,8 @@ const Home = () => {
             onEdit={handleEdit}
             onDelete={handleDeleteNoteClick}
             onArchive={handleArchiveToggle}
+            onToggleHome={handleToggleHome}
+            onMove={handleMoveNote}
             onChecklistToggle={handleChecklist}
           />
         )}

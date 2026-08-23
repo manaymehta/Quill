@@ -58,7 +58,23 @@ const Archive = () => {
     };
 
     const handleArchiveToggle = (note) => {
-        archiveNoteMutation.mutate({ noteId: note._id, isArchived: !note.isArchived });
+        if (note.isArchived) {
+            openConfirmModal({
+                title: "Unarchive note?",
+                message: "This moves the note back to Home.",
+                confirmLabel: "Unarchive",
+                variant: "warning",
+                onConfirm: () => archiveNoteMutation.mutate({ noteId: note._id, isArchived: false })
+            });
+        } else {
+            openConfirmModal({
+                title: "Archive note?",
+                message: "This moves the note to Archive.",
+                confirmLabel: "Archive",
+                variant: "warning",
+                onConfirm: () => archiveNoteMutation.mutate({ noteId: note._id, isArchived: true })
+            });
+        }
     };
 
     const handleChecklist = (note, index) => {

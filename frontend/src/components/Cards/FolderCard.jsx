@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { MdEdit, MdDelete, MdPalette, MdFolder, MdOutlineFolder, MdRestore, MdDeleteForever, MdMoreVert } from 'react-icons/md';
@@ -25,19 +25,20 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
         attributes, listeners, setNodeRef, transform, transition, isDragging,
     } = useSortable({ id: folder._id, disabled: isTrash || isOverlay });
 
+    const showDropdown = activeDropdownFolderId === folder._id;
+
     const style = {
         transform: CSS.Translate.toString(transform),
         transition,
-        zIndex: isOverlay ? 100 : (isDragging ? 0 : 'auto'),
+        zIndex: isOverlay ? 100 : (isDragging ? 0 : (showDropdown ? 40 : 'auto')),
         opacity: 1,
     };
 
-    const showDropdown = activeDropdownFolderId === folder._id;
-
-    // Auto-close dropdown when clicking or right-clicking outside anywhere
+    // Auto-close dropdown when clicking outside anywhere
     useEffect(() => {
         if (activeDropdownFolderId !== folder._id) return;
-        const handleOutsideClick = () => {
+        const handleOutsideClick = (e) => {
+            if (e.target.closest?.('.context-menu-pop')) return;
             setActiveDropdownFolderId(null);
             setCoords(null);
         };
@@ -49,16 +50,76 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
         };
     }, [activeDropdownFolderId, folder._id, setActiveDropdownFolderId]);
 
-    // Auto-close color picker when clicking outside
+    const longPressTimerRef = useRef(null);
+    const touchStartPosRef = useRef({ x: 0, y: 0 });
+
+    useEffect(() => {
+        if (isDragging && longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+        return () => {
+            if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+            }
+        };
+    }, [isDragging]);
+
+    const handleTouchStart = (e) => {
+        if (isDragging || isOverlay || isTrash) return;
+        const { activeDropdownNoteId, activeDropdownFolderId } = useFoldersStore.getState();
+        if (activeDropdownNoteId !== null || activeDropdownFolderId !== null || showColorPicker) return;
+
+        const touch = e.touches[0];
+        if (!touch) return;
+        touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+
+        longPressTimerRef.current = setTimeout(() => {
+            setCoords({ x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
+            setActiveDropdownFolderId(folder._id);
+            if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                navigator.vibrate(35);
+            }
+        }, 290);
+    };
+
+    const handleTouchMove = (e) => {
+        const touch = e.touches[0];
+        if (!touch) return;
+        const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
+        const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
+        if (dx > 10 || dy > 10) {
+            if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+            }
+            if (showDropdown) {
+                setActiveDropdownFolderId(null);
+                setCoords(null);
+            }
+        }
+    };
+
+    const handleTouchEnd = () => {
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+    };
+
+
     useEffect(() => {
         if (!showColorPicker) return;
-        const handleOutsideClick = () => {
+        const handleOutsideClick = (e) => {
+            if (e.target.closest?.('.color-picker-pop')) return;
+            e.stopPropagation();
+            e.preventDefault();
             setShowColorPicker(false);
             setCoords(null);
         };
-        document.addEventListener('click', handleOutsideClick);
+        document.addEventListener('click', handleOutsideClick, true);
         return () => {
-            document.removeEventListener('click', handleOutsideClick);
+            document.removeEventListener('click', handleOutsideClick, true);
         };
     }, [showColorPicker]);
 
@@ -100,10 +161,37 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
             ref={isOverlay ? null : setNodeRef}
             style={style}
             {...dragProps}
+            onTouchStart={(e) => {
+                dragProps?.onTouchStart?.(e);
+                handleTouchStart(e);
+            }}
+            onTouchMove={(e) => {
+                dragProps?.onTouchMove?.(e);
+                handleTouchMove(e);
+            }}
+            onTouchEnd={(e) => {
+                dragProps?.onTouchEnd?.(e);
+                handleTouchEnd(e);
+            }}
+            onTouchCancel={(e) => {
+                dragProps?.onTouchCancel?.(e);
+                handleTouchEnd(e);
+            }}
             onClick={(e) => {
                 if (isOverlay) return;
                 if (e.target.closest('.no-card-click') || isDragging) return;
                 if (isTrash) return;
+                const { activeDropdownNoteId, activeDropdownFolderId, setActiveDropdownNoteId, setActiveDropdownFolderId } = useFoldersStore.getState();
+                if (activeDropdownNoteId !== null || activeDropdownFolderId !== null || showColorPicker) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if (activeDropdownFolderId !== folder._id) {
+                        setActiveDropdownNoteId(null);
+                        setActiveDropdownFolderId(null);
+                        setShowColorPicker(false);
+                    }
+                    return;
+                }
                 if (!isEditing) navigate(`/folder/${folder._id}`);
             }}
             onContextMenu={(e) => {
@@ -113,12 +201,13 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
                 setCoords({ x: e.clientX, y: e.clientY });
                 setActiveDropdownFolderId(folder._id);
             }}
-            className={`folder-card-wrapper relative ${showDropdown ? 'z-40' : 'z-10'} ${isDragging ? 'is-dragging-active' : ''}`}
+            className={`folder-card-wrapper relative select-none [touch-action:manipulation] [-webkit-touch-callout:none] ${showDropdown ? 'z-40' : 'z-10'} ${isDragging ? 'is-dragging-active touch-none' : ''}`}
         >
             <div
                 onAnimationEnd={() => setShouldAnimate(false)}
-                className={`group physical-folder-card cursor-pointer select-none flex flex-col justify-between
-                    ${showDropdown ? 'shadow-xl' : ''}
+                style={showDropdown ? { transform: 'scale(1.03)', zIndex: 40 } : undefined}
+                className={`group physical-folder-card cursor-pointer select-none flex flex-col justify-between transition-transform duration-200 ease-out [-webkit-touch-callout:none]
+                    ${showDropdown ? 'shadow-xl ring-1 ring-white/10' : ''}
                     ${shouldAnimate && !isOverlay ? 'animate-card-fade-in' : ''}
                     ${isDragging ? 'opacity-30' : 'opacity-100'}
                     ${isOverlay ? 'cursor-grabbing pointer-events-none' : ''}`}
@@ -232,9 +321,6 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
                     className="bg-[#1e1e20]/96 backdrop-blur-xl border border-white/[0.08] py-1.5 rounded-xl shadow-2xl flex flex-col min-w-[165px] context-menu-pop no-card-click"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <div className="px-3 pb-1 pt-0.5 text-[11px] font-semibold text-stone-400 uppercase tracking-widest select-none">
-                        Folder Options
-                    </div>
                     {menuItems.map((item, idx) => (
                         <React.Fragment key={idx}>
                             {idx > 0 && (

@@ -56,8 +56,8 @@ const GlobalEditorOverlay = () => {
   const isEditorOpen = activeTabId !== 'home';
   const activeIndex = openTabs.findIndex((t) => t._id === activeTabId);
 
-  // Reset side panel when switching between tabs
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMockPanelOpen(false);
     setPanelContent('');
   }, [activeTabId]);

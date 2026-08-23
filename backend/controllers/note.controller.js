@@ -161,7 +161,7 @@ const getAllNotes = async (req, res) => {
     try {
         const notes = await Note.find({ userId: userId, isDeleted: { $ne: true }, isArchived: { $ne: true } }).sort({
             orderIndex: 1,
-            createdOn: -1,
+            createdAt: -1,
         });
 
         return res.json({
@@ -182,15 +182,37 @@ const getHomeNotes = async (req, res) => {
     const userId = req.user._id;
 
     try {
+        // Fetch active (non-deleted) folder IDs belonging to the user
+        const activeFolders = await Folder.find({ userId, isDeleted: false }).select('_id');
+        const activeFolderIds = activeFolders.map(f => f._id.toString());
+
+        // A note is retrieved on Home if:
+        // 1. folderId is null (unfiled)
+        // 2. OR showInHome is true (surfaced folder note)
+        // 3. OR folderId points to a deleted/non-existent folder (orphaned note)
         const notes = await Note.find({
             userId: userId,
             isDeleted: { $ne: true },
             isArchived: { $ne: true },
-            $or: [{ folderId: null }, { showInHome: true }]
+            $or: [
+                { folderId: null },
+                { showInHome: true },
+                { folderId: { $nin: activeFolderIds } }
+            ]
         }).sort({
             homeOrderIndex: 1,
-            createdOn: -1,
+            createdAt: -1,
         });
+
+        // Auto-heal orphaned notes: reset their folderId to null so they are clean unfiled notes
+        const orphanedNotes = notes.filter(n => n.folderId !== null && !activeFolderIds.includes(n.folderId.toString()));
+        if (orphanedNotes.length > 0) {
+            const orphanedIds = orphanedNotes.map(n => n._id);
+            await Note.updateMany(
+                { _id: { $in: orphanedIds } },
+                { $set: { folderId: null, showInHome: false } }
+            );
+        }
 
         return res.json({
             error: false,
@@ -217,7 +239,7 @@ const getFolderNotes = async (req, res) => {
             filter.folderId = { $in: ids };
         }
 
-        const notes = await Note.find(filter).sort({ orderIndex: 1, createdOn: -1 });
+        const notes = await Note.find(filter).sort({ orderIndex: 1, createdAt: -1 });
 
         return res.json({
             error: false,
@@ -237,7 +259,7 @@ const getArchivedNotes = async (req, res) => {
     try {
         const notes = await Note.find({ userId: userId, isArchived: true, isDeleted: { $ne: true } }).sort({
             orderIndex: 1,
-            createdOn: -1,
+            createdAt: -1,
         });
 
         return res.json({
@@ -314,6 +336,7 @@ const restoreNote = async (req, res) => {
 
         note.isDeleted = false;
         note.deletedAt = null;
+        note.deletedBatchId = null;
         await note.save();
         triggerEmbed(note, userId);
 
