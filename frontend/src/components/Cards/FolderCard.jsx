@@ -29,9 +29,10 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
 
     const style = {
         transform: CSS.Translate.toString(transform),
-        transition,
+        transition: isDragging ? undefined : transition,
         zIndex: isOverlay ? 100 : (isDragging ? 0 : (showDropdown ? 40 : 'auto')),
         opacity: 1,
+        touchAction: 'none',
     };
 
     // Auto-close dropdown when clicking outside anywhere
@@ -54,16 +55,23 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
     const touchStartPosRef = useRef({ x: 0, y: 0 });
 
     useEffect(() => {
-        if (isDragging && longPressTimerRef.current) {
-            clearTimeout(longPressTimerRef.current);
-            longPressTimerRef.current = null;
+        if (isDragging) {
+            if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+            }
+            if (showDropdown) {
+                setActiveDropdownFolderId(null);
+                // eslint-disable-next-line react-hooks/set-state-in-effect
+                setCoords(null);
+            }
         }
         return () => {
             if (longPressTimerRef.current) {
                 clearTimeout(longPressTimerRef.current);
             }
         };
-    }, [isDragging]);
+    }, [isDragging, showDropdown, setActiveDropdownFolderId]);
 
     const handleTouchStart = (e) => {
         if (isDragging || isOverlay || isTrash) return;
@@ -80,15 +88,16 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
             if (typeof navigator !== 'undefined' && navigator.vibrate) {
                 navigator.vibrate(35);
             }
-        }, 290);
+        }, 500);
     };
 
     const handleTouchMove = (e) => {
+        if (isDragging || isOverlay) return;
         const touch = e.touches[0];
         if (!touch) return;
         const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
         const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
-        if (dx > 10 || dy > 10) {
+        if (dx > 20 || dy > 20) {
             if (longPressTimerRef.current) {
                 clearTimeout(longPressTimerRef.current);
                 longPressTimerRef.current = null;
@@ -195,9 +204,9 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
                 if (!isEditing) navigate(`/folder/${folder._id}`);
             }}
             onContextMenu={(e) => {
-                if (isOverlay || isDragging) return;
                 e.preventDefault();
                 e.stopPropagation();
+                if (isOverlay || isDragging || showDropdown) return;
                 setCoords({ x: e.clientX, y: e.clientY });
                 setActiveDropdownFolderId(folder._id);
             }}

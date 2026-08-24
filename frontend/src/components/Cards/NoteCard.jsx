@@ -376,16 +376,23 @@ const NoteCard = ({
   }, [activeDropdownNoteId, id, setActiveDropdownNoteId]);
 
   useEffect(() => {
-    if (isDragging && longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
+    if (isDragging) {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      if (isMenuOpen) {
+        setActiveDropdownNoteId(null);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setCoords(null);
+      }
     }
     return () => {
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
       }
     };
-  }, [isDragging]);
+  }, [isDragging, isMenuOpen, setActiveDropdownNoteId]);
 
   const toggleMenu = (e) => {
     e?.stopPropagation?.();
@@ -414,15 +421,16 @@ const NoteCard = ({
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate(35);
       }
-    }, 290);
+    }, 500);
   };
 
   const handleTouchMove = (e) => {
+    if (isDragging || isOverlay) return;
     const touch = e.touches[0];
     if (!touch) return;
     const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
     const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
-    if (dx > 10 || dy > 10) {
+    if (dx > 20 || dy > 20) {
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
         longPressTimerRef.current = null;
@@ -443,9 +451,10 @@ const NoteCard = ({
 
   const style = {
     transform: CSS.Translate.toString(transform),
-    transition,
+    transition: isDragging ? undefined : transition,
     zIndex: isOverlay ? 100 : (isDragging ? 0 : (isMenuOpen ? 40 : 'auto')),
     opacity: 1,
+    touchAction: 'none',
   };
 
   const { data: folders = [] } = useFoldersQuery();
@@ -474,9 +483,9 @@ const NoteCard = ({
         handleTouchEnd(e);
       }}
       onContextMenu={(e) => {
-        if (isOverlay || isDragging) return;
         e.preventDefault();
         e.stopPropagation();
+        if (isOverlay || isDragging || isMenuOpen) return;
         setCoords({ x: e.clientX, y: e.clientY });
         setActiveDropdownNoteId(id);
       }}
