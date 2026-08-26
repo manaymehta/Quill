@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { MdEdit, MdDelete, MdPalette, MdFolder, MdOutlineFolder, MdRestore, MdDeleteForever, MdMoreVert } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
@@ -32,10 +32,10 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
         transition: isDragging ? undefined : transition,
         zIndex: isOverlay ? 100 : (isDragging ? 0 : (showDropdown ? 40 : 'auto')),
         opacity: 1,
-        touchAction: 'none',
+        touchAction: isDragging ? 'none' : 'pan-y',
     };
 
-    // Auto-close dropdown when clicking outside anywhere
+    // Auto-close dropdown when clicking outside anywhere or on scroll
     useEffect(() => {
         if (activeDropdownFolderId !== folder._id) return;
         const handleOutsideClick = (e) => {
@@ -43,11 +43,18 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
             setActiveDropdownFolderId(null);
             setCoords(null);
         };
+        const handleScroll = () => {
+            setActiveDropdownFolderId(null);
+            setCoords(null);
+        };
+
         document.addEventListener('click', handleOutsideClick);
         document.addEventListener('contextmenu', handleOutsideClick);
+        document.addEventListener('scroll', handleScroll, { passive: true, capture: true });
         return () => {
             document.removeEventListener('click', handleOutsideClick);
             document.removeEventListener('contextmenu', handleOutsideClick);
+            document.removeEventListener('scroll', handleScroll, { capture: true });
         };
     }, [activeDropdownFolderId, folder._id, setActiveDropdownFolderId]);
 
@@ -55,23 +62,12 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
     const touchStartPosRef = useRef({ x: 0, y: 0 });
 
     useEffect(() => {
-        if (isDragging) {
-            if (longPressTimerRef.current) {
-                clearTimeout(longPressTimerRef.current);
-                longPressTimerRef.current = null;
-            }
-            if (showDropdown) {
-                setActiveDropdownFolderId(null);
-                // eslint-disable-next-line react-hooks/set-state-in-effect
-                setCoords(null);
-            }
-        }
         return () => {
             if (longPressTimerRef.current) {
                 clearTimeout(longPressTimerRef.current);
             }
         };
-    }, [isDragging, showDropdown, setActiveDropdownFolderId]);
+    }, [isDragging]);
 
     const handleTouchStart = (e) => {
         if (isDragging || isOverlay || isTrash) return;
@@ -83,16 +79,23 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
         touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
 
         longPressTimerRef.current = setTimeout(() => {
-            setCoords({ x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
-            setActiveDropdownFolderId(folder._id);
-            if (typeof navigator !== 'undefined' && navigator.vibrate) {
-                navigator.vibrate(35);
-            }
+            flushSync(() => {
+                setCoords({ x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
+                setActiveDropdownFolderId(folder._id);
+            });
         }, 500);
     };
 
     const handleTouchMove = (e) => {
-        if (isDragging || isOverlay) return;
+        if (isOverlay) return;
+        if (isDragging) {
+            // Card is being dragged — close dropdown if open
+            if (showDropdown) {
+                setActiveDropdownFolderId(null);
+                setCoords(null);
+            }
+            return;
+        }
         const touch = e.touches[0];
         if (!touch) return;
         const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
@@ -214,7 +217,7 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
         >
             <div
                 onAnimationEnd={() => setShouldAnimate(false)}
-                style={showDropdown ? { transform: 'scale(1.03)', zIndex: 40 } : undefined}
+                style={showDropdown ? { zIndex: 40 } : undefined}
                 className={`group physical-folder-card cursor-pointer select-none flex flex-col justify-between transition-transform duration-200 ease-out [-webkit-touch-callout:none]
                     ${showDropdown ? 'shadow-xl ring-1 ring-white/10' : ''}
                     ${shouldAnimate && !isOverlay ? 'animate-card-fade-in' : ''}

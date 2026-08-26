@@ -70,7 +70,7 @@ const NotesGrid = ({
 
     const sensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
-        useSensor(TouchSensor, { activationConstraint: { distance: 10 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 500, tolerance: 5 } }),
     );
 
     if (loading && (!items || items.length === 0)) return null;

@@ -1,5 +1,5 @@
 import React, { memo, useState, useEffect, useRef, cloneElement } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { 
@@ -147,7 +147,7 @@ const InnerNoteCard = memo(({
       className={`group border w-full border-gray-700 rounded-[20px] md:rounded-3xl p-3 md:p-4 bg-[#f8ecdc] note-card relative select-none overflow-hidden transition-transform duration-200 ease-out [-webkit-touch-callout:none]
         ${shouldAnimate && !isOverlay ? 'animate-card-fade-in' : ''}
         ${isDragging ? 'opacity-30' : 'opacity-100'}
-        ${isMenuOpen ? 'scale-[1.03] shadow-2xl ring-1 ring-white/10' : ''}
+        ${isMenuOpen ? 'ring-1 ring-white/10' : ''}
         ${isOverlay ? 'shadow-2xl scale-105 opacity-95' : (isDragging ? '' : 'shadow-xs')}`}
     >
       <div className="flex flex-col">
@@ -366,33 +366,28 @@ const NoteCard = ({
       setActiveDropdownNoteId(null);
       setCoords(null);
     };
+    const handleScroll = () => {
+      setActiveDropdownNoteId(null);
+      setCoords(null);
+    };
 
     document.addEventListener('click', handleOutsideClick);
     document.addEventListener('contextmenu', handleOutsideClick);
+    document.addEventListener('scroll', handleScroll, { passive: true, capture: true });
     return () => {
       document.removeEventListener('click', handleOutsideClick);
       document.removeEventListener('contextmenu', handleOutsideClick);
+      document.removeEventListener('scroll', handleScroll, { capture: true });
     };
   }, [activeDropdownNoteId, id, setActiveDropdownNoteId]);
 
   useEffect(() => {
-    if (isDragging) {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-      if (isMenuOpen) {
-        setActiveDropdownNoteId(null);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCoords(null);
-      }
-    }
     return () => {
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
       }
     };
-  }, [isDragging, isMenuOpen, setActiveDropdownNoteId]);
+  }, [isDragging]);
 
   const toggleMenu = (e) => {
     e?.stopPropagation?.();
@@ -416,16 +411,23 @@ const NoteCard = ({
     touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
 
     longPressTimerRef.current = setTimeout(() => {
-      setCoords({ x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
-      setActiveDropdownNoteId(id);
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate(35);
-      }
+      flushSync(() => {
+        setCoords({ x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
+        setActiveDropdownNoteId(id);
+      });
     }, 500);
   };
 
   const handleTouchMove = (e) => {
-    if (isDragging || isOverlay) return;
+    if (isOverlay) return;
+    if (isDragging) {
+      // Card is being dragged — close dropdown if open
+      if (isMenuOpen) {
+        setActiveDropdownNoteId(null);
+        setCoords(null);
+      }
+      return;
+    }
     const touch = e.touches[0];
     if (!touch) return;
     const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
@@ -454,7 +456,7 @@ const NoteCard = ({
     transition: isDragging ? undefined : transition,
     zIndex: isOverlay ? 100 : (isDragging ? 0 : (isMenuOpen ? 40 : 'auto')),
     opacity: 1,
-    touchAction: 'none',
+    touchAction: isDragging ? 'none' : 'pan-y',
   };
 
   const { data: folders = [] } = useFoldersQuery();
