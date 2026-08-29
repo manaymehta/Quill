@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosInstance from '../utils/axiosInstance';
 import { QUERY_KEYS } from './useNotesQuery';
 
+const hasEmbeddingIssue = (data) => ["failed", "partial"].includes(data?.embedding?.status);
+
 export const useDeleteNoteMutation = (showToast) => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -9,8 +11,16 @@ export const useDeleteNoteMutation = (showToast) => {
       const response = await axiosInstance.delete(`/delete-note/${noteId}`);
       return response.data;
     },
-    onSuccess: () => {
-      if (showToast) showToast("Note moved to Trash", "delete");
+    onSuccess: (data) => {
+      if (showToast) {
+        const embeddingIssue = hasEmbeddingIssue(data);
+        showToast(
+          embeddingIssue
+            ? "Note moved to Trash. Embedding cleanup failed."
+            : "Note moved to Trash",
+          embeddingIssue ? "warning" : "delete"
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
     onError: (error) => {
@@ -26,8 +36,15 @@ export const useArchiveNoteMutation = (showToast) => {
       const response = await axiosInstance.put(`/update-note-archive/${noteId}`, { isArchived });
       return response.data;
     },
-    onSuccess: (_, variables) => {
-      if (showToast) showToast(`Note ${variables.isArchived ? "archived" : "unarchived"}`, "success");
+    onSuccess: (data, variables) => {
+      if (showToast) {
+        const message = `Note ${variables.isArchived ? "archived" : "unarchived"}`;
+        const embeddingIssue = hasEmbeddingIssue(data);
+        showToast(
+          embeddingIssue ? `${message}. Embedding update failed.` : message,
+          embeddingIssue ? "warning" : "success"
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
     onError: (error) => {
@@ -154,8 +171,16 @@ export const useRestoreNoteMutation = (showToast) => {
       const response = await axiosInstance.put(`/restore-note/${noteId}`);
       return response.data;
     },
-    onSuccess: () => {
-      if (showToast) showToast("Note restored successfully", "success");
+    onSuccess: (data) => {
+      if (showToast) {
+        const embeddingIssue = hasEmbeddingIssue(data);
+        showToast(
+          embeddingIssue
+            ? "Note restored. Embedding failed."
+            : "Note restored successfully",
+          embeddingIssue ? "warning" : "success"
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
     onError: (error) => {
@@ -171,8 +196,16 @@ export const useDeleteTrashNotePermanentMutation = (showToast) => {
       const response = await axiosInstance.delete(`/delete-trash-note/${noteId}`);
       return response.data;
     },
-    onSuccess: () => {
-      if (showToast) showToast("Note deleted permanently", "delete");
+    onSuccess: (data) => {
+      if (showToast) {
+        const embeddingIssue = hasEmbeddingIssue(data);
+        showToast(
+          embeddingIssue
+            ? "Note deleted permanently. Embedding cleanup failed."
+            : "Note deleted permanently",
+          embeddingIssue ? "warning" : "delete"
+        );
+      }
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.TRASH_NOTES });
     },
     onError: (error) => {

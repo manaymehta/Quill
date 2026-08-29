@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { LuCheck } from "react-icons/lu";
-import { MdDeleteOutline } from "react-icons/md";
+import { MdDeleteOutline, MdWarningAmber } from "react-icons/md";
 
 const Toast = ({ isShown, message, type, onClose }) => {
   useEffect(() => {
@@ -18,12 +18,14 @@ const Toast = ({ isShown, message, type, onClose }) => {
 
     <div className={`absolute top-20 right-6`}>
       <div className={`min-w-52  border border-slate-200 shadow-2xl rounded-md transition-opacity duration-400 ${isShown ? "opacity-100" : "opacity-0"} 
-      ${type === "delete" ? "bg-red-400" : "bg-emerald-500"}`}
+      ${type === "delete" ? "bg-red-400" : type === "warning" ? "bg-amber-500" : "bg-emerald-500"}`}
       >
         <div className="flex items-center gap-3 py-2 px-4">
-          <div className={`w-10 h-10 flex items-center justify-center rounded-full ${type === "delete" ? "bg-red-50" : "bg-green-50"}`}>
+          <div className={`w-10 h-10 flex items-center justify-center rounded-full ${type === "delete" ? "bg-red-50" : type === "warning" ? "bg-amber-50" : "bg-green-50"}`}>
             {type === "delete" ? (
               <MdDeleteOutline className="text-xl text-red-500" />
+            ) : type === "warning" ? (
+              <MdWarningAmber className="text-xl text-amber-600" />
             ) : (
               <LuCheck className="text-xl text-green-500" />
             )}

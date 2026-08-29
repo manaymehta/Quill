@@ -3,7 +3,7 @@ import { MdClose, MdSearch, MdOutlineFolder, MdHomeFilled } from 'react-icons/md
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const MoveToPicker = ({ isOpen, onClose, noteId, currentFolderId, onMove }) => {
+const MoveToPicker = ({ isOpen, onClose, currentFolderId, onMove }) => {
     const { data: folders = [] } = useFoldersQuery();
     const [searchVal, setSearchVal] = useState('');
 
@@ -34,7 +34,7 @@ const MoveToPicker = ({ isOpen, onClose, noteId, currentFolderId, onMove }) => {
     );
 
     const handleSelect = (targetFolderId) => {
-        onMove(noteId, targetFolderId);
+        onMove(targetFolderId);
         onClose();
     };
 

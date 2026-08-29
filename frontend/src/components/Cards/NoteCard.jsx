@@ -66,7 +66,7 @@ const PREVIEW_CHARS = 150;
 
 // ── Inner static rendering component ─────────────────────────────────────────
 const InnerNoteCard = memo(({
-  noteId, title, content, tags, folder, folderId, isChecklist, checklist,
+  title, content, tags, folder, folderId, isChecklist, checklist,
   isTrash, isArchived, showInHome, isDragging, isOverlay, hideFolderBadge,
   linkPreviews, onDelete, onArchive, onToggleHome, onMove, onChecklistToggle, onRestore,
   isMenuOpen, toggleMenu, index, coords, setCoords
@@ -320,7 +320,6 @@ const InnerNoteCard = memo(({
       {showMovePicker && createPortal(
         <MoveToPicker
           isOpen={showMovePicker}
-          noteId={noteId}
           currentFolderId={folderId}
           onClose={() => setShowMovePicker(false)}
           onMove={onMove}
@@ -508,7 +507,6 @@ const NoteCard = ({
       className={`w-full note-card-wrapper cursor-grab active:cursor-grabbing select-none [touch-action:manipulation] [-webkit-touch-callout:none] ${isDragging ? 'is-dragging-active touch-none' : ''}`}
     >
       <InnerNoteCard
-        noteId={id}
         title={title}
         content={content}
         tags={tags}

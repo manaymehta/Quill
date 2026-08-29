@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import uuid
@@ -9,7 +10,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct,
     Filter, FieldCondition, MatchValue,
-    FilterSelector, PayloadSchemaType
+    FilterSelector, PointIdsList, PayloadSchemaType
 )
 from fastapi import FastAPI, HTTPException, Response, Depends
 from fastapi.security import APIKeyHeader
@@ -40,6 +41,24 @@ MAX_SEARCH_QUERY_CHARS = 4_000
 
 gemini_client: genai.Client | None = None
 qdrant_client: QdrantClient | None = None
+embedding_locks: dict[str, asyncio.Lock] = {}
+embedding_lock_users: dict[str, int] = {}
+
+
+def acquire_embedding_lock(note_id: str) -> asyncio.Lock:
+    lock = embedding_locks.setdefault(note_id, asyncio.Lock())
+    embedding_lock_users[note_id] = embedding_lock_users.get(note_id, 0) + 1
+    return lock
+
+
+def release_embedding_lock(note_id: str, lock: asyncio.Lock) -> None:
+    remaining_users = embedding_lock_users.get(note_id, 0) - 1
+    if remaining_users <= 0:
+        embedding_lock_users.pop(note_id, None)
+        if embedding_locks.get(note_id) is lock:
+            embedding_locks.pop(note_id, None)
+    else:
+        embedding_lock_users[note_id] = remaining_users
 
 
 # Chunking
@@ -136,9 +155,10 @@ def chunk_text(text: str) -> list[str]:
             
     return apply_overlap(chunks)
 
-# Stable UUID for a (noteId, chunkIndex) pair — same input always produces the same ID.
-def chunk_point_id(note_id: str, chunk_index: int) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_OID, f"{note_id}::{chunk_index}"))
+# Stable UUID for a note version and chunk index. Versioned IDs let a complete
+# replacement be written before the previous version is cleaned up.
+def chunk_point_id(note_id: str, chunk_index: int, embedding_version: str = "legacy") -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_OID, f"{note_id}::{embedding_version}::{chunk_index}"))
 
 
 # Lifespan
@@ -233,6 +253,8 @@ class EmbedNoteRequest(BaseModel):
     userId: str = Field(max_length=128)
     title: str = Field(default="", max_length=MAX_AI_TEXT_CHARS)
     text: str = Field(max_length=MAX_AI_TEXT_CHARS)
+    embeddingVersion: str = Field(default="", max_length=128)
+    isArchived: bool = False
 
 class SemanticSearchRequest(BaseModel):
     query: str = Field(max_length=MAX_SEARCH_QUERY_CHARS)
@@ -279,8 +301,9 @@ async def summarize_text(request: SummarizeRequest, _: None = Depends(verify_api
 
 
 # Embed Note
-# Chunk the note, embed each chunk, and upsert into Qdrant.
-# Old chunks are deleted first so edits don't leave stale vectors.
+# Chunk the note, embed each chunk, and replace its Qdrant vectors.
+# New vectors are written before stale chunks are removed, so a provider or
+# upsert failure cannot erase a previously searchable version of the note.
 @app.post("/embed-note")
 async def embed_note(request: EmbedNoteRequest, _: None = Depends(verify_api_key)):
     if qdrant_client is None or gemini_client is None:
@@ -290,19 +313,9 @@ async def embed_note(request: EmbedNoteRequest, _: None = Depends(verify_api_key
     if not text:
         raise HTTPException(status_code=400, detail="Text is required for embedding.")
 
-    try:
-        qdrant_client.delete(
-            collection_name=COLLECTION_NAME,
-            points_selector=FilterSelector(
-                filter=Filter(
-                    must=[FieldCondition(key="noteId", match=MatchValue(value=request.noteId))]
-                )
-            ),
-        )
-    except Exception as e:
-        print(f"Warning — could not delete old chunks for {request.noteId}: {e}")
-
     chunks = chunk_text(text)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="Text is required for embedding.")
 
     # title is prepended for embedding context only, not stored in payload
     embed_contents = []
@@ -316,14 +329,21 @@ async def embed_note(request: EmbedNoteRequest, _: None = Depends(verify_api_key
             contents=embed_contents,
             config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM),
         )
-        vectors = [list(e.values) for e in result.embeddings]
+        vectors = [list(e.values) for e in (result.embeddings or [])]
     except Exception as e:
         print(f"Embedding error: {e}")
         raise HTTPException(status_code=500, detail="Failed to embed note.")
 
+    if len(vectors) != len(chunks) or any(len(vector) != EMBEDDING_DIM for vector in vectors):
+        print(
+            f"Embedding response shape mismatch for {request.noteId}: "
+            f"received {len(vectors)} vectors for {len(chunks)} chunks"
+        )
+        raise HTTPException(status_code=502, detail="Embedding provider returned an invalid response.")
+
     points = [
         PointStruct(
-            id=chunk_point_id(request.noteId, i),
+            id=chunk_point_id(request.noteId, i, request.embeddingVersion or "legacy"),
             vector=vectors[i],
             payload={
                 "noteId": request.noteId,
@@ -331,16 +351,69 @@ async def embed_note(request: EmbedNoteRequest, _: None = Depends(verify_api_key
                 "chunkIndex": i,
                 "title": request.title,
                 "text": chunks[i],
+                "embeddingVersion": request.embeddingVersion,
+                "isArchived": request.isArchived,
             },
         )
         for i in range(len(chunks))
     ]
+    note_lock = acquire_embedding_lock(request.noteId)
     try:
-        qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
-        return {"status": "ok", "noteId": request.noteId, "chunks": len(chunks)}
-    except Exception as e:
-        print(f"Qdrant upsert error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to store embeddings.")
+        async with note_lock:
+            # Re-read after provider work and serialize this final section. This
+            # prevents a slower older request from overwriting a newer version.
+            try:
+                existing_points, _ = qdrant_client.scroll(
+                    collection_name=COLLECTION_NAME,
+                    scroll_filter=Filter(
+                        must=[FieldCondition(key="noteId", match=MatchValue(value=request.noteId))]
+                    ),
+                    with_payload=True,
+                    with_vectors=False,
+                    limit=10_000,
+                )
+            except Exception as e:
+                print(f"Qdrant read error for {request.noteId}: {e}")
+                raise HTTPException(status_code=503, detail="Unable to read existing embeddings.")
+
+            if request.embeddingVersion:
+                existing_versions = [
+                    point.payload.get("embeddingVersion")
+                    for point in existing_points
+                    if point.payload and point.payload.get("embeddingVersion")
+                ]
+                newest_existing_version = max(existing_versions, default="")
+                if newest_existing_version and request.embeddingVersion < newest_existing_version:
+                    return {"status": "stale", "noteId": request.noteId}
+
+            try:
+                qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
+                new_point_ids = {point.id for point in points}
+                stale_point_ids = [point.id for point in existing_points if point.id not in new_point_ids]
+            except Exception as e:
+                print(f"Qdrant upsert error: {e}")
+                raise HTTPException(status_code=500, detail="Failed to store embeddings.")
+
+            if stale_point_ids:
+                try:
+                    qdrant_client.delete(
+                        collection_name=COLLECTION_NAME,
+                        points_selector=PointIdsList(points=stale_point_ids),
+                    )
+                except Exception as e:
+                    # The new version is already available. Report the partial cleanup
+                    # explicitly so the caller can warn without losing the saved note.
+                    print(f"Qdrant stale-chunk cleanup error for {request.noteId}: {e}")
+                    return {
+                        "status": "partial",
+                        "noteId": request.noteId,
+                        "chunks": len(chunks),
+                        "staleChunks": len(stale_point_ids),
+                    }
+
+            return {"status": "ok", "noteId": request.noteId, "chunks": len(chunks)}
+    finally:
+        release_embedding_lock(request.noteId, note_lock)
 
 
 # Delete Embedding
@@ -349,19 +422,23 @@ async def embed_note(request: EmbedNoteRequest, _: None = Depends(verify_api_key
 async def delete_embedding(note_id: str, _: None = Depends(verify_api_key)):
     if qdrant_client is None:
         raise HTTPException(status_code=503, detail="Vector store not available.")
+    note_lock = acquire_embedding_lock(note_id)
     try:
-        qdrant_client.delete(
-            collection_name=COLLECTION_NAME,
-            points_selector=FilterSelector(
-                filter=Filter(
-                    must=[FieldCondition(key="noteId", match=MatchValue(value=note_id))]
-                )
-            ),
-        )
-        return {"status": "ok", "noteId": note_id}
+        async with note_lock:
+            qdrant_client.delete(
+                collection_name=COLLECTION_NAME,
+                points_selector=FilterSelector(
+                    filter=Filter(
+                        must=[FieldCondition(key="noteId", match=MatchValue(value=note_id))]
+                    )
+                ),
+            )
+            return {"status": "ok", "noteId": note_id}
     except Exception as e:
         print(f"Delete embedding error: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete embedding.")
+    finally:
+        release_embedding_lock(note_id, note_lock)
 
 
 # Semantic Search

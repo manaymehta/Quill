@@ -4,23 +4,80 @@ const axios = require("axios");
 const mongoose = require("mongoose");
 const { findNearestLivingAncestor, getUserFolders } = require("../services/folder-tree.service");
 const FASTAPI_REQUEST_TIMEOUT_MS = 30_000;
+const FASTAPI_EMBEDDING_TIMEOUT_MS = 10_000;
+const embeddingLocks = new Map();
 
 const resolveNearestLivingAncestor = async (startParentId, userId) => (
     findNearestLivingAncestor(startParentId, await getUserFolders(userId))
 );
 
-const getFastApiHeaders = () => {
+const getFastApiHeaders = (timeout = FASTAPI_REQUEST_TIMEOUT_MS) => {
     const key = process.env.FASTAPI_INTERNAL_KEY;
     return {
-        timeout: FASTAPI_REQUEST_TIMEOUT_MS,
+        timeout,
         ...(key ? { headers: { "x-api-key": key } } : {}),
     };
 };
 
-// even if qdrant is down, it should not affect the saving of notes
-const triggerEmbed = (note, userId) => {
+const getEmbeddingVersion = (note) => {
+    const updatedAt = note.updatedAt instanceof Date
+        ? note.updatedAt
+        : new Date(note.updatedAt || Date.now());
+    return Number.isNaN(updatedAt.getTime()) ? new Date().toISOString() : updatedAt.toISOString();
+};
+
+const runEmbeddingOperation = (noteId, operation) => {
+    const previous = embeddingLocks.get(noteId) || Promise.resolve();
+    const current = previous
+        .catch(() => undefined)
+        .then(operation);
+    embeddingLocks.set(noteId, current);
+
+    return current.finally(() => {
+        if (embeddingLocks.get(noteId) === current) {
+            embeddingLocks.delete(noteId);
+        }
+    });
+};
+
+const performDeleteEmbed = async (noteId) => {
     const url = process.env.FASTAPI_SUMMARIZE_URL;
-    if (!url) return;
+    if (!url) return { status: "skipped", reason: "not-configured" };
+
+    try {
+        const response = await axios.delete(`${url}/delete-embedding/${noteId}`, getFastApiHeaders(FASTAPI_EMBEDDING_TIMEOUT_MS));
+        if (response.data?.status !== "ok" || String(response.data.noteId) !== String(noteId)) {
+            throw new Error("Invalid embedding deletion response");
+        }
+        return { status: "ok" };
+    } catch (error) {
+        console.error(`Delete embedding failed for ${noteId}:`, error.message);
+        return { status: "failed", message: "Embedding cleanup failed" };
+    }
+};
+
+const deleteEmbed = (noteId) => runEmbeddingOperation(String(noteId), () => performDeleteEmbed(String(noteId)));
+
+const runEmbeddingBatch = async (operations, batchSize = 4) => {
+    let failures = 0;
+    for (let index = 0; index < operations.length; index += batchSize) {
+        const results = await Promise.allSettled(operations.slice(index, index + batchSize).map(operation => operation()));
+        failures += results.filter(result => (
+            result.status === "rejected"
+            || ["failed", "partial"].includes(result.value?.status)
+        )).length;
+    }
+    if (failures > 0) {
+        console.error(`Embedding batch completed with ${failures} failed operation(s)`);
+    }
+    return failures;
+};
+
+// The note is saved before this operation is started. Embedding failures therefore
+// never roll back or hide a successful MongoDB save.
+const triggerEmbed = (note, userId) => runEmbeddingOperation(String(note._id), async () => {
+    const url = process.env.FASTAPI_SUMMARIZE_URL;
+    if (!url) return { status: "skipped", reason: "not-configured" };
 
     // Build meaningful text for embedding, including checklist items if any
     let embedText = note.content || "";
@@ -34,19 +91,40 @@ const triggerEmbed = (note, userId) => {
         embedText = embedText ? `${embedText}\n\n${previewsStr}` : previewsStr;
     }
 
-    // Skip embedding if note is completely blank
-    if (!embedText.trim() && !(note.title && note.title.trim())) return;
+    // A title-only note still has useful searchable content.
+    if (!embedText.trim() && note.title && note.title.trim()) {
+        embedText = note.title.trim();
+    }
 
-    axios.post(`${url}/embed-note`, { noteId: String(note._id), userId: String(userId), title: note.title || "", text: embedText }, getFastApiHeaders())
-        .catch((err) => console.error(`embedding process failed for note ${note._id}:`, err.message));
-};
+    // A note that became blank must not leave its old vectors searchable.
+    if (!embedText.trim()) return performDeleteEmbed(String(note._id));
 
-const deleteEmbed = (noteId) => {
-    const url = process.env.FASTAPI_SUMMARIZE_URL;
-    if (!url) return;
-    axios.delete(`${url}/delete-embedding/${noteId}`, getFastApiHeaders())
-        .catch((err) => console.error(`Delete embedding failed for ${noteId}:`, err.message));
-};
+    try {
+        const response = await axios.post(`${url}/embed-note`, {
+            noteId: String(note._id),
+            userId: String(userId),
+            title: note.title || "",
+            text: embedText,
+            embeddingVersion: getEmbeddingVersion(note),
+            isArchived: Boolean(note.isArchived),
+        }, getFastApiHeaders(FASTAPI_EMBEDDING_TIMEOUT_MS));
+
+        const data = response.data;
+        const hasValidChunkCount = Number.isInteger(data?.chunks) && data.chunks >= 0;
+        const hasValidStaleChunkCount = data?.status !== "partial"
+            || (Number.isInteger(data?.staleChunks) && data.staleChunks > 0);
+        if (!data || !["ok", "stale", "partial"].includes(data.status)
+            || String(data.noteId) !== String(note._id)
+            || (["ok", "partial"].includes(data.status) && !hasValidChunkCount)
+            || !hasValidStaleChunkCount) {
+            throw new Error("Invalid embedding response");
+        }
+        return { status: data.status, chunks: data.chunks, staleChunks: data.staleChunks };
+    } catch (error) {
+        console.error(`Embedding process failed for note ${note._id}:`, error.message);
+        return { status: "failed", message: "Embedding failed" };
+    }
+});
 
 const addNote = async (req, res) => {
     const { title, content, tags, isChecklist, checklist, folderId, showInHome, linkPreviews } = req.body;
@@ -97,11 +175,12 @@ const addNote = async (req, res) => {
 
         await note.save();
 
-        triggerEmbed(note, userId);
+        const embedding = await triggerEmbed(note, userId);
 
         return res.json({
             error: false,
             note,
+            embedding,
             message: "Note created successfully",
         });
     } catch (error) {
@@ -163,14 +242,16 @@ const editNote = async (req, res) => {
             || typeof checklist !== "undefined"
             || typeof isChecklist !== "undefined"
             || typeof linkPreviews !== "undefined";
+        let embedding;
         if (contentChanged) {
-            triggerEmbed(note, userId);
+            embedding = await triggerEmbed(note, userId);
         }
 
 
         return res.json({
             error: false,
             note,
+            ...(embedding ? { embedding } : {}),
             message: "Note edited successfully",
         });
     } catch (error) {
@@ -328,10 +409,11 @@ const deleteNote = async (req, res) => {
         if (updateResult.modifiedCount !== 1) {
             return res.status(409).json({ error: true, message: "Note changed before it could be moved to Trash" });
         }
-        deleteEmbed(noteId);
+        const embedding = await deleteEmbed(noteId);
 
         return res.json({
             error: false,
+            embedding,
             message: "Note moved to trash",
         });
     } catch (error) {
@@ -389,12 +471,13 @@ const restoreNote = async (req, res) => {
         note.deletedAt = null;
         note.deletedBatchId = null;
         await note.save();
-        triggerEmbed(note, userId);
+        const embedding = await triggerEmbed(note, userId);
 
         return res.json({
             error: false,
             message: "Note restored successfully",
             note,
+            embedding,
         });
     } catch (error) {
         console.error(error);
@@ -426,10 +509,11 @@ const permanentDeleteNote = async (req, res) => {
         if (deleteResult.deletedCount !== 1) {
             return res.status(409).json({ error: true, message: "Note changed before permanent deletion" });
         }
-        deleteEmbed(noteId);
+        const embedding = await deleteEmbed(noteId);
 
         return res.json({
             error: false,
+            embedding,
             message: "Note permanently deleted",
         });
     } catch (error) {
@@ -459,7 +543,11 @@ const semanticSearch = async (req, res) => {
             userId: String(userId),
         }, getFastApiHeaders());
 
-        const { answer, sourceNoteIds } = response.data;
+        const { answer, sourceNoteIds } = response.data || {};
+        if (typeof answer !== "string" || !Array.isArray(sourceNoteIds)
+            || sourceNoteIds.some(noteId => typeof noteId !== "string")) {
+            return res.status(502).json({ error: true, message: "AI service returned an invalid search response" });
+        }
 
         // Fetch only the matched source notes by ID for the frontend card display
         const sourceNotes = sourceNoteIds.length
@@ -511,17 +599,14 @@ const updateNoteArchive = async (req, res) => {
         }
         await note.save();
 
-        // Keep Qdrant in sync: archived notes leave AI context, un-archived notes return
-        if (isArchived) {
-            deleteEmbed(String(noteId));
-        } else {
-            triggerEmbed(note, userId);
-        }
+        // Archived notes remain part of semantic search; only Trash notes are removed.
+        const embedding = await triggerEmbed(note, userId);
 
         return res.json({
             error: false,
             message: isArchived ? "Note archived" : "Note unarchived",
             note,
+            embedding,
         });
     } catch (error) {
         console.error(error);
@@ -772,4 +857,5 @@ module.exports = {
     toggleHomePin,
     deleteEmbed,
     triggerEmbed,
+    runEmbeddingBatch,
 };

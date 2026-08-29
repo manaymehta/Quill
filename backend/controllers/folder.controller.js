@@ -2,7 +2,7 @@ const Folder = require("../models/folder.model");
 const Note = require("../models/note.model");
 const mongoose = require("mongoose");
 const crypto = require("crypto");
-const { deleteEmbed, triggerEmbed } = require("./note.controller");
+const { deleteEmbed, triggerEmbed, runEmbeddingBatch } = require("./note.controller");
 const {
     collectSubtreeFolderIds,
     findNearestLivingAncestor,
@@ -162,7 +162,7 @@ const deleteFolder = async (req, res) => {
             return notesToDelete.map(note => String(note._id));
         });
 
-        noteIds.forEach(noteId => deleteEmbed(noteId));
+        void runEmbeddingBatch(noteIds.map(noteId => () => deleteEmbed(noteId)));
 
         return res.json({ error: false, message: "Folder and contents moved to Trash" });
     } catch (error) {
@@ -286,7 +286,7 @@ const restoreFolder = async (req, res) => {
             );
             return notes;
         });
-        notesToRestore.forEach(note => triggerEmbed(note, userId));
+        void runEmbeddingBatch(notesToRestore.map(note => () => triggerEmbed(note, userId)));
 
         return res.json({ error: false, message: "Folder and contents restored successfully" });
     } catch (error) {
@@ -349,7 +349,7 @@ const deleteFolderPermanent = async (req, res) => {
 
             return notesToDelete.map(note => String(note._id));
         });
-        noteIds.forEach(noteId => deleteEmbed(noteId));
+        void runEmbeddingBatch(noteIds.map(noteId => () => deleteEmbed(noteId)));
 
         return res.json({ error: false, message: "Folder permanently deleted" });
     } catch (error) {

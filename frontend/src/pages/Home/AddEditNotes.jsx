@@ -21,6 +21,18 @@ const EDITOR_EXTENSIONS = [
   lineWrap,
 ];
 
+const getSaveToast = (message, embedding) => (
+  embedding?.status === "failed"
+    ? `${message} Embedding failed; the note was saved.`
+    : embedding?.status === "partial"
+      ? `${message} Embedding cleanup is incomplete; the note was saved.`
+      : message
+);
+
+const getSaveToastType = (embedding) => (
+  ["failed", "partial"].includes(embedding?.status) ? "warning" : "add"
+);
+
 const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChecklistItemChange, removeChecklistItem }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
@@ -337,14 +349,20 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         if (response.data && response.data.note) {
           queryClient.invalidateQueries({ queryKey: ['notes'] });
           onSaveSuccess();
-          showToastMessage("Note added successfully", "add");
+          showToastMessage(
+            getSaveToast("Note added successfully", response.data.embedding),
+            getSaveToastType(response.data.embedding)
+          );
         }
       } else {
         const response = await axiosInstance.put("/edit-note/" + noteId, payload);
         if (response.data && response.data.note) {
           queryClient.invalidateQueries({ queryKey: ['notes'] });
           onSaveSuccess();
-          showToastMessage("Note updated successfully", "edit");
+          showToastMessage(
+            getSaveToast("Note updated successfully", response.data.embedding),
+            getSaveToastType(response.data.embedding)
+          );
         }
       }
     }
@@ -379,7 +397,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       if (response.data && response.data.note) {
         queryClient.invalidateQueries({ queryKey: ['notes'] });
         onSaveSuccess();
-        showToastMessage("Note added successfully", "add");
+        showToastMessage(
+          getSaveToast("Note added successfully", response.data.embedding),
+          getSaveToastType(response.data.embedding)
+        );
       }
     }
     catch (error) {
@@ -788,9 +809,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       <MoveToPicker
         isOpen={showMovePicker}
         onClose={() => setShowMovePicker(false)}
-        noteId={noteData._id}
         currentFolderId={folderId}
-        onMove={(noteId, targetFolderId) => setFolderId(targetFolderId)}
+        onMove={(targetFolderId) => setFolderId(targetFolderId)}
       />
     </div>
 
