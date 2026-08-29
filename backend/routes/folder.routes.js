@@ -19,7 +19,7 @@ router.param("folderId", validateObjectIdParam("folderId"));
 router.get("/get-folders", authenticateToken, getFolders);
 router.post("/create-folder", authenticateToken, validateObjectBody, createFolder);
 router.put("/edit-folder/:folderId", authenticateToken, validateObjectBody, editFolder);
-router.delete("/delete-folder/:folderId", authenticateToken, validateObjectBody, deleteFolder);
+router.delete("/delete-folder/:folderId", authenticateToken, deleteFolder);
 router.put("/reorder-folders", authenticateToken, validateObjectBody, reorderFolders);
 router.get("/get-trash-folders", authenticateToken, getTrashFolders);
 router.put("/restore-folder/:folderId", authenticateToken, restoreFolder);

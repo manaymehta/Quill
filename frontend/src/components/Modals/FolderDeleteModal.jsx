@@ -41,15 +41,14 @@ const FolderDeleteModal = () => {
     }, [folder, folders, allNotes, getSubtreeIds, getFolderPath]);
 
     const handleConfirm = () => {
-        const subtreeIds = getSubtreeIds(folders, folder._id);
         if (stats.notesCount === 0 && stats.foldersCount === 0) {
-            deleteFolderMutation.mutate({ folderId: folder._id, subtreeIds });
+            deleteFolderMutation.mutate({ folderId: folder._id });
             if (onConfirm) onConfirm();
             closeFolderDeleteModal();
         } else if (step === 1) {
             setStep(2);
         } else if (step === 2 && typedPath === fullPath) {
-            deleteFolderMutation.mutate({ folderId: folder._id, subtreeIds });
+            deleteFolderMutation.mutate({ folderId: folder._id });
             if (onConfirm) onConfirm();
             closeFolderDeleteModal();
         }

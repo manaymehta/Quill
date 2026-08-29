@@ -43,10 +43,8 @@ export const useEditFolderMutation = (showToast) => {
 export const useDeleteFolderMutation = (showToast) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ folderId, subtreeIds }) => {
-      const response = await axiosInstance.delete(`/delete-folder/${folderId}`, {
-        data: { folderIdsInSubtree: subtreeIds },
-      });
+    mutationFn: async ({ folderId }) => {
+      const response = await axiosInstance.delete(`/delete-folder/${folderId}`);
       return response.data;
     },
     onSuccess: () => {
@@ -101,6 +99,7 @@ export const useDeleteFolderPermanentMutation = (showToast) => {
     onSuccess: () => {
       if (showToast) showToast("Folder deleted permanently", "delete");
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.TRASH_FOLDERS });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.TRASH_NOTES });
     },
     onError: (error) => {
       if (showToast) showToast(error.response?.data?.message || "Failed to permanently delete folder", "error");

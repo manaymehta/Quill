@@ -1,20 +1,13 @@
 const Note = require("../models/note.model");
 const Folder = require("../models/folder.model");
 const axios = require("axios");
+const mongoose = require("mongoose");
+const { findNearestLivingAncestor, getUserFolders } = require("../services/folder-tree.service");
 const FASTAPI_REQUEST_TIMEOUT_MS = 30_000;
 
-const findNearestLivingAncestor = async (startParentId, userId) => {
-    if (!startParentId) return null;
-    const allFolders = await Folder.find({ userId });
-    let currentId = startParentId;
-    while (currentId) {
-        const folder = allFolders.find(f => f._id.toString() === currentId);
-        if (!folder) return null;
-        if (!folder.isDeleted) return folder._id.toString();
-        currentId = folder.parentId;
-    }
-    return null;
-};
+const resolveNearestLivingAncestor = async (startParentId, userId) => (
+    findNearestLivingAncestor(startParentId, await getUserFolders(userId))
+);
 
 const getFastApiHeaders = () => {
     const key = process.env.FASTAPI_INTERNAL_KEY;
@@ -65,6 +58,19 @@ const addNote = async (req, res) => {
 
     try {
         const targetFolderId = folderId || null;
+        if (targetFolderId) {
+            if (typeof targetFolderId !== "string" || !mongoose.Types.ObjectId.isValid(targetFolderId)) {
+                return res.status(400).json({ error: true, message: "Invalid folder" });
+            }
+            const targetFolder = await Folder.findOne({
+                _id: targetFolderId,
+                userId,
+                isDeleted: false,
+            }).select("_id").lean();
+            if (!targetFolder) {
+                return res.status(404).json({ error: true, message: "Folder not found" });
+            }
+        }
         let homeOrderIndex = 0;
         if (!targetFolderId) {
             const maxNote = await Note.findOne({
@@ -113,33 +119,50 @@ const editNote = async (req, res) => {
     const userId = req.user._id;
 
     try {
-        const note = await Note.findOne({ _id: noteId, userId: userId });
+        const note = await Note.findOne({ _id: noteId, userId: userId, isDeleted: { $ne: true } });
 
         if (!note) {
             return res.json({ error: true, message: "Note doesn't exist" });
         }
 
-        if (title) note.title = title;
-        if (content) note.content = content;
-        if (tags) note.tags = tags;
+        if (typeof title !== "undefined") note.title = title;
+        if (typeof content !== "undefined") note.content = content;
+        if (typeof tags !== "undefined") note.tags = tags;
         if (typeof isChecklist !== "undefined") {
             note.isChecklist = isChecklist;
         }
-        if (checklist) note.checklist = checklist;
+        if (typeof checklist !== "undefined") note.checklist = checklist;
         if (typeof folderId !== "undefined") {
+            if (folderId !== null) {
+                if (typeof folderId !== "string" || !mongoose.Types.ObjectId.isValid(folderId)) {
+                    return res.status(400).json({ error: true, message: "Invalid folder" });
+                }
+                const targetFolder = await Folder.findOne({
+                    _id: folderId,
+                    userId,
+                    isDeleted: false,
+                }).select("_id").lean();
+                if (!targetFolder) {
+                    return res.status(404).json({ error: true, message: "Folder not found" });
+                }
+            }
             note.folderId = folderId;
         }
         if (typeof showInHome !== "undefined") {
             note.showInHome = showInHome;
         }
-        if (linkPreviews) {
+        if (typeof linkPreviews !== "undefined") {
             note.linkPreviews = linkPreviews;
         }
 
         await note.save();
 
         // Only re-embed when semantic content actually changed — not for pin/tag-only edits
-        const contentChanged = title || content || checklist || typeof isChecklist !== "undefined" || linkPreviews;
+        const contentChanged = typeof title !== "undefined"
+            || typeof content !== "undefined"
+            || typeof checklist !== "undefined"
+            || typeof isChecklist !== "undefined"
+            || typeof linkPreviews !== "undefined";
         if (contentChanged) {
             triggerEmbed(note, userId);
         }
@@ -294,7 +317,17 @@ const deleteNote = async (req, res) => {
             });
         }
 
-        await Note.updateOne({ _id: noteId, userId: userId }, { $set: { isDeleted: true, deletedAt: new Date() } });
+        if (note.isDeleted) {
+            return res.status(409).json({ error: true, message: "Note is already in Trash" });
+        }
+
+        const updateResult = await Note.updateOne(
+            { _id: noteId, userId: userId, isDeleted: { $ne: true } },
+            { $set: { isDeleted: true, deletedAt: new Date(), deletedBatchId: null } }
+        );
+        if (updateResult.modifiedCount !== 1) {
+            return res.status(409).json({ error: true, message: "Note changed before it could be moved to Trash" });
+        }
         deleteEmbed(noteId);
 
         return res.json({
@@ -314,7 +347,7 @@ const getTrashNotes = async (req, res) => {
     const userId = req.user._id;
 
     try {
-        const notes = await Note.find({ userId: userId, isDeleted: true }).sort({ deletedAt: -1 });
+        const notes = await Note.find({ userId: userId, isDeleted: true, deletedBatchId: null }).sort({ deletedAt: -1 });
 
         return res.json({
             error: false,
@@ -336,6 +369,20 @@ const restoreNote = async (req, res) => {
 
         if (!note) {
             return res.status(404).json({ error: true, message: "Note not found" });
+        }
+
+        if (!note.isDeleted) {
+            return res.status(409).json({ error: true, message: "Only a trashed note can be restored" });
+        }
+        if (note.deletedBatchId) {
+            return res.status(409).json({ error: true, message: "Restore the containing folder instead" });
+        }
+
+        if (note.folderId) {
+            const folder = await Folder.findOne({ _id: note.folderId, userId, isDeleted: false }).select("_id").lean();
+            if (!folder) {
+                note.folderId = await resolveNearestLivingAncestor(note.folderId, userId);
+            }
         }
 
         note.isDeleted = false;
@@ -366,7 +413,19 @@ const permanentDeleteNote = async (req, res) => {
             return res.status(404).json({ error: true, message: "Note not found" });
         }
 
-        await Note.deleteOne({ _id: noteId, userId: userId });
+        if (!note.isDeleted || note.deletedBatchId) {
+            return res.status(409).json({ error: true, message: "Only an individually trashed note can be permanently deleted" });
+        }
+
+        const deleteResult = await Note.deleteOne({
+            _id: noteId,
+            userId: userId,
+            isDeleted: true,
+            deletedBatchId: null,
+        });
+        if (deleteResult.deletedCount !== 1) {
+            return res.status(409).json({ error: true, message: "Note changed before permanent deletion" });
+        }
         deleteEmbed(noteId);
 
         return res.json({
@@ -425,11 +484,19 @@ const updateNoteArchive = async (req, res) => {
     const { isArchived } = req.body;
     const userId = req.user._id;
 
+    if (typeof isArchived !== "boolean") {
+        return res.status(400).json({ error: true, message: "isArchived must be a boolean" });
+    }
+
     try {
         const note = await Note.findOne({ userId: userId, _id: noteId });
 
         if (!note) {
             return res.status(404).json({ error: true, message: "Note not found" });
+        }
+
+        if (note.isDeleted) {
+            return res.status(409).json({ error: true, message: "Trashed notes cannot be archived" });
         }
 
         note.isArchived = isArchived;
@@ -438,7 +505,7 @@ const updateNoteArchive = async (req, res) => {
             if (note.folderId) {
                 const folder = await Folder.findOne({ _id: note.folderId, userId, isDeleted: false });
                 if (!folder) {
-                    note.folderId = await findNearestLivingAncestor(note.folderId, userId);
+                    note.folderId = await resolveNearestLivingAncestor(note.folderId, userId);
                 }
             }
         }
@@ -593,9 +660,23 @@ const moveNote = async (req, res) => {
     const userId = req.user._id;
 
     try {
-        const note = await Note.findOne({ _id: noteId, userId });
+        const note = await Note.findOne({ _id: noteId, userId, isDeleted: { $ne: true } });
         if (!note) {
             return res.status(404).json({ error: true, message: "Note not found" });
+        }
+
+        if (targetFolderId) {
+            if (typeof targetFolderId !== "string" || !mongoose.Types.ObjectId.isValid(targetFolderId)) {
+                return res.status(400).json({ error: true, message: "Invalid target folder" });
+            }
+            const targetFolder = await Folder.findOne({
+                _id: targetFolderId,
+                userId,
+                isDeleted: false,
+            }).select("_id").lean();
+            if (!targetFolder) {
+                return res.status(404).json({ error: true, message: "Target folder not found" });
+            }
         }
 
         const wasOnHome = note.folderId === null || note.showInHome === true;
@@ -620,7 +701,7 @@ const toggleHomePin = async (req, res) => {
     const userId = req.user._id;
 
     try {
-        const note = await Note.findOne({ _id: noteId, userId });
+        const note = await Note.findOne({ _id: noteId, userId, isDeleted: { $ne: true } });
         if (!note) {
             return res.status(404).json({ error: true, message: "Note not found" });
         }
@@ -670,37 +751,6 @@ const reorderHomeNotes = async (req, res) => {
     }
 };
 
-const restoreTrashNote = async (req, res) => {
-    const noteId = req.params.noteId;
-    const userId = req.user._id;
-
-    try {
-        const note = await Note.findOne({ _id: noteId, userId, isDeleted: true });
-        if (!note) {
-            return res.status(404).json({ error: true, message: "Trashed note not found" });
-        }
-
-        if (note.folderId) {
-            const folder = await Folder.findOne({ _id: note.folderId, userId, isDeleted: false });
-            if (!folder) {
-                note.folderId = await findNearestLivingAncestor(note.folderId, userId);
-            }
-        }
-
-        note.isDeleted = false;
-        note.deletedAt = null;
-        note.deletedBatchId = null;
-        await note.save();
-
-        triggerEmbed(note, userId);
-
-        return res.json({ error: false, note, message: "Note restored successfully" });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
-};
-
 module.exports = {
     addNote,
     editNote,
@@ -710,7 +760,6 @@ module.exports = {
     deleteNote,
     getTrashNotes,
     restoreNote,
-    restoreTrashNote,
     permanentDeleteNote,
     searchNotes,
     summarizeNote,

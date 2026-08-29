@@ -3,7 +3,7 @@ import NotesGrid from '../../components/Cards/NotesGrid';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import Toast from '../../components/ToastMessage/Toast';
 import { useModalStore } from '../../components/Modals/useModalStore';
-import { useTrashNotesQuery, useTrashFoldersQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
+import { useTrashNotesQuery, useTrashFoldersQuery } from '../../hooks/useNotesQuery';
 import { useRestoreNoteMutation, useDeleteTrashNotePermanentMutation } from '../../hooks/useNoteMutations';
 import { useRestoreFolderMutation, useDeleteFolderPermanentMutation } from '../../hooks/useFolderMutations';
 import { MdOutlineFolder, MdOutlineStickyNote2 } from 'react-icons/md';
@@ -11,7 +11,6 @@ import { MdOutlineFolder, MdOutlineStickyNote2 } from 'react-icons/md';
 const Trash = () => {
   const { data: trashNotes = [] } = useTrashNotesQuery();
   const { data: trashFolders = [] } = useTrashFoldersQuery();
-  const { data: folders = [] } = useFoldersQuery();
 
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState({ message: '', type: '' });
@@ -59,12 +58,9 @@ const Trash = () => {
     });
   };
 
-  // Filter notes so we only show notes that were deleted individually (i.e. parent folder is not deleted)
-  const activeFolderIds = folders.map(f => f._id);
-  const individualTrashNotes = trashNotes.filter(note => {
-    if (!note.folderId) return true;
-    return activeFolderIds.includes(note.folderId);
-  });
+  // The API excludes notes belonging to folder deletion batches. Notes returned
+  // here were deleted individually and remain visible after folder restoration.
+  const individualTrashNotes = trashNotes;
 
   const isEmpty = individualTrashNotes.length === 0 && trashFolders.length === 0;
 

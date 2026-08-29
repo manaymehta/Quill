@@ -8,7 +8,6 @@ const {
     deleteNote,
     getTrashNotes,
     restoreNote,
-    restoreTrashNote,
     permanentDeleteNote,
     updateNoteArchive,
     searchNotes,
@@ -42,7 +41,6 @@ router.get("/get-all-archived-notes", authenticateToken, getArchivedNotes);
 router.delete("/delete-note/:noteId", authenticateToken, deleteNote);
 router.get("/get-trash-notes", authenticateToken, getTrashNotes);
 router.put("/restore-note/:noteId", authenticateToken, restoreNote);
-router.put("/restore-trash-note/:noteId", authenticateToken, restoreTrashNote);
 router.delete("/delete-trash-note/:noteId", authenticateToken, permanentDeleteNote);
 router.put("/update-note-archive/:noteId", authenticateToken, validateObjectBody, updateNoteArchive);
 router.get("/search-notes", authenticateToken, validateQueryParam("query", { required: true, maxLength: 4096 }), searchNotes);
