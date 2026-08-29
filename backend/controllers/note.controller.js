@@ -1,6 +1,7 @@
 const Note = require("../models/note.model");
 const Folder = require("../models/folder.model");
 const axios = require("axios");
+const FASTAPI_REQUEST_TIMEOUT_MS = 30_000;
 
 const findNearestLivingAncestor = async (startParentId, userId) => {
     if (!startParentId) return null;
@@ -17,7 +18,10 @@ const findNearestLivingAncestor = async (startParentId, userId) => {
 
 const getFastApiHeaders = () => {
     const key = process.env.FASTAPI_INTERNAL_KEY;
-    return key ? { headers: { "x-api-key": key } } : {};
+    return {
+        timeout: FASTAPI_REQUEST_TIMEOUT_MS,
+        ...(key ? { headers: { "x-api-key": key } } : {}),
+    };
 };
 
 // even if qdrant is down, it should not affect the saving of notes

@@ -13,7 +13,7 @@ from qdrant_client.models import (
 )
 from fastapi import FastAPI, HTTPException, Response, Depends
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,6 +32,11 @@ MAX_CHUNK_CHARS = 1000
 OVERLAP_CHARS = 100
 MERGE_THRESHOLD = 60  # Fragments shorter than this are merged into the previous chunk
 ABBREV_RE = re.compile(r'\b(?:eg|ie|dr|mr|ms|vs|st|prof|dept)\.$', re.IGNORECASE)
+
+# These limits protect the provider-facing endpoints, not MongoDB note storage.
+# A note can still be saved when its AI operation is rejected or unavailable.
+MAX_AI_TEXT_CHARS = 200_000
+MAX_SEARCH_QUERY_CHARS = 4_000
 
 gemini_client: genai.Client | None = None
 qdrant_client: QdrantClient | None = None
@@ -155,7 +160,7 @@ async def lifespan(app: FastAPI):
     qdrant_key = os.getenv("QDRANT_API_KEY")
     if qdrant_url:
         try:
-            qdrant_client = QdrantClient(url=qdrant_url, api_key=qdrant_key, check_compatibility=False)
+            qdrant_client = QdrantClient(url=qdrant_url, api_key=qdrant_key)
 
             existing = [c.name for c in qdrant_client.get_collections().collections]
             if COLLECTION_NAME not in existing:
@@ -191,9 +196,7 @@ api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 def verify_api_key(api_key: str = Depends(api_key_header)):
     expected_key = os.getenv("FASTAPI_INTERNAL_KEY")
     if not expected_key:
-        # Auth is unconfigured — log a startup warning but allow the request.
-        # This prevents hard lockouts in dev, but should be set in production.
-        return
+        raise HTTPException(status_code=503, detail="AI service authentication is not configured")
     if api_key != expected_key:
         raise HTTPException(status_code=403, detail="Invalid API Key")
 
@@ -204,9 +207,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Public routes: no auth required
+# Render probes health directly; application routes require the internal key.
 @app.get("/")
-async def root():
+async def root(_: None = Depends(verify_api_key)):
     return {"message": "Quill AI Microservice is running."}
 
 @app.get("/health")
@@ -220,40 +223,40 @@ async def health_head():
 
 # Schemas
 class SummarizeRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=MAX_AI_TEXT_CHARS)
 
 class SummarizeResponse(BaseModel):
     summary: str
 
 class EmbedNoteRequest(BaseModel):
-    noteId: str
-    userId: str
-    title: str = ""
-    text: str
+    noteId: str = Field(max_length=128)
+    userId: str = Field(max_length=128)
+    title: str = Field(default="", max_length=MAX_AI_TEXT_CHARS)
+    text: str = Field(max_length=MAX_AI_TEXT_CHARS)
 
 class SemanticSearchRequest(BaseModel):
-    query: str
-    userId: str
+    query: str = Field(max_length=MAX_SEARCH_QUERY_CHARS)
+    userId: str = Field(max_length=128)
 
 class SemanticSearchResponse(BaseModel):
     answer: str
     sourceNoteIds: list[str]
 
 class ReEmbedAllRequest(BaseModel):
-    userId: str
+    userId: str = Field(max_length=128)
     notes: list[dict]   # [{_id, title, content}] — only used for the migration endpoint
 
 
 # Summarize
 @app.post("/summarize", response_model=SummarizeResponse)
-async def summarize_text(request: SummarizeRequest):
+async def summarize_text(request: SummarizeRequest, _: None = Depends(verify_api_key)):
     text = request.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Text content cannot be empty.")
     if len(text) < 50:
         return {"summary": "Too short to summarize."}
     if gemini_client is None:
-        raise HTTPException(status_code=503, detail="GEMINI_API_KEY missing")
+        raise HTTPException(status_code=503, detail="Summarization service not available.")
 
     prompt = (
         "You are a smart note-taking assistant. Provide a clear, concise summary of the following note.\n"
@@ -272,14 +275,14 @@ async def summarize_text(request: SummarizeRequest):
         return {"summary": summary}
     except Exception as e:
         print(f"Gemini summarization error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to summarize: {e}")
+        raise HTTPException(status_code=500, detail="Failed to summarize note.")
 
 
 # Embed Note
 # Chunk the note, embed each chunk, and upsert into Qdrant.
 # Old chunks are deleted first so edits don't leave stale vectors.
 @app.post("/embed-note")
-async def embed_note(request: EmbedNoteRequest):
+async def embed_note(request: EmbedNoteRequest, _: None = Depends(verify_api_key)):
     if qdrant_client is None or gemini_client is None:
         raise HTTPException(status_code=503, detail="Vector store not available.")
 
@@ -316,7 +319,7 @@ async def embed_note(request: EmbedNoteRequest):
         vectors = [list(e.values) for e in result.embeddings]
     except Exception as e:
         print(f"Embedding error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to embed note: {e}")
+        raise HTTPException(status_code=500, detail="Failed to embed note.")
 
     points = [
         PointStruct(
@@ -337,13 +340,13 @@ async def embed_note(request: EmbedNoteRequest):
         return {"status": "ok", "noteId": request.noteId, "chunks": len(chunks)}
     except Exception as e:
         print(f"Qdrant upsert error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to store embeddings: {e}")
+        raise HTTPException(status_code=500, detail="Failed to store embeddings.")
 
 
 # Delete Embedding
 # Remove all Qdrant chunks for a given note.
 @app.delete("/delete-embedding/{note_id}")
-async def delete_embedding(note_id: str):
+async def delete_embedding(note_id: str, _: None = Depends(verify_api_key)):
     if qdrant_client is None:
         raise HTTPException(status_code=503, detail="Vector store not available.")
     try:
@@ -358,13 +361,13 @@ async def delete_embedding(note_id: str):
         return {"status": "ok", "noteId": note_id}
     except Exception as e:
         print(f"Delete embedding error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete embedding: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete embedding.")
 
 
 # Semantic Search
 # Embed the query → retrieve top chunks → filter by score → build context → generate answer.
 @app.post("/semantic-search", response_model=SemanticSearchResponse)
-async def semantic_search(request: SemanticSearchRequest):
+async def semantic_search(request: SemanticSearchRequest, _: None = Depends(verify_api_key)):
     if qdrant_client is None or gemini_client is None:
         raise HTTPException(status_code=503, detail="Vector store not available.")
     if not request.query.strip():
@@ -449,13 +452,13 @@ async def semantic_search(request: SemanticSearchRequest):
 
     except Exception as e:
         print(f"Semantic search error: {e}")
-        raise HTTPException(status_code=500, detail=f"Semantic search failed: {e}")
+        raise HTTPException(status_code=500, detail="Semantic search failed.")
 
 
 # Migration: Re-embed All Notes
 # Called by the Node migration script to re-embed all of a user's notes.
 @app.post("/re-embed-all")
-async def re_embed_all(request: ReEmbedAllRequest):
+async def re_embed_all(request: ReEmbedAllRequest, _: None = Depends(verify_api_key)):
     if qdrant_client is None or gemini_client is None:
         raise HTTPException(status_code=503, detail="Vector store not available.")
 
@@ -524,7 +527,7 @@ async def re_embed_all(request: ReEmbedAllRequest):
         failed = 0
     except Exception as e:
         print(f"Batch embedding failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to batch embed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to batch embed notes.")
 
     points = [
         PointStruct(
@@ -545,7 +548,7 @@ async def re_embed_all(request: ReEmbedAllRequest):
         qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
     except Exception as e:
         print(f"Batch Qdrant upsert error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to store batch embeddings: {e}")
+        raise HTTPException(status_code=500, detail="Failed to store batch embeddings.")
 
     return {"status": "ok", "success": success, "failed": failed}
 

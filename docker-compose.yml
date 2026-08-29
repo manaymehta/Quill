@@ -14,7 +14,8 @@ services:
       - MONGO_URI=${MONGO_URI} # Injected from .env file
       - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET} # Injected from .env file
       - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID} # Injected from .env file
-      - FASTAPI_SUMMARIZE_URL=http://fast_api:8000 # Connects effectively to the service name
+      - FASTAPI_SUMMARIZE_URL=http://fast_api:8001 # FastAPI listens on container port 8001
+      - FASTAPI_INTERNAL_KEY=${FASTAPI_INTERNAL_KEY} # Shared only by Express and FastAPI
     command: [ "npm", "run", "dev" ]
     depends_on:
       - fast_api
@@ -31,16 +32,24 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=3000
-    command: [ "npm", "run", "dev" ]
+      - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID} # Public client ID used by the frontend
+      - API_PROXY_TARGET=http://backend:8000
+    command: [ "npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000" ]
+    depends_on:
+      - backend
 
   fast_api:
     build:
       context: ./fast_api
       dockerfile: Dockerfile
     ports:
-      - "8001:8001" # Maps host 8001 to container 8000
+      - "8001:8001" # Maps host port 8001 to container port 8001
     volumes:
       - ./fast_api:/app
     environment:
       - NODE_ENV=development
+      - GEMINI_API_KEY=${GEMINI_API_KEY} # Injected from .env file
+      - QDRANT_URL=${QDRANT_URL} # Injected from .env file
+      - QDRANT_API_KEY=${QDRANT_API_KEY} # Injected from .env file
+      - FASTAPI_INTERNAL_KEY=${FASTAPI_INTERNAL_KEY} # Shared only by Express and FastAPI
     command: [ "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--reload" ]

@@ -6,15 +6,17 @@ services:
     plan: free
     rootDir: backend
     buildCommand: "npm install"
-    startCommand: "node index.js"
+    startCommand: "npm start"
     envVars:
-      - key: FASTAPI_URL
-        value: "THE_LIVE_URL_OF_YOUR_FAST_API_SERVICE"
-      - key: JWT_SECRET
+      - key: FASTAPI_SUMMARIZE_URL
         sync: false
-      - key: GOOGLE_CLIENT_ID
+      - key: FASTAPI_INTERNAL_KEY
         sync: false
-      - key: MONGODB_URI
+      - key: ACCESS_TOKEN_SECRET
+        sync: false
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
+      - key: MONGO_URI
         sync: false
 
   - type: web
@@ -25,11 +27,13 @@ services:
     rootDir: fast_api
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
-    healthCheckPath: "/"
+    healthCheckPath: "/health"
     envVars:
       - key: GEMINI_API_KEY
         sync: false
       - key: QDRANT_URL
         sync: false
       - key: QDRANT_API_KEY
+        sync: false
+      - key: FASTAPI_INTERNAL_KEY
         sync: false
