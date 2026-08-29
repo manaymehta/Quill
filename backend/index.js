@@ -11,7 +11,7 @@ const folderRoutes = require("./routes/folder.routes");
 
 connectDB();
 
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 app.use(cors({ origin: "*", }));
 app.get("/", (req, res) => {
   res.json({ message: "Notes App API is running!" });
@@ -24,6 +24,26 @@ app.get("/health-check", (req, res) => {
 app.use("/v1", authRoutes);
 app.use("/v1", noteRoutes);
 app.use("/v1", folderRoutes);
+
+app.use((req, res) => {
+  res.status(404).json({ error: true, message: "Route not found" });
+});
+
+// Express identifies error middleware by its four-argument signature.
+// eslint-disable-next-line no-unused-vars
+app.use((error, _req, res, _next) => {
+  if (error.type === "entity.too.large") {
+    return res.status(413).json({ error: true, message: "Request payload is too large" });
+  }
+
+  if (error instanceof SyntaxError && error.status === 400 && "body" in error) {
+    return res.status(400).json({ error: true, message: "Invalid JSON payload" });
+  }
+
+  console.error("Unhandled request error:", error);
+  return res.status(500).json({ error: true, message: "Internal Server Error" });
+});
+
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
