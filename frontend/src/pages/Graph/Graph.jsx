@@ -2,6 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useAllNotesQuery } from '../../hooks/useNotesQuery';
 import { useUIStore } from '../../store/useUIStore';
+import { forceX, forceY, forceCollide } from 'd3-force';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MdLocalOffer, MdClose, MdCheck } from 'react-icons/md';
 
 const Graph = () => {
   const fgRef = useRef();
@@ -11,10 +14,32 @@ const Graph = () => {
   const [selectedTag, setSelectedTag] = useState(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [animTick, setAnimTick] = useState(0);
+  const filterDropdownRef = useRef(null);
 
-  const [dimensions, setDimensions] = useState({
-    width: typeof window !== 'undefined' ? window.innerWidth - (window.innerWidth < 640 ? 0 : isSidebarOpen ? 220 : 64) : 800,
-    height: typeof window !== 'undefined' ? window.innerHeight - (window.innerWidth < 640 ? 60 : 72) - 70 : 600
+  // Close filter dropdown on outside click or touch
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+    const handleClickOutside = (e) => {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isDropdownOpen]);
+
+  const [dimensions, setDimensions] = useState(() => {
+    if (typeof window === 'undefined') return { width: 800, height: 600 };
+    const isMobile = window.innerWidth < 640;
+    const sidebarWidth = !isMobile ? (isSidebarOpen ? 220 : 64) : 0;
+    return {
+      width: window.innerWidth - sidebarWidth,
+      height: window.innerHeight,
+    };
   });
 
   // Track the actual visible container size efficiently
@@ -22,10 +47,9 @@ const Graph = () => {
     const handleResize = () => {
       const isMobile = window.innerWidth < 640;
       const sidebarWidth = !isMobile ? (isSidebarOpen ? 220 : 64) : 0;
-      const navbarHeight = isMobile ? 60 : 72;
       setDimensions({
         width: window.innerWidth - sidebarWidth,
-        height: window.innerHeight - navbarHeight - 70
+        height: window.innerHeight,
       });
     };
 
@@ -37,6 +61,34 @@ const Graph = () => {
 
   const nodeAnimRef = useRef({});
   const linkAnimRef = useRef({});
+
+  // Tune d3 force simulation dynamically based on screen dimensions
+  useEffect(() => {
+    if (!fgRef.current) return;
+    const isMobile = dimensions.width < 640;
+
+    // Stronger charge so nodes visibly shove each other at close range
+    // (charge is inverse-square: dominant up close, falls off fast at distance)
+    fgRef.current.d3Force('charge')?.strength(isMobile ? -40 : -50);
+
+    // Link strength 1.0 keeps clusters coherent against the stronger charge —
+    // linked nodes resist pulling apart without affecting isolated nodes
+    fgRef.current.d3Force('link')?.distance(isMobile ? 45 : 50).strength(1.0);
+
+    // Slightly lifted gravity to anchor isolated (unlinked) nodes that have
+    // nothing to hold them in place against repulsion from the cluster
+    fgRef.current.d3Force('x', forceX(dimensions.width / 2).strength(isMobile ? 0.03 : 0.015));
+    fgRef.current.d3Force('y', forceY(dimensions.height / 2).strength(isMobile ? 0.03 : 0.015));
+
+    // Short-range hard collision radius — gives the satisfying bounce/shove when
+    // dragging nodes into each other; complements charge at very close distances
+    fgRef.current.d3Force('collide', forceCollide(16));
+
+    fgRef.current.d3Force('boundary', null);
+
+    fgRef.current.d3ReheatSimulation();
+  }, [dimensions.width, dimensions.height]);
+
 
   const lerp = (a, b, t) => a + (b - a) * t;
   const LERP_FACTOR = 0.5;
@@ -180,8 +232,11 @@ const Graph = () => {
     return () => cancelAnimationFrame(animationFrameId);
   }, [highlightedNodes, hoveredNode]);
 
+  const isMobile = dimensions.width < 640;
+  const navbarMargin = isMobile ? '-60px' : '-72px';
+
   return (
-    <div className={'bg-[#202124b5]'} style={{ width: '100%', height: 'calc(100vh - 70px)', overflow: 'hidden', position: 'relative', cursor: hoveredNode ? 'pointer' : 'default' }}>
+    <div className={'bg-[#202124b5]'} style={{ width: '100%', height: dimensions.height, marginTop: navbarMargin, overflow: 'hidden', position: 'relative', cursor: hoveredNode ? 'pointer' : 'default' }}>
       <ForceGraph2D
         ref={fgRef}
         width={dimensions.width}
@@ -275,37 +330,110 @@ const Graph = () => {
         }}
       />
 
-      {/* tags display custom dropdown */}
-      <div className="absolute top-5 right-5 z-10 bg-[#202124]/90 backdrop-blur-lg rounded-xl border border-white/20 p-4 min-w-[200px] max-w-xs text-white shadow-xl transition-all">
-        <div
-          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-          className="flex justify-between items-center w-full cursor-pointer group"
+      {/* Minimal Tag Filter Control */}
+      <div
+        ref={filterDropdownRef}
+        className="absolute top-[80px] md:top-[92px] right-4 sm:right-6 z-20"
+      >
+        {/* Trigger Button / Morphing Pill */}
+        <motion.div
+          layout
+          transition={{ type: 'spring', damping: 30, stiffness: 750, mass: 0.3 }}
+          className={`h-10 rounded-full flex items-center border shadow-lg backdrop-blur-md overflow-hidden ${
+            selectedTag
+              ? 'bg-[#202124]/90 border-[#e85d56]/60 text-white'
+              : isDropdownOpen
+              ? 'bg-[#e85d56] border-[#e85d56] text-white w-10 justify-center'
+              : 'bg-[#202124]/80 hover:bg-[#2c2d30] border-white/15 text-stone-300 hover:text-white w-10 justify-center'
+          }`}
         >
-          <h3 className="font-semibold text-sm text-stone-300 uppercase tracking-wider group-hover:text-white transition-colors">
-            {selectedTag ? `Tag: ${selectedTag}` : 'Filter by Tag'}
-          </h3>
-          <svg className={`w-4 h-4 text-stone-400 group-hover:text-white transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-        </div>
-
-        {isDropdownOpen && (
-          <div className="flex flex-col gap-2 mt-4 max-h-[60vh] overflow-y-auto editor-scrollbar pr-2 border-t border-white/10 pt-3">
-            <button
-              onClick={() => { handleTagClick(null); }}
-              className={`border text-[#EAEAEA] rounded-full px-3 py-1.5 text-sm cursor-pointer transition-colors text-left ${!selectedTag ? 'bg-[#e85d56] border-[#e85d56] text-white shadow-md' : 'bg-[#333] border-[#424242] hover:bg-[#444]'}`}
-            >
-              All Notes
-            </button>
-            {uniqueTags.map(tag => (
-              <button
-                key={tag}
-                onClick={() => { handleTagClick(tag); }}
-                className={`border text-[#EAEAEA] rounded-full px-3 py-1.5 text-sm cursor-pointer transition-colors text-left ${selectedTag === tag ? 'bg-[#e85d56] border-[#e85d56] text-white shadow-md' : 'bg-[#333] border-[#424242] hover:bg-[#444]'}`}
+          <AnimatePresence mode="popLayout" initial={false}>
+            {!selectedTag ? (
+              <motion.button
+                key="circle-icon-btn"
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.6 }}
+                transition={{ duration: 0.08, ease: [0.16, 1, 0.3, 1] }}
+                onClick={() => setIsDropdownOpen(prev => !prev)}
+                title="Filter by Tag"
+                className="w-10 h-10 flex items-center justify-center cursor-pointer shrink-0"
               >
-                {tag}
-              </button>
-            ))}
-          </div>
-        )}
+                <MdLocalOffer className="w-4 h-4" />
+              </motion.button>
+            ) : (
+              <motion.div
+                key="pill-content-box"
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                transition={{ duration: 0.09, ease: [0.16, 1, 0.3, 1] }}
+                className="flex items-center gap-2 text-sm font-medium whitespace-nowrap pl-3.5 pr-2 h-full"
+              >
+                <button
+                  onClick={() => setIsDropdownOpen(prev => !prev)}
+                  className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity"
+                >
+                  <span className="w-2 h-2 rounded-full bg-[#e85d56] shrink-0" />
+                  <span className="max-w-[140px] truncate">#{selectedTag}</span>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTagClick(null);
+                  }}
+                  title="Clear Filter"
+                  className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                >
+                  <MdClose className="w-4 h-4" />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+
+        {/* Popover Menu with smooth sliding unfolding/tucking */}
+        <AnimatePresence>
+          {isDropdownOpen && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: -8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: -6 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 500, mass: 0.45 }}
+              style={{ transformOrigin: 'top right' }}
+              className="absolute top-12 right-0 min-w-[130px] max-w-[220px] w-max bg-[#202124]/95 backdrop-blur-xl border border-white/15 rounded-2xl p-1.5 shadow-2xl z-30 flex flex-col"
+            >
+              <div className="flex flex-col gap-1 max-h-[min(50vh,300px)] overflow-y-auto editor-scrollbar">
+                {uniqueTags.length === 0 ? (
+                  <div className="py-3 px-4 text-center text-xs text-stone-500">
+                    No tags
+                  </div>
+                ) : (
+                  uniqueTags.map(tag => {
+                    const isSelected = selectedTag === tag;
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => {
+                          handleTagClick(isSelected ? null : tag);
+                          setIsDropdownOpen(false);
+                        }}
+                        className={`w-full px-3 py-2 text-sm font-medium rounded-xl flex items-center justify-between gap-3 transition-all cursor-pointer text-left ${
+                          isSelected
+                            ? 'bg-[#e85d56] text-white shadow-sm font-semibold'
+                            : 'text-stone-300 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="truncate">#{tag}</span>
+                        {isSelected && <MdCheck className="w-4 h-4 shrink-0" />}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

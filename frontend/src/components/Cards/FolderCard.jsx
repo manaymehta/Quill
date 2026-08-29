@@ -330,7 +330,7 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
                             zIndex: 9999,
                         };
                     })()}
-                    className="bg-[#1e1e20]/96 backdrop-blur-xl border border-white/[0.08] py-1.5 rounded-xl shadow-2xl flex flex-col min-w-[165px] context-menu-pop no-card-click"
+                    className="bg-[#1e1e20] py-1.5 rounded-2xl shadow-2xl flex flex-col min-w-[165px] context-menu-pop no-card-click border-0 outline-none"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {menuItems.map((item, idx) => (
@@ -348,7 +348,7 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
                                     }
                                     item.onClick();
                                 }}
-                                className={`flex items-center gap-2 mx-1 px-2 py-[6px] rounded-md cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] ${item.danger
+                                className={`flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] ${item.danger
                                     ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
                                     : 'hover:bg-white/[0.15] hover:text-white text-stone-300'
                                     }`}
@@ -387,7 +387,7 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
                             zIndex: 9999,
                         };
                     })()}
-                    className="bg-[#1e1e20]/96 backdrop-blur-xl border border-white/[0.12] p-2 rounded-xl shadow-2xl flex items-center space-x-2 z-[9999] no-card-click"
+                    className="bg-[#1e1e20] p-2 rounded-2xl shadow-2xl flex items-center space-x-2 z-[9999] no-card-click border-0 outline-none"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {COLORS.map(c => (

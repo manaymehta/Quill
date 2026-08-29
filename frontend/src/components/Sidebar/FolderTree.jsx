@@ -139,7 +139,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
                                 zIndex: 9999,
                             };
                         })()}
-                        className="bg-[#1e1e20]/96 backdrop-blur-xl border border-white/[0.08] py-1.5 rounded-lg shadow-2xl flex flex-col min-w-[160px] context-menu-pop"
+                        className="bg-[#1e1e20] py-1.5 rounded-2xl shadow-2xl flex flex-col min-w-[160px] context-menu-pop border-0 outline-none"
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
                     >
@@ -148,14 +148,14 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
                         </div>
                         <button
                             onClick={(e) => { e.stopPropagation(); setContextMenu(null); setIsEditing(true); }}
-                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-md cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.09] hover:text-white text-stone-300"
+                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.09] hover:text-white text-stone-300"
                         >
                             <MdEdit size={13} />
                             Rename
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); setContextMenu(null); setShowColorPicker(true); }}
-                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-md cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.09] hover:text-white text-stone-300"
+                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.09] hover:text-white text-stone-300"
                         >
                             <MdPalette size={13} />
                             Color
@@ -163,7 +163,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
                         <div className="h-[1px] bg-white/[0.06] mx-0 my-1" />
                         <button
                             onClick={(e) => { e.stopPropagation(); setContextMenu(null); openFolderDeleteModal(folder); }}
-                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-md cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-red-500/15 hover:text-red-400 text-red-400"
+                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-red-500/15 hover:text-red-400 text-red-400"
                         >
                             <MdDelete size={13} />
                             Delete
@@ -181,7 +181,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
                         onMouseDown={(e) => e.stopPropagation()}
                     />
                     <div
-                        className="absolute left-8 top-10 bg-[#303134] border border-gray-700 p-2 rounded-lg z-[101] shadow-xl flex space-x-1"
+                        className="absolute left-8 top-10 bg-[#303134] p-2 rounded-2xl z-[101] shadow-xl flex space-x-1 border-0 outline-none"
                         onMouseLeave={() => setShowColorPicker(false)}
                         onMouseDown={(e) => e.stopPropagation()}
                     >

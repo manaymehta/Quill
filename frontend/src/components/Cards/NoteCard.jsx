@@ -184,7 +184,7 @@ const InnerNoteCard = memo(({
               }
               return { position: 'fixed', left: `${finalX}px`, top: `${finalY}px`, zIndex: 9999 };
             })()}
-            className="bg-[#1e1e20]/96 backdrop-blur-xl border border-white/[0.08] py-1.5 rounded-xl shadow-2xl flex flex-col min-w-[165px] context-menu-pop no-card-click select-none"
+            className="bg-[#1e1e20] py-1.5 rounded-2xl shadow-2xl flex flex-col min-w-[165px] context-menu-pop no-card-click select-none border-0 outline-none"
             onClick={(e) => e.stopPropagation()}
           >
             {menuItems.map((item, idx) => (
@@ -199,7 +199,7 @@ const InnerNoteCard = memo(({
                     setCoords(null);
                     item.onClick();
                   }}
-                  className={`flex items-center gap-2 mx-1 px-2 py-[6px] rounded-md cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] ${
+                  className={`flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] ${
                     item.variant === 'danger'
                       ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
                       : item.variant === 'success'

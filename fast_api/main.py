@@ -155,7 +155,7 @@ async def lifespan(app: FastAPI):
     qdrant_key = os.getenv("QDRANT_API_KEY")
     if qdrant_url:
         try:
-            qdrant_client = QdrantClient(url=qdrant_url, api_key=qdrant_key)
+            qdrant_client = QdrantClient(url=qdrant_url, api_key=qdrant_key, check_compatibility=False)
 
             existing = [c.name for c in qdrant_client.get_collections().collections]
             if COLLECTION_NAME not in existing:
