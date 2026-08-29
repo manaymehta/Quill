@@ -13,6 +13,9 @@ services:
       - PORT=8000
       - MONGO_URI=${MONGO_URI} # Injected from .env file
       - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET} # Injected from .env file
+      - FRONTEND_ORIGIN=${FRONTEND_ORIGIN} # Allowed browser origin(s), comma-separated
+      - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL:-15m}
+      - REFRESH_TOKEN_TTL_DAYS=${REFRESH_TOKEN_TTL_DAYS:-30}
       - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID} # Injected from .env file
       - FASTAPI_SUMMARIZE_URL=http://fast_api:8001 # FastAPI listens on container port 8001
       - FASTAPI_INTERNAL_KEY=${FASTAPI_INTERNAL_KEY} # Shared only by Express and FastAPI

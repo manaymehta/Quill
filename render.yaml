@@ -14,6 +14,14 @@ services:
         sync: false
       - key: ACCESS_TOKEN_SECRET
         sync: false
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_TTL_DAYS
+        value: "30"
       - key: VITE_GOOGLE_CLIENT_ID
         sync: false
       - key: MONGO_URI

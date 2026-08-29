@@ -5,7 +5,6 @@ import { Outlet, useLocation } from "react-router-dom";
 import ConfirmModal from "../Modals/ConfirmModal";
 import FolderDeleteModal from "../Modals/FolderDeleteModal";
 import { useUIStore } from "../../store/useUIStore";
-import { useAuthStore } from "../../store/useAuthStore";
 import { useNotesStore } from "../../store/useNotesStore";
 import { useTabsStore } from "../../store/useTabsStore";
 import TabDock from "../TabDock/TabDock";
@@ -14,7 +13,6 @@ import { useModalStore } from "../Modals/useModalStore";
 
 const MainLayout = () => {
     const { isSidebarOpen, toggleSidebar } = useUIStore();
-    const { getUser } = useAuthStore();
     const { onSearch, handleClearSearch, onAiSearch } = useNotesStore();
     const { activeTabId, setActiveTab } = useTabsStore();
     const location = useLocation();
@@ -39,10 +37,6 @@ const MainLayout = () => {
             setActiveTab('home');
         }
     }, [location.pathname, location.search, location.state, closeConfirmModal, closeFolderDeleteModal, setActiveTab]);
-
-    useEffect(() => {
-        getUser();
-    }, [getUser]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {

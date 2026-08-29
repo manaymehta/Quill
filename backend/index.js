@@ -5,14 +5,31 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 
+const configuredOrigins = (process.env.FRONTEND_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const allowedOrigins = configuredOrigins.length > 0
+  ? configuredOrigins
+  : ["http://localhost:5173", "http://localhost:3000"];
+
 const authRoutes = require("./routes/auth.routes");
 const noteRoutes = require("./routes/note.routes");
 const folderRoutes = require("./routes/folder.routes");
 
 connectDB();
 
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "10mb" }));
-app.use(cors({ origin: "*", }));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+  credentials: true,
+}));
 app.get("/", (req, res) => {
   res.json({ message: "Notes App API is running!" });
 });

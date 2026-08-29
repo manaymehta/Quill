@@ -14,6 +14,10 @@ const queryClient = new QueryClient({
   },
 });
 
+window.addEventListener('auth:changed', () => {
+  queryClient.clear();
+});
+
 Modal.setAppElement('#root'); // Set the app element for accessibility
 createRoot(document.getElementById('root')).render(
   <StrictMode>

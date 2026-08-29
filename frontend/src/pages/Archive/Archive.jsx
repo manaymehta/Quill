@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
-import { useAuthStore } from '../../store/useAuthStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import Toast from '../../components/ToastMessage/Toast';
 import { useModalStore } from '../../components/Modals/useModalStore';
@@ -11,7 +10,6 @@ const Archive = () => {
     const { data: archivedNotes = [] } = useArchivedNotesQuery();
     const [showToast, setShowToast] = useState(false);
 
-    const { getUser } = useAuthStore();
     const { openTab } = useTabsStore();
     const { openConfirmModal } = useModalStore();
 
@@ -84,10 +82,6 @@ const Archive = () => {
         }
         checklistToggleMutation.mutate({ noteId: note._id, checklist: newChecklist });
     };
-
-    useEffect(() => {
-        getUser();
-    }, [getUser]);
 
     return (
         <div className="relative min-h-0">

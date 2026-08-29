@@ -1,24 +1,70 @@
 import { create } from 'zustand';
 import axiosInstance from '../utils/axiosInstance';
+import {
+  clearAccessToken,
+  publishLogout,
+  setAccessToken,
+  subscribeToAuthEvents,
+} from '../utils/authSession';
 
-export const useAuthStore = create((set) => ({
-  token: localStorage.getItem('token') || null,
+let initializationPromise = null;
+
+const notifyAuthChanged = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('auth:changed'));
+  }
+};
+
+const applyAuthentication = (set, data) => {
+  setAccessToken(data.accessToken);
+  set({
+    token: data.accessToken,
+    user: data.user || null,
+    isLoggedIn: true,
+    isLoading: false,
+    error: null,
+  });
+  notifyAuthChanged();
+};
+
+export const useAuthStore = create((set, get) => ({
+  // Access tokens intentionally live only in the module/runtime memory.
+  token: null,
   user: null,
   error: null,
   isLoading: false,
-  isLoggedIn: !!localStorage.getItem('token'),
+  isInitialized: false,
+  isLoggedIn: false,
+
+  initializeAuth: async () => {
+    if (get().isInitialized) return;
+    if (initializationPromise) return initializationPromise;
+
+    // Remove tokens from the previous localStorage-based implementation.
+    localStorage.removeItem('token');
+    initializationPromise = (async () => {
+      try {
+        const response = await axiosInstance.post('/auth/refresh', undefined, { _skipAuthRefresh: true });
+        if (!response.data?.accessToken) throw new Error('Invalid refresh response');
+        applyAuthentication(set, response.data);
+      } catch {
+        clearAccessToken();
+        set({ token: null, user: null, isLoggedIn: false });
+      } finally {
+        set({ isInitialized: true });
+        initializationPromise = null;
+      }
+    })();
+
+    return initializationPromise;
+  },
 
   getUser: async () => {
     try {
       const response = await axiosInstance.get('/get-user');
-      if (response.data && response.data.user) {
-        set({ user: response.data.user });
-      }
+      if (response.data?.user) set({ user: response.data.user });
     } catch (error) {
-      console.error("Failed to fetch user", error);
-      if (error.response && error.response.status === 401) {
-        useAuthStore.getState().logout(); // Unauthorized, log out user
-      }
+      console.error('Failed to fetch user', error);
     }
   },
 
@@ -26,10 +72,12 @@ export const useAuthStore = create((set) => ({
     set({ isLoading: true, error: null });
     try {
       const response = await axiosInstance.post('/login', { email, password });
-      if (response.data && response.data.accessToken) {
-        localStorage.setItem('token', response.data.accessToken);
-        set({ token: response.data.accessToken, user: response.data.user, isLoading: false, isLoggedIn: true });
+      if (response.data?.error) {
+        set({ error: response.data.message, isLoading: false, isLoggedIn: false });
+        return;
       }
+      if (!response.data?.accessToken) throw new Error('Invalid login response');
+      applyAuthentication(set, response.data);
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Unexpected Error. Please try again';
       set({ error: errorMessage, isLoading: false, isLoggedIn: false });
@@ -40,12 +88,12 @@ export const useAuthStore = create((set) => ({
     set({ isLoading: true, error: null });
     try {
       const response = await axiosInstance.post('/create-account', { fullName: name, email, password });
-      if (response.data && response.data.accessToken) {
-        localStorage.setItem('token', response.data.accessToken);
-        set({ token: response.data.accessToken, user: response.data.user, isLoading: false, isLoggedIn: true });
-      } else if (response.data && response.data.error) {
+      if (response.data?.error) {
         set({ error: response.data.message, isLoading: false, isLoggedIn: false });
+        return;
       }
+      if (!response.data?.accessToken) throw new Error('Invalid signup response');
+      applyAuthentication(set, response.data);
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Unexpected Error. Please try again';
       set({ error: errorMessage, isLoading: false, isLoggedIn: false });
@@ -55,19 +103,41 @@ export const useAuthStore = create((set) => ({
   googleLogin: async (response) => {
     set({ isLoading: true, error: null });
     try {
-      const res = await axiosInstance.post('/auth/google', { token: response.credential });
-      if (res.data && res.data.accessToken) {
-        localStorage.setItem('token', res.data.accessToken);
-        set({ token: res.data.accessToken, user: res.data.user, isLoading: false, isLoggedIn: true });
-      }
-    } catch (err) {
-      console.error('Google login failed', err);
-      set({ error: 'Google login failed', isLoading: false, isLoggedIn: false });
+      const result = await axiosInstance.post('/auth/google', { token: response.credential });
+      if (!result.data?.accessToken) throw new Error('Invalid Google login response');
+      applyAuthentication(set, result.data);
+    } catch (error) {
+      console.error('Google login failed', error);
+      set({ error: error.response?.data?.message || 'Google login failed', isLoading: false, isLoggedIn: false });
     }
   },
 
-  logout: () => {
-    localStorage.removeItem('token');
-    set({ token: null, user: null, isLoggedIn: false });
+  clearSession: (broadcast = true) => {
+    clearAccessToken();
+    set({ token: null, user: null, isLoggedIn: false, isLoading: false });
+    if (broadcast) publishLogout();
+    notifyAuthChanged();
+  },
+
+  logout: async () => {
+    const logoutRequest = axiosInstance.post('/auth/logout', undefined, { _skipAuthRefresh: true });
+    get().clearSession();
+    try {
+      await logoutRequest;
+    } catch (error) {
+      console.error('Logout request failed', error);
+    }
   },
 }));
+
+if (typeof window !== 'undefined') {
+  subscribeToAuthEvents((event) => {
+    if (event.type === 'logout') {
+      useAuthStore.getState().clearSession(false);
+    }
+  });
+
+  window.addEventListener('auth:expired', () => {
+    useAuthStore.getState().clearSession();
+  });
+}
