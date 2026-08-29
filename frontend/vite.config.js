@@ -19,10 +19,10 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
-        "/api": {
+        "/api/v1": {
           target: env.API_PROXY_TARGET || "http://localhost:8000",
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, ""),
+          rewrite: (path) => path.replace(/^\/api\/v1/, "/v1"),
           secure: false,
         },
       },

@@ -19,9 +19,11 @@ app.get("/", (req, res) => {
 app.get("/health-check", (req, res) => {
   res.status(200).json({ message: "Server is awake and running." });
 });
-app.use("/", authRoutes);
-app.use("/", noteRoutes);
-app.use("/", folderRoutes);
+// Public API contract. Frontend and backend are deployed together; no legacy
+// unversioned aliases are retained.
+app.use("/v1", authRoutes);
+app.use("/v1", noteRoutes);
+app.use("/v1", folderRoutes);
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

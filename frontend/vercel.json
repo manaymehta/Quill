@@ -16,8 +16,8 @@
   ],
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "https://quill-express-backend.onrender.com/:path*"
+      "source": "/api/v1/:path*",
+      "destination": "https://quill-express-backend.onrender.com/v1/:path*"
     },
     {
       "source": "/(.*)",
