@@ -65,7 +65,7 @@ const createAccount = async (req, res) => {
     try {
         const isUser = await User.findOne({ email: email });
         if (isUser) {
-            return res.json({ error: true, message: "User already exists" });
+            return res.status(400).json({ error: true, message: "User already exists" });
         }
 
         const user = new User({
@@ -105,7 +105,7 @@ const login = async (req, res) => {
     try {
         const userInfo = await User.findOne({ email: email });
         if (!userInfo) {
-            return res.json({ error: true, message: "User not found" });
+            return res.status(400).json({ error: true, message: "User not found" });
         }
 
         // reject google auth users from this route

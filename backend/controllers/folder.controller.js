@@ -9,11 +9,15 @@ const {
     getUserFolders,
 } = require("../services/folder-tree.service");
 const { withOptionalTransaction } = require("../services/mongo-transaction.service");
+const FOLDER_LIST_FIELDS = "_id name parentId color icon orderIndex";
 
 const getFolders = async (req, res) => {
     const userId = req.user._id;
     try {
-        const folders = await Folder.find({ userId, isDeleted: false }).sort({ orderIndex: 1 });
+        const folders = await Folder.find({ userId, isDeleted: false })
+            .select(FOLDER_LIST_FIELDS)
+            .sort({ orderIndex: 1 })
+            .lean();
         return res.json({ error: false, folders });
     } catch (error) {
         console.error(error);
@@ -276,7 +280,9 @@ const restoreFolder = async (req, res) => {
                 throw error;
             }
 
-            const notesQuery = Note.find({ deletedBatchId: batchId, userId, isDeleted: true }).lean();
+            const notesQuery = Note.find({ deletedBatchId: batchId, userId, isDeleted: true })
+                .select("_id title content isArchived isChecklist checklist linkPreviews updatedAt")
+                .lean();
             if (session) notesQuery.session(session);
             const notes = await notesQuery;
             await Note.updateMany(
@@ -364,7 +370,10 @@ const deleteFolderPermanent = async (req, res) => {
 const getTrashFolders = async (req, res) => {
     const userId = req.user._id;
     try {
-        const folders = await Folder.find({ userId, isDeleted: true, isDeletedRoot: true }).sort({ deletedAt: -1 }).lean();
+        const folders = await Folder.find({ userId, isDeleted: true, isDeletedRoot: true })
+            .select(`${FOLDER_LIST_FIELDS} deletedAt deletedBatchId isDeleted isDeletedRoot`)
+            .sort({ deletedAt: -1 })
+            .lean();
         return res.json({ error: false, folders });
     } catch (error) {
         console.error(error);

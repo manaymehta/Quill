@@ -31,9 +31,10 @@ const noteSchema = new Schema({
     timestamps: true
 });
 
-noteSchema.index({ userId: 1, folderId: 1 });
-noteSchema.index({ userId: 1, showInHome: 1 });
-noteSchema.index({ userId: 1, deletedBatchId: 1 });
-noteSchema.index({ userId: 1, isDeleted: 1, isArchived: 1 });
+// Match the list filters and sort keys used by the Home, Archive, and folder views.
+noteSchema.index({ userId: 1, isDeleted: 1, isArchived: 1, orderIndex: 1, createdAt: -1 });
+noteSchema.index({ userId: 1, isDeleted: 1, isArchived: 1, folderId: 1, orderIndex: 1, createdAt: -1 });
+noteSchema.index({ userId: 1, isDeleted: 1, showInHome: 1, homeOrderIndex: 1, createdAt: -1 });
+noteSchema.index({ userId: 1, isDeleted: 1, deletedBatchId: 1, deletedAt: -1 });
 
 module.exports = mongoose.model("Note", noteSchema);

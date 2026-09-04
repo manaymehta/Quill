@@ -6,6 +6,10 @@ const { findNearestLivingAncestor, getUserFolders } = require("../services/folde
 const FASTAPI_REQUEST_TIMEOUT_MS = 30_000;
 const FASTAPI_EMBEDDING_TIMEOUT_MS = 10_000;
 const embeddingLocks = new Map();
+const NOTE_LIST_FIELDS = "_id title content tags folderId showInHome isArchived isChecklist checklist orderIndex homeOrderIndex linkPreviews createdAt updatedAt";
+const NOTE_TRASH_FIELDS = `${NOTE_LIST_FIELDS} isDeleted deletedAt deletedBatchId`;
+
+const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const resolveNearestLivingAncestor = async (startParentId, userId) => (
     findNearestLivingAncestor(startParentId, await getUserFolders(userId))
@@ -185,9 +189,9 @@ const addNote = async (req, res) => {
         });
     } catch (error) {
         console.error(error);
-        return res.json({
+        return res.status(500).json({
             error: true,
-            message: error.message || error,
+            message: error.message || "Internal Server Error",
         });
     }
 };
@@ -201,7 +205,7 @@ const editNote = async (req, res) => {
         const note = await Note.findOne({ _id: noteId, userId: userId, isDeleted: { $ne: true } });
 
         if (!note) {
-            return res.json({ error: true, message: "Note doesn't exist" });
+            return res.status(404).json({ error: true, message: "Note doesn't exist" });
         }
 
         if (typeof title !== "undefined") note.title = title;
@@ -256,7 +260,7 @@ const editNote = async (req, res) => {
         });
     } catch (error) {
         console.error(error);
-        return res.json({
+        return res.status(500).json({
             error: true,
             message: "Internal Server Error",
         });
@@ -267,10 +271,10 @@ const getAllNotes = async (req, res) => {
     const userId = req.user._id;
 
     try {
-        const notes = await Note.find({ userId: userId, isDeleted: { $ne: true }, isArchived: { $ne: true } }).sort({
-            orderIndex: 1,
-            createdAt: -1,
-        });
+        const notes = await Note.find({ userId: userId, isDeleted: { $ne: true }, isArchived: { $ne: true } })
+            .select(NOTE_LIST_FIELDS)
+            .sort({ orderIndex: 1, createdAt: -1 })
+            .lean();
 
         return res.json({
             error: false,
@@ -291,7 +295,7 @@ const getHomeNotes = async (req, res) => {
 
     try {
         // Fetch active (non-deleted) folder IDs belonging to the user
-        const activeFolders = await Folder.find({ userId, isDeleted: false }).select('_id');
+        const activeFolders = await Folder.find({ userId, isDeleted: false }).select('_id').lean();
         const activeFolderIds = activeFolders.map(f => f._id.toString());
 
         // A note is retrieved on Home if:
@@ -307,20 +311,7 @@ const getHomeNotes = async (req, res) => {
                 { showInHome: true },
                 { folderId: { $nin: activeFolderIds } }
             ]
-        }).sort({
-            homeOrderIndex: 1,
-            createdAt: -1,
-        });
-
-        // Auto-heal orphaned notes: reset their folderId to null so they are clean unfiled notes
-        const orphanedNotes = notes.filter(n => n.folderId !== null && !activeFolderIds.includes(n.folderId.toString()));
-        if (orphanedNotes.length > 0) {
-            const orphanedIds = orphanedNotes.map(n => n._id);
-            await Note.updateMany(
-                { _id: { $in: orphanedIds } },
-                { $set: { folderId: null, showInHome: false } }
-            );
-        }
+        }).select(NOTE_LIST_FIELDS).sort({ homeOrderIndex: 1, createdAt: -1 }).lean();
 
         return res.json({
             error: false,
@@ -347,7 +338,10 @@ const getFolderNotes = async (req, res) => {
             filter.folderId = { $in: ids };
         }
 
-        const notes = await Note.find(filter).sort({ orderIndex: 1, createdAt: -1 });
+        const notes = await Note.find(filter)
+            .select(NOTE_LIST_FIELDS)
+            .sort({ orderIndex: 1, createdAt: -1 })
+            .lean();
 
         return res.json({
             error: false,
@@ -365,10 +359,10 @@ const getArchivedNotes = async (req, res) => {
     const userId = req.user._id;
 
     try {
-        const notes = await Note.find({ userId: userId, isArchived: true, isDeleted: { $ne: true } }).sort({
-            orderIndex: 1,
-            createdAt: -1,
-        });
+        const notes = await Note.find({ userId: userId, isArchived: true, isDeleted: { $ne: true } })
+            .select(NOTE_LIST_FIELDS)
+            .sort({ orderIndex: 1, createdAt: -1 })
+            .lean();
 
         return res.json({
             error: false,
@@ -429,7 +423,10 @@ const getTrashNotes = async (req, res) => {
     const userId = req.user._id;
 
     try {
-        const notes = await Note.find({ userId: userId, isDeleted: true, deletedBatchId: null }).sort({ deletedAt: -1 });
+        const notes = await Note.find({ userId: userId, isDeleted: true, deletedBatchId: null })
+            .select(NOTE_TRASH_FIELDS)
+            .sort({ deletedAt: -1 })
+            .lean();
 
         return res.json({
             error: false,
@@ -552,6 +549,8 @@ const semanticSearch = async (req, res) => {
         // Fetch only the matched source notes by ID for the frontend card display
         const sourceNotes = sourceNoteIds.length
             ? await Note.find({ _id: { $in: sourceNoteIds }, userId, isDeleted: { $ne: true } })
+                .select(NOTE_LIST_FIELDS)
+                .lean()
             : [];
 
         return res.json({
@@ -631,13 +630,14 @@ const searchNotes = async (req, res) => {
             folderFilter = { folderId: { $in: ids } };
         }
 
+        const safeQuery = escapeRegex(query.trim());
         const matchingNote = await Note.find({
             userId: userId,
-            $or: [{ title: { $regex: new RegExp(query, "i") } }, { content: { $regex: new RegExp(query, "i") } }],
+            $or: [{ title: { $regex: new RegExp(safeQuery, "i") } }, { content: { $regex: new RegExp(safeQuery, "i") } }],
             isDeleted: { $ne: true },
             isArchived: { $ne: true },
             ...folderFilter,
-        });
+        }).select(NOTE_LIST_FIELDS).limit(100).lean();
 
         return res.json({
             error: false,

@@ -16,9 +16,9 @@ const folderSchema = new Schema({
     timestamps: true
 });
 
-folderSchema.index({ userId: 1, isDeleted: 1 });
-folderSchema.index({ userId: 1, parentId: 1 });
-folderSchema.index({ userId: 1, deletedBatchId: 1 });
-folderSchema.index({ userId: 1, isDeleted: 1, isDeletedRoot: 1 }); // getTrashFolders query
+folderSchema.index({ userId: 1, isDeleted: 1, orderIndex: 1 });
+folderSchema.index({ userId: 1, parentId: 1, isDeleted: 1, orderIndex: 1 });
+folderSchema.index({ userId: 1, isDeleted: 1, deletedBatchId: 1 });
+folderSchema.index({ userId: 1, isDeleted: 1, isDeletedRoot: 1, deletedAt: -1 }); // getTrashFolders query
 
 module.exports = mongoose.model("Folder", folderSchema);
