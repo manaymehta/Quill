@@ -4,7 +4,7 @@ import { useFoldersStore } from '../../store/useFoldersStore';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 
 const Breadcrumb = ({ folderId }) => {
-    const { getFolderPath } = useFoldersStore();
+    const getFolderPath = useFoldersStore((state) => state.getFolderPath);
     const { data: folders = [] } = useFoldersQuery();
 
     if (!folderId) return null;

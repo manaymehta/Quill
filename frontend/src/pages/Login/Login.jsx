@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { validateEmail } from '../../utils/helper';
 import PasswordInput from '../../components/Input/PasswordInput';
 import { useAuthStore } from '../../store/useAuthStore';
+import ParticleBackground from '../../components/Background/ParticleBackground';
 
 const QuillIcon = ({ className }) => (
   <svg
@@ -23,7 +24,6 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
   const { login, googleLogin, error, isLoading, isLoggedIn } = useAuthStore();
-  const canvasRef = useRef(null); // Ref for the canvas background
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -78,91 +78,11 @@ const Login = () => {
     };
   }, []);
 
-  // Canvas Background Animation
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    let animationFrameId;
-
-    const DENSITY = 50;
-    const MAX_DISTANCE = 120;
-    const SPEED = 0.5;
-
-    let nodes = [];
-
-    const resizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      nodes = [];
-      initNodes();
-    };
-
-    const initNodes = () => {
-      for (let i = 0; i < DENSITY; i++) {
-        nodes.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
-          vx: (Math.random() - 0.5) * SPEED,
-          vy: (Math.random() - 0.5) * SPEED,
-          radius: Math.random() * 2 + 1,
-        });
-      }
-    };
-
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      for (const node of nodes) {
-        if (node.x + node.radius > canvas.width || node.x - node.radius < 0) {
-          node.vx *= -1;
-        }
-        if (node.y + node.radius > canvas.height || node.y - node.radius < 0) {
-          node.vy *= -1;
-        }
-        node.x += node.vx;
-        node.y += node.vy;
-
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.fill();
-      }
-
-      for (let a = 0; a < nodes.length; a++) {
-        for (let b = a + 1; b < nodes.length; b++) {
-          const dist = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y);
-          if (dist < MAX_DISTANCE) {
-            ctx.strokeStyle = `rgba(255, 255, 255, ${1 - dist / MAX_DISTANCE})`;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(nodes[a].x, nodes[a].y);
-            ctx.lineTo(nodes[b].x, nodes[b].y);
-            ctx.stroke();
-          }
-        }
-      }
-
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    resizeCanvas();
-    animate();
-
-    window.addEventListener('resize', resizeCanvas);
-    return () => {
-      window.removeEventListener('resize', resizeCanvas);
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, []);
-
-
   return (
     <>
       {isLoggedIn && <Navbar isVisible={false} />}
       <div className="font-sans relative flex flex-col items-center justify-center min-h-screen w-full bg-[#212121] overflow-hidden p-4">
-        <canvas ref={canvasRef} className="absolute inset-0 z-0"></canvas>
+        <ParticleBackground className="absolute inset-0 z-0 pointer-events-none" />
         <div className="relative z-10 flex flex-col items-center justify-center w-full h-full ">
           <div className={`bg-[#212121]/80 backdrop-blur-sm border border-white/10 text-[#EAEAEA] p-8 md:p-12 rounded-2xl w-full max-w-md text-center shadow-md flex flex-col items-center transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-95'}`}>
 

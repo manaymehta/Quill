@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MdClose, MdSearch, MdOutlineFolder, MdHomeFilled } from 'react-icons/md';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
+import { buildFolderHierarchy } from '../../utils/folderHierarchy';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const MoveToPicker = ({ isOpen, onClose, currentFolderId, onMove }) => {
@@ -13,31 +14,19 @@ const MoveToPicker = ({ isOpen, onClose, currentFolderId, onMove }) => {
         if (isOpen) setSearchVal('');
     }, [isOpen]);
 
-    // Recursive helper to sort and flatten folders with depth indicator
-    const getFlattenedTree = (parentId = null, depth = 0) => {
-        let result = [];
-        const siblings = folders
-            .filter(f => f.parentId === parentId && !f.isDeleted)
-            .sort((a, b) => a.orderIndex - b.orderIndex);
+    const hierarchy = useMemo(() => buildFolderHierarchy(folders), [folders]);
+    const flatTree = useMemo(() => hierarchy.getFlattenedTree(null, 0), [hierarchy]);
 
-        siblings.forEach(folder => {
-            result.push({ ...folder, depth });
-            result = result.concat(getFlattenedTree(folder._id, depth + 1));
-        });
-        return result;
-    };
-
-    const flatTree = getFlattenedTree(null, 0);
-
-    const filteredTree = flatTree.filter(f => 
-        f.name.toLowerCase().includes(searchVal.toLowerCase())
-    );
+    const filteredTree = useMemo(() => {
+        if (!searchVal.trim()) return flatTree;
+        const q = searchVal.toLowerCase();
+        return flatTree.filter(f => f.name.toLowerCase().includes(q));
+    }, [flatTree, searchVal]);
 
     const handleSelect = (targetFolderId) => {
         onMove(targetFolderId);
         onClose();
     };
-
     return (
         <AnimatePresence>
             {isOpen && (

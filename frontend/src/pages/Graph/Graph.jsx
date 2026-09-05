@@ -8,7 +8,7 @@ import { MdLocalOffer, MdClose, MdCheck } from 'react-icons/md';
 
 const Graph = () => {
   const fgRef = useRef();
-  const { isSidebarOpen } = useUIStore();
+  const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const { data: allNotes = [] } = useAllNotesQuery();
   const [hoveredNode, setHoveredNode] = useState(null);
   const [selectedTag, setSelectedTag] = useState(null);
@@ -186,14 +186,22 @@ const Graph = () => {
     return new Set();
   }, [selectedTag, hoveredNode, graphData]);
 
+  const nodesById = useMemo(() => {
+    const map = new Map();
+    for (const node of graphData.nodes) {
+      map.set(node.id, node);
+    }
+    return map;
+  }, [graphData.nodes]);
+
   const highlightedLinks = useMemo(() => {
     if (selectedTag) {
       const set = new Set();
       graphData.links.forEach(link => {
         const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
         const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-        const sourceNode = graphData.nodes.find(n => n.id === sourceId);
-        const targetNode = graphData.nodes.find(n => n.id === targetId);
+        const sourceNode = nodesById.get(sourceId);
+        const targetNode = nodesById.get(targetId);
         if (sourceNode && targetNode && sourceNode.tags.includes(selectedTag) && targetNode.tags.includes(selectedTag)) {
           set.add(link);
         }
@@ -210,7 +218,30 @@ const Graph = () => {
       return set;
     }
     return new Set();
-  }, [selectedTag, hoveredNode, graphData]);
+  }, [selectedTag, hoveredNode, graphData.links, nodesById]);
+
+  // Prune stale animation records when graph data changes to prevent memory leaks
+  useEffect(() => {
+    const validNodeIds = new Set(graphData.nodes.map(n => String(n.id)));
+    for (const key of Object.keys(nodeAnimRef.current)) {
+      if (!validNodeIds.has(String(key))) {
+        delete nodeAnimRef.current[key];
+      }
+    }
+
+    const validLinkKeys = new Set(
+      graphData.links.map(l => {
+        const s = l.source?.id ?? l.source;
+        const t = l.target?.id ?? l.target;
+        return `${s}-${t}`;
+      })
+    );
+    for (const key of Object.keys(linkAnimRef.current)) {
+      if (!validLinkKeys.has(key)) {
+        delete linkAnimRef.current[key];
+      }
+    }
+  }, [graphData]);
 
   // Temporary frame pump to ensure canvas redraws smoothly during lerp transitions
   // even if the force graph physics engine has settled and stopped voluntarily redrawing.

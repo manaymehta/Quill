@@ -6,7 +6,7 @@ import { FiMenu } from 'react-icons/fi';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
 
-const Navbar = ({ onSearch, handleClearSearch, onAiSearch }) => {
+const Navbar = () => {
   const navigate = useNavigate();
   const { logout, isLoggedIn } = useAuthStore();
   const { isNavbarVisible, toggleSidebar } = useUIStore();
@@ -36,7 +36,7 @@ const Navbar = ({ onSearch, handleClearSearch, onAiSearch }) => {
       </div>
 
       {isLoggedIn && (<div className="flex-1 flex justify-center">
-        <SearchBar onSearch={onSearch} handleClearSearch={handleClearSearch} onAiSearch={onAiSearch} />
+        <SearchBar />
       </div>)}
 
       {isLoggedIn && (

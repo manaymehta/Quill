@@ -1,49 +1,31 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { FaMagnifyingGlass } from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
 import { RiSparkling2Fill } from 'react-icons/ri';
 import { useSearchStore } from '../../store/useSearchStore';
 
-const SearchBar = ({ onSearch, handleClearSearch, onAiSearch }) => {
+const SearchBar = () => {
   const {
     searchQuery, setSearchQuery,
     searchMode, setSearchMode,
     isSearchingAI,
+    executeAiSearch,
+    clearSearch,
   } = useSearchStore();
-
-  const debounceRef = useRef(null);
-
-  useEffect(() => {
-    if (searchMode !== 'keyword') return;
-
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      if (searchQuery) {
-        onSearch(searchQuery);
-      } else {
-        handleClearSearch();
-      }
-    }, 300);
-
-    return () => clearTimeout(debounceRef.current);
-  }, [searchQuery, searchMode, onSearch, handleClearSearch]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && searchMode === 'semantic' && searchQuery.trim()) {
-      onAiSearch(searchQuery.trim());
+      executeAiSearch(searchQuery.trim());
     }
   };
 
   const handleClear = () => {
-    setSearchQuery('');
-    if (searchMode === 'keyword') handleClearSearch();
+    clearSearch();
   };
 
   const toggleMode = () => {
     const next = searchMode === 'keyword' ? 'semantic' : 'keyword';
     setSearchMode(next);
-    setSearchQuery('');
-    handleClearSearch();
   };
 
   const isAI = searchMode === 'semantic';
@@ -85,7 +67,7 @@ const SearchBar = ({ onSearch, handleClearSearch, onAiSearch }) => {
         <FaMagnifyingGlass
           className={`cursor-pointer ${isAI ? 'text-[#dd5e57]' : 'text-[#ccc6bc]'} hover:text-white transition-colors`}
           onClick={() => {
-            if (isAI && searchQuery.trim()) onAiSearch(searchQuery.trim());
+            if (isAI && searchQuery.trim()) executeAiSearch(searchQuery.trim());
           }}
         />
       </div>

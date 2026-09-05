@@ -3,17 +3,26 @@ import { createPortal, flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { MdEdit, MdDelete, MdPalette, MdFolder, MdOutlineFolder, MdRestore, MdDeleteForever, MdMoreVert } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
-import { useFoldersQuery, useAllNotesQuery } from '../../hooks/useNotesQuery';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'];
 
-const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false, onRestore, onDeletePermanent, isOverlay = false }) => {
+const FolderCard = ({
+    folder,
+    subfoldersCount = 0,
+    notesCount = 0,
+    onRename,
+    onDelete,
+    onColorChange,
+    isTrash = false,
+    onRestore,
+    onDeletePermanent,
+    isOverlay = false
+}) => {
     const navigate = useNavigate();
-    const { activeDropdownFolderId, setActiveDropdownFolderId } = useFoldersStore();
-    const { data: folders = [] } = useFoldersQuery();
-    const { data: allNotes = [] } = useAllNotesQuery();
+    const activeDropdownFolderId = useFoldersStore((state) => state.activeDropdownFolderId);
+    const setActiveDropdownFolderId = useFoldersStore((state) => state.setActiveDropdownFolderId);
     const [isEditing, setIsEditing] = useState(false);
     const [nameVal, setNameVal] = useState(folder.name);
     const [showColorPicker, setShowColorPicker] = useState(false);
@@ -134,10 +143,6 @@ const FolderCard = ({ folder, onRename, onDelete, onColorChange, isTrash = false
             document.removeEventListener('click', handleOutsideClick, true);
         };
     }, [showColorPicker]);
-
-    // Calculate subfolders and notes counts
-    const subfoldersCount = folders.filter(f => f.parentId === folder._id && (isTrash || !f.isDeleted)).length;
-    const notesCount = allNotes.filter(n => n.folderId === folder._id && (isTrash || (!n.isDeleted && !n.isArchived))).length;
 
     const handleRenameSubmit = () => {
         setIsEditing(false);

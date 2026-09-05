@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useUIStore } from '../../store/useUIStore';
 import { useTabsStore } from '../../store/useTabsStore';
@@ -7,6 +7,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
+import { buildFolderHierarchy } from '../../utils/folderHierarchy';
 import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdEdit, MdDelete, MdPalette, MdFolder, MdFolderOpen } from 'react-icons/md';
 
 const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'];
@@ -17,11 +18,10 @@ const rowVariants = {
     closed: { opacity: 0, x: -10, transition: { duration: 0.12, ease: 'easeIn' } },
 };
 
-const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
+const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarchy }) => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { isSidebarOpen } = useUIStore();
-    const { data: folders = [] } = useFoldersQuery();
+    const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
     const editFolderMutation = useEditFolderMutation();
     const { openFolderDeleteModal } = useModalStore();
     const [isEditing, setIsEditing] = useState(false);
@@ -29,7 +29,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [contextMenu, setContextMenu] = useState(null);
 
-    const hasChildren = folders.some(f => f.parentId === folder._id && !f.isDeleted);
+    const hasChildren = hierarchy ? hierarchy.hasChildren(folder._id) : false;
     const isActive = activeFolderId === folder._id;
     const paddingLeft = isSidebarOpen ? '2px' : '8px';
 
@@ -195,13 +195,11 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId }) => {
     );
 };
 
-// FolderTree renders rows — each row is a motion.div that inherits variants from the
-// AnimatePresence parent in Sidebar. No local initial/animate — the parent drives everything.
-const FolderTree = ({ parentId = null, depth = 0, expandedFolders, onToggleExpand, activeFolderId }) => {
+const FolderTree = ({ parentId = null, depth = 0, expandedFolders, onToggleExpand, activeFolderId, hierarchy: passedHierarchy }) => {
     const { data: folders = [] } = useFoldersQuery();
-    const siblingFolders = folders
-        .filter(f => f.parentId === parentId && !f.isDeleted)
-        .sort((a, b) => a.orderIndex - b.orderIndex);
+    const fallbackHierarchy = useMemo(() => buildFolderHierarchy(folders), [folders]);
+    const hierarchy = passedHierarchy || fallbackHierarchy;
+    const siblingFolders = hierarchy.getDirectChildren(parentId);
 
     if (siblingFolders.length === 0) return null;
 
@@ -209,6 +207,7 @@ const FolderTree = ({ parentId = null, depth = 0, expandedFolders, onToggleExpan
         <div className="space-y-0.5">
             {siblingFolders.map((folder) => {
                 const expanded = !!expandedFolders[folder._id];
+                const hasActiveChild = hierarchy.getDirectChildren(folder._id).some(f => f._id === activeFolderId);
                 return (
                     // variants inherited from parent — this is what enables stagger
                     <motion.div key={folder._id} variants={rowVariants} style={{ willChange: 'transform, opacity' }}>
@@ -218,6 +217,7 @@ const FolderTree = ({ parentId = null, depth = 0, expandedFolders, onToggleExpan
                             expanded={expanded}
                             onToggleExpand={onToggleExpand}
                             activeFolderId={activeFolderId}
+                            hierarchy={hierarchy}
                         />
                         {/* Nested children use CSS grid trick — independent of top-level stagger */}
                         <div style={{
@@ -227,7 +227,7 @@ const FolderTree = ({ parentId = null, depth = 0, expandedFolders, onToggleExpan
                         }}>
                             <div
                                 style={{ overflow: 'hidden', minHeight: 0 }}
-                                className={`ml-4 pl-1 border-l-2 ${folders.some(f => f.parentId === folder._id && !f.isDeleted && f._id === activeFolderId) ? 'border-[#414549]' : 'border-[#2d3033]'}`}
+                                className={`ml-4 pl-1 border-l-2 ${hasActiveChild ? 'border-[#414549]' : 'border-[#2d3033]'}`}
                             >
                                 <FolderTree
                                     parentId={folder._id}
@@ -235,6 +235,7 @@ const FolderTree = ({ parentId = null, depth = 0, expandedFolders, onToggleExpan
                                     expandedFolders={expandedFolders}
                                     onToggleExpand={onToggleExpand}
                                     activeFolderId={activeFolderId}
+                                    hierarchy={hierarchy}
                                 />
                             </div>
                         </div>

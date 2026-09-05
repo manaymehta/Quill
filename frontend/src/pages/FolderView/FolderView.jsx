@@ -6,7 +6,8 @@ import Toast from '../../components/ToastMessage/Toast';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
-import { useFolderNotesQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
+import { useFoldersQuery, useFolderNotesQuery } from '../../hooks/useNotesQuery';
+import { buildFolderHierarchy } from '../../utils/folderHierarchy';
 import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
@@ -19,16 +20,15 @@ const FolderView = () => {
   const navigate = useNavigate();
 
   const { data: folders = [] } = useFoldersQuery();
-  const getSubtreeIds = useFoldersStore((state) => state.getSubtreeIds);
-
-  const subtreeIds = useMemo(() => getSubtreeIds(folders, folderId), [folders, folderId, getSubtreeIds]);
+  const folderHierarchy = useMemo(() => buildFolderHierarchy(folders), [folders]);
+  const subtreeIds = useMemo(() => folderHierarchy.getSubtreeIds(folderId), [folderHierarchy, folderId]);
   const { data: folderNotes = [], isLoading } = useFolderNotesQuery(subtreeIds, folderId);
 
   const searchQuery = useSearchStore((state) => state.searchQuery);
   const searchMode = useSearchStore((state) => state.searchMode);
   const semanticResult = useSearchStore((state) => state.semanticResult);
   const isSearchingAI = useSearchStore((state) => state.isSearchingAI);
-  const { openTab } = useTabsStore();
+  const openTab = useTabsStore((state) => state.openTab);
 
   const [showToast, setShowToast] = useState(false);
   const [isAddingFolder, setIsAddingFolder] = useState(false);
@@ -54,10 +54,10 @@ const FolderView = () => {
 
   // Redirect if folder doesn't exist
   useEffect(() => {
-    if (folders.length > 0 && !folders.some(f => f._id === folderId)) {
+    if (folders.length > 0 && !folderHierarchy.foldersById.has(String(folderId))) {
       navigate("/dashboard");
     }
-  }, [folderId, folders, navigate]);
+  }, [folderId, folders.length, folderHierarchy, navigate]);
 
   // Set active folder & search scope context
   useEffect(() => {
@@ -94,8 +94,10 @@ const FolderView = () => {
   const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
 
   // Subfolders list (direct children only)
-  const subfolders = folders.filter(f => f.parentId === folderId && !f.isDeleted)
-    .sort((a, b) => a.orderIndex - b.orderIndex);
+  const subfolders = useMemo(() =>
+    folderHierarchy.getDirectChildren(folderId).sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)),
+    [folderHierarchy, folderId]
+  );
   
   // For explorer mode: direct notes only
   const directNotes = folderNotes.filter(n => n.folderId === folderId);

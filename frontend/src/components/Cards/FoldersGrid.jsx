@@ -4,6 +4,7 @@ import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortab
 import { MdFolder, MdAdd } from 'react-icons/md';
 import FolderCard from './FolderCard';
 import { useCreateFolderMutation, useReorderFoldersMutation } from '../../hooks/useFolderMutations';
+import { useFoldersQuery, useAllNotesQuery, useTrashFoldersQuery, useTrashNotesQuery } from '../../hooks/useNotesQuery';
 
 const FoldersGrid = ({
     folders,
@@ -21,6 +22,31 @@ const FoldersGrid = ({
     const reorderFoldersMutation = useReorderFoldersMutation();
     const [newFolderNameInline, setNewFolderNameInline] = useState('');
     const [activeId, setActiveId] = useState(null);
+
+    const { data: allFolders = [] } = useFoldersQuery({ enabled: !isTrash });
+    const { data: allNotes = [] } = useAllNotesQuery({ enabled: !isTrash });
+    const { data: trashFolders = [] } = useTrashFoldersQuery({ enabled: isTrash });
+    const { data: trashNotes = [] } = useTrashNotesQuery({ enabled: isTrash });
+
+    const counts = useMemo(() => {
+        const subfolderCounts = new Map();
+        const folderSource = isTrash ? trashFolders : allFolders;
+        for (const f of folderSource) {
+            if (f.parentId && (isTrash || !f.isDeleted)) {
+                const pid = String(f.parentId);
+                subfolderCounts.set(pid, (subfolderCounts.get(pid) || 0) + 1);
+            }
+        }
+        const noteCounts = new Map();
+        const noteSource = isTrash ? trashNotes : allNotes;
+        for (const n of noteSource) {
+            if (n.folderId && (isTrash || (!n.isDeleted && !n.isArchived))) {
+                const fid = String(n.folderId);
+                noteCounts.set(fid, (noteCounts.get(fid) || 0) + 1);
+            }
+        }
+        return { subfolderCounts, noteCounts };
+    }, [allFolders, allNotes, trashFolders, trashNotes, isTrash]);
 
     const sortableItems = useMemo(() => (folders || []).map(f => f._id), [folders]);
 
@@ -77,18 +103,23 @@ const FoldersGrid = ({
     // Inner grid content
     const gridContent = (
         <div className={`grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 md:gap-4 ${activeId ? 'is-dragging-active' : ''}`}>
-            {folders.map(folder => (
-                <FolderCard
-                    key={folder._id}
-                    folder={folder}
-                    onRename={onRename}
-                    onColorChange={onColorChange}
-                    onDelete={onDelete}
-                    isTrash={isTrash}
-                    onRestore={onRestore}
-                    onDeletePermanent={onDeletePermanent}
-                />
-            ))}
+            {folders.map(folder => {
+                const fid = String(folder._id);
+                return (
+                    <FolderCard
+                        key={folder._id}
+                        folder={folder}
+                        subfoldersCount={counts.subfolderCounts.get(fid) || 0}
+                        notesCount={counts.noteCounts.get(fid) || 0}
+                        onRename={onRename}
+                        onColorChange={onColorChange}
+                        onDelete={onDelete}
+                        isTrash={isTrash}
+                        onRestore={onRestore}
+                        onDeletePermanent={onDeletePermanent}
+                    />
+                );
+            })}
 
             {/* Inline Adding Card (Not sortable/draggable, kept at the end) */}
             {isAddingFolder && (
@@ -190,6 +221,8 @@ const FoldersGrid = ({
                 {activeFolder ? (
                     <FolderCard
                         folder={activeFolder}
+                        subfoldersCount={counts.subfolderCounts.get(String(activeFolder._id)) || 0}
+                        notesCount={counts.noteCounts.get(String(activeFolder._id)) || 0}
                         isOverlay={true}
                     />
                 ) : null}

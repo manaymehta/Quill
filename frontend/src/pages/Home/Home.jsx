@@ -8,6 +8,7 @@ import { useModalStore } from '../../components/Modals/useModalStore';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useHomeNotesQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
+import { buildFolderHierarchy } from '../../utils/folderHierarchy';
 import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import { MdOutlineFolder } from 'react-icons/md';
@@ -21,8 +22,13 @@ const Home = () => {
   const { data: allNotes = [], isLoading } = useHomeNotesQuery();
   const { data: folders = [] } = useFoldersQuery();
 
-  const { searchQuery, searchMode, semanticResult, isSearchingAI, setSearchScope, setScopeFolderIds } = useSearchStore();
-  const { openTab } = useTabsStore();
+  const searchQuery = useSearchStore((state) => state.searchQuery);
+  const searchMode = useSearchStore((state) => state.searchMode);
+  const semanticResult = useSearchStore((state) => state.semanticResult);
+  const isSearchingAI = useSearchStore((state) => state.isSearchingAI);
+  const setSearchScope = useSearchStore((state) => state.setSearchScope);
+  const setScopeFolderIds = useSearchStore((state) => state.setScopeFolderIds);
+  const openTab = useTabsStore((state) => state.openTab);
 
   const displayedNotes = useMemo(() => {
     if (searchMode === 'keyword' && searchQuery.trim()) {
@@ -129,9 +135,8 @@ const Home = () => {
 
   const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
 
-  // Compute top level items
-  const topLevelFolders = folders.filter(f => f.parentId === null && !f.isDeleted)
-    .sort((a, b) => a.orderIndex - b.orderIndex);
+  const folderHierarchy = useMemo(() => buildFolderHierarchy(folders), [folders]);
+  const topLevelFolders = folderHierarchy.rootFolders;
 
   return (
     <div className="relative min-h-0">

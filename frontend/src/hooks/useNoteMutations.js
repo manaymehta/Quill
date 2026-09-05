@@ -75,7 +75,7 @@ export const useToggleHomePinMutation = (showToast) => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.HOME_NOTES });
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ALL_NOTES });
     },
     onError: (error) => {
       if (showToast) showToast(error.response?.data?.message || "Failed to toggle pin", "error");
@@ -109,7 +109,7 @@ export const useReorderNotesMutation = () => {
       return response.data;
     },
     onMutate: async ({ reorderedNotes, folderId }) => {
-      const queryKey = folderId ? QUERY_KEYS.FOLDER_NOTES(folderId) : ['notes'];
+      const queryKey = folderId ? QUERY_KEYS.FOLDER_NOTES(folderId) : QUERY_KEYS.ALL_NOTES;
       const cancelPromise = queryClient.cancelQueries({ queryKey });
       const previousNotes = queryClient.getQueryData(queryKey);
 
@@ -129,7 +129,8 @@ export const useReorderNotesMutation = () => {
       if (context?.queryKey) {
         queryClient.invalidateQueries({ queryKey: context.queryKey });
       } else {
-        queryClient.invalidateQueries({ queryKey: ['notes'] });
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ALL_NOTES });
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.HOME_NOTES });
       }
     },
   });
