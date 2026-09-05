@@ -11,7 +11,9 @@ import { quillTheme, quillMarkdownHighlight, hideMarkdownSyntax, lineWrap } from
 import MoveToPicker from '../../components/Cards/MoveToPicker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
-
+import { historyField } from '@codemirror/commands';
+import { editorRegistry } from '../../utils/editorRegistry';
+import { useTabsStore } from '../../store/useTabsStore';
 
 const EDITOR_EXTENSIONS = [
   markdown(),
@@ -20,6 +22,20 @@ const EDITOR_EXTENSIONS = [
   hideMarkdownSyntax,
   lineWrap,
 ];
+
+const EDITOR_BASIC_SETUP = {
+  lineNumbers: false,
+  foldGutter: true,
+  dropCursor: true,
+  allowMultipleSelections: false,
+  indentOnInput: true,
+  bracketMatching: true,
+  closeBrackets: true,
+  autocompletion: false,
+  highlightActiveLine: false,
+  highlightSelectionMatches: false,
+  searchKeymap: false,
+};
 
 const getSaveToast = (message, embedding) => (
   embedding?.status === "failed"
@@ -81,13 +97,28 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const [error, setError] = useState("")
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isChecklist, setIsChecklist] = useState(noteData?.isChecklist || false);
-  const [checklist, setChecklist] = useState(() => (noteData?.checklist || []).map((item, i) => item.id ? item : { ...item, id: `item-${Date.now()}-${i}` }));
+  const [checklist, setChecklist] = useState(() => (noteData?.checklist || []).map((item, i) => item.id ? item : { ...item, id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${i}` }));
   const [tagInputValue, setTagInputValue] = useState("");
   const [selectedTag, setSelectedTag] = useState(null);
   const [activeChecklistId, setActiveChecklistId] = useState(null);
 
   // Ref to the CodeMirror editor view for programmatic focus
   const cmViewRef = useRef(null);
+
+  const currentNoteId = noteData?._id;
+
+  // Rehydrate CodeMirror runtime state (doc, selection, undo/redo history) from in-memory registry
+  const initialEditorState = useMemo(() => {
+    if (isChecklist) return undefined;
+    const snapshot = editorRegistry.getEditorSnapshot(currentNoteId);
+    if (snapshot) {
+      return {
+        json: snapshot,
+        fields: { history: historyField },
+      };
+    }
+    return undefined;
+  }, [currentNoteId, isChecklist]);
   const tagScrollContainerRef = useRef(null);
   const tagInputRef = useRef(null);
   const [showPinnedAddButton, setShowPinnedAddButton] = useState(false);
@@ -132,6 +163,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
   const [linkPreviews, setLinkPreviews] = useState(noteData?.linkPreviews || []);
   const fetchingUrls = useRef(new Set());
+  const fetchingPromises = useRef(new Map());
+  const dismissedUrlsRef = useRef(new Set());
   const contentRef = useRef(content);
 
   useEffect(() => {
@@ -139,28 +172,26 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   }, [content]);
 
   const fetchPreview = useCallback(async (url) => {
+    dismissedUrlsRef.current.delete(url);
     fetchingUrls.current.add(url);
-    try {
-      const response = await axiosInstance.post("/notes/extract-preview", { url });
-      if (response.data && response.data.preview) {
-        setLinkPreviews(prev => {
-          // Double check if the URL still exists in the latest content before adding it
-          const currentUrls = contentRef.current.match(/(https?:\/\/[^\s]+)/g) || [];
-          const currentCleanUrls = currentUrls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
-          if (!currentCleanUrls.includes(url)) return prev;
-          if (prev.some(p => p.url === url)) return prev;
-          return [...prev, response.data.preview];
-        });
-      }
-    } catch (err) {
-      console.error("Failed to fetch link preview for", url, err);
-      // Tier 3 Fallback: Scrape failed completely. Construct a local fallback.
-      setLinkPreviews(prev => {
-        const currentUrls = contentRef.current.match(/(https?:\/\/[^\s]+)/g) || [];
-        const currentCleanUrls = currentUrls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
-        if (!currentCleanUrls.includes(url)) return prev;
-        if (prev.some(p => p.url === url)) return prev;
-        
+    const p = (async () => {
+      try {
+        const response = await axiosInstance.post("/notes/extract-preview", { url });
+        if (response.data && response.data.preview) {
+          setLinkPreviews(prev => {
+            // Double check if the URL still exists in the latest content before adding it
+            const currentUrls = contentRef.current.match(/(https?:\/\/[^\s]+)/g) || [];
+            const currentCleanUrls = currentUrls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
+            if (!currentCleanUrls.includes(url)) return prev;
+            if (prev.some(p => p.url === url)) return prev;
+            return [...prev, response.data.preview];
+          });
+          return response.data.preview;
+        }
+        return null;
+      } catch (err) {
+        console.error("Failed to fetch link preview for", url, err);
+        // Tier 3 Fallback: Scrape failed completely. Construct a local fallback.
         let host = url;
         try {
           host = new URL(url).hostname;
@@ -168,18 +199,28 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           // ignore
         }
         const siteName = host.startsWith("www.") ? host.substring(4) : host;
-        
-        return [...prev, {
+        const fallback = {
           url,
           title: url,
           description: "",
           image: "",
           siteName: siteName
-        }];
-      });
-    } finally {
-      fetchingUrls.current.delete(url);
-    }
+        };
+        setLinkPreviews(prev => {
+          const currentUrls = contentRef.current.match(/(https?:\/\/[^\s]+)/g) || [];
+          const currentCleanUrls = currentUrls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
+          if (!currentCleanUrls.includes(url)) return prev;
+          if (prev.some(p => p.url === url)) return prev;
+          return [...prev, fallback];
+        });
+        return fallback;
+      } finally {
+        fetchingUrls.current.delete(url);
+        fetchingPromises.current.delete(url);
+      }
+    })();
+    fetchingPromises.current.set(url, p);
+    return p;
   }, []);
 
   const getFinalPreviewsBeforeSave = useCallback(async (currentContent, currentPreviews) => {
@@ -188,9 +229,18 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     const cleanUrls = urls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
     const uniqueUrls = [...new Set(cleanUrls)];
 
+    // Await any in-flight extractions for URLs present in the content
+    const inFlight = uniqueUrls
+      .map(url => fetchingPromises.current.get(url))
+      .filter(Boolean);
+    if (inFlight.length > 0) {
+      await Promise.all(inFlight);
+    }
+
     const missingUrls = uniqueUrls.filter(url => 
       !currentPreviews.some(p => p.url === url) &&
-      !fetchingUrls.current.has(url)
+      !fetchingUrls.current.has(url) &&
+      !dismissedUrlsRef.current.has(url)
     );
 
     if (missingUrls.length === 0) return currentPreviews;
@@ -253,6 +303,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   }, [content, isChecklist]);
 
   const handleRemoveLinkPreview = useCallback((urlToRemove) => {
+    dismissedUrlsRef.current.add(urlToRemove);
     setLinkPreviews(prev => prev.filter(p => p.url !== urlToRemove));
   }, []);
 
@@ -281,6 +332,44 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     }, 250);
     return () => clearTimeout(timer);
   }, [content, tags, isChecklist, checklist, folderId, linkPreviews]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const latestDraftRef = useRef();
+
+  // Keep in-memory registry draft immediately up to date for dirty-check evaluations
+  useEffect(() => {
+    const currentDraft = {
+      title,
+      content,
+      tags,
+      isChecklist,
+      checklist,
+      folderId,
+      linkPreviews,
+    };
+    latestDraftRef.current = currentDraft;
+    if (currentNoteId) {
+      editorRegistry.setDraft(currentNoteId, currentDraft);
+    }
+  }, [currentNoteId, title, content, tags, isChecklist, checklist, folderId, linkPreviews]);
+
+  // On unmount (e.g. switching tabs), preserve CodeMirror state and flush latest draft.
+  // Strictly checks whether the tab is still open in useTabsStore to avoid resurrecting discarded tabs.
+  useEffect(() => {
+    return () => {
+      const tabId = currentNoteId;
+      if (!tabId) return;
+
+      const isStillOpen = useTabsStore.getState().openTabs.some((t) => t._id === tabId);
+      if (isStillOpen) {
+        if (cmViewRef.current) {
+          editorRegistry.saveEditorSnapshot(tabId, cmViewRef.current);
+        }
+        if (onUpdateTabState && latestDraftRef.current) {
+          onUpdateTabState(latestDraftRef.current);
+        }
+      }
+    };
+  }, [currentNoteId, onUpdateTabState]);
 
 
   const handleAddTag = () => {
@@ -311,7 +400,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   };
 
   const addChecklistItem = () => {
-    setChecklist([...checklist, { id: `item-${Date.now()}`, text: '', completed: false }]);
+    setChecklist([...checklist, { id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, text: '', completed: false }]);
   };
 
   const removeChecklistItem = (index) => {
@@ -321,10 +410,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   };
 
 
-  const editNote = useCallback(async () => {
-    const noteId = noteData._id;
+  const handleSaveNote = useCallback(async () => {
     try {
-      // Fetch missing previews before compiling payload to ensure we save latest preview changes
       const finalPreviews = await getFinalPreviewsBeforeSave(content, linkPreviews);
       // eslint-disable-next-line no-unused-vars
       const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
@@ -336,96 +423,49 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         isChecklist,
         checklist: cleanedChecklist,
         folderId: folderId || null,
-        linkPreviews: finalPreviews
-      };
-      
-      // If a folder is assigned, explicitly keep it in the Home stream
-      if (folderId) {
-        payload.showInHome = true;
-      }
-
-      if (noteData.isDraft) {
-        const response = await axiosInstance.post("/add-note", payload);
-        if (response.data && response.data.note) {
-          queryClient.invalidateQueries({ queryKey: ['notes'] });
-          onSaveSuccess();
-          showToastMessage(
-            getSaveToast("Note added successfully", response.data.embedding),
-            getSaveToastType(response.data.embedding)
-          );
-        }
-      } else {
-        const response = await axiosInstance.put("/edit-note/" + noteId, payload);
-        if (response.data && response.data.note) {
-          queryClient.invalidateQueries({ queryKey: ['notes'] });
-          onSaveSuccess();
-          showToastMessage(
-            getSaveToast("Note updated successfully", response.data.embedding),
-            getSaveToastType(response.data.embedding)
-          );
-        }
-      }
-    }
-    catch (error) {
-      if (error.response && error.response.data && error.response.data.message) {
-        setError(error.response.data.message);
-      }
-    }
-  }, [noteData, title, content, isChecklist, tags, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getFinalPreviewsBeforeSave, queryClient]);
-
-  const addNewNote = useCallback(async () => {
-    try {
-      const finalPreviews = await getFinalPreviewsBeforeSave(content, linkPreviews);
-      // eslint-disable-next-line no-unused-vars
-      const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
-      
-      const payload = {
-        title,
-        content,
-        tags,
-        isChecklist,
-        checklist: cleanedChecklist,
-        folderId: folderId || null,
-        linkPreviews: finalPreviews
+        linkPreviews: finalPreviews,
       };
 
       if (folderId) {
         payload.showInHome = true;
       }
 
-      const response = await axiosInstance.post("/add-note", payload);
+      const isDraft = Boolean(noteData?.isDraft || type === 'add');
+      const response = isDraft
+        ? await axiosInstance.post("/add-note", payload)
+        : await axiosInstance.put(`/edit-note/${currentNoteId}`, payload);
+
       if (response.data && response.data.note) {
         queryClient.invalidateQueries({ queryKey: ['notes'] });
+        if (currentNoteId) {
+          editorRegistry.setBaseline(currentNoteId, response.data.note);
+          editorRegistry.setDraft(currentNoteId, response.data.note);
+        }
         onSaveSuccess();
         showToastMessage(
-          getSaveToast("Note added successfully", response.data.embedding),
+          getSaveToast(isDraft ? "Note added successfully" : "Note updated successfully", response.data.embedding),
           getSaveToastType(response.data.embedding)
         );
       }
-    }
-    catch (error) {
+    } catch (error) {
       if (error.response && error.response.data && error.response.data.message) {
         setError(error.response.data.message);
       }
     }
-  }, [title, content, tags, isChecklist, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getFinalPreviewsBeforeSave, queryClient]);
+  }, [noteData, currentNoteId, type, title, content, isChecklist, tags, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getFinalPreviewsBeforeSave, queryClient]);
 
   const handleAddNote = useCallback(() => {
     if (!isChecklist && !content && !title) {
-      setError("Please enter content")
+      setError("Please enter content");
       return;
     }
     if (isChecklist && checklist.length === 0 && !title) {
-      setError("Please add at least one checklist item")
+      setError("Please add at least one checklist item");
       return;
     }
     setError("");
-    if (type === 'edit') {
-      editNote();
-    } else {
-      addNewNote();
-    }
-  }, [isChecklist, content, title, checklist, type, editNote, addNewNote]);
+    handleSaveNote();
+  }, [isChecklist, content, title, checklist, handleSaveNote]);
 
   const handleSummarize = async () => {
     if (!content.trim()) {
@@ -676,26 +716,25 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
              >
               <CodeMirror
                 value={content}
+                initialState={initialEditorState}
                 onChange={(val) => {
                   setContent(val);
                   setError("");
                 }}
-                onCreateEditor={(view) => { cmViewRef.current = view; }}
+                onCreateEditor={(view) => {
+                  cmViewRef.current = view;
+                  if (isActive && !isChecklist) {
+                    view.focus();
+                  }
+                }}
+                onUpdate={(viewUpdate) => {
+                  if (viewUpdate.docChanged || viewUpdate.selectionSet) {
+                    editorRegistry.saveEditorSnapshot(currentNoteId, viewUpdate.view);
+                  }
+                }}
                 extensions={EDITOR_EXTENSIONS}
                 placeholder="Start typing..."
-                basicSetup={{
-                  lineNumbers: false,
-                  foldGutter: true,
-                  dropCursor: true,
-                  allowMultipleSelections: false,
-                  indentOnInput: true,
-                  bracketMatching: true,
-                  closeBrackets: true,
-                  autocompletion: false,
-                  highlightActiveLine: false,
-                  highlightSelectionMatches: false,
-                  searchKeymap: false,
-                }}
+                basicSetup={EDITOR_BASIC_SETUP}
               />
             </div>
           )}
@@ -817,10 +856,4 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   )
 }
 
-// Only re-render when the tab's data or active state actually changes.
-// Inactive tabs whose noteData reference is the same (Zustand's immutable
-// map preserves non-touched entries) are completely skipped.
-export default memo(AddEditNotes, (prev, next) =>
-  prev.noteData === next.noteData &&
-  prev.isActive === next.isActive
-);
+export default memo(AddEditNotes);

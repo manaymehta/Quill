@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosInstance from '../utils/axiosInstance';
 import { QUERY_KEYS } from './useNotesQuery';
+import { useTabsStore } from '../store/useTabsStore';
 
 const hasEmbeddingIssue = (data) => ["failed", "partial"].includes(data?.embedding?.status);
 
@@ -11,7 +12,11 @@ export const useDeleteNoteMutation = (showToast) => {
       const response = await axiosInstance.delete(`/delete-note/${noteId}`);
       return response.data;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
+      const id = typeof variables === 'string' ? variables : variables?.noteId || variables?._id;
+      if (id) {
+        useTabsStore.getState().forceCloseTab(id);
+      }
       if (showToast) {
         const embeddingIssue = hasEmbeddingIssue(data);
         showToast(
@@ -69,11 +74,19 @@ export const useChecklistToggleMutation = () => {
 export const useToggleHomePinMutation = (showToast) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (noteId) => {
-      const response = await axiosInstance.put(`/toggle-home-pin/${noteId}`);
+    mutationFn: async ({ noteId, showInHome }) => {
+      const response = await axiosInstance.put(`/update-note-home-pin/${noteId}`, { showInHome });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      if (showToast) {
+        const message = `Note ${variables.showInHome ? "shown on" : "hidden from"} Home`;
+        const embeddingIssue = hasEmbeddingIssue(data);
+        showToast(
+          embeddingIssue ? `${message}. Embedding update failed.` : message,
+          embeddingIssue ? "warning" : "success"
+        );
+      }
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.HOME_NOTES });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ALL_NOTES });
     },
@@ -90,8 +103,11 @@ export const useMoveNoteMutation = (showToast) => {
       const response = await axiosInstance.put(`/move-note/${noteId}`, { targetFolderId });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       if (showToast) showToast("Note moved successfully", "success");
+      if (variables?.noteId && variables?.targetFolderId !== undefined) {
+        useTabsStore.getState().updateTabState(variables.noteId, { folderId: variables.targetFolderId });
+      }
       queryClient.invalidateQueries({ queryKey: ['notes'] });
       queryClient.invalidateQueries({ queryKey: ['folders'] });
     },
