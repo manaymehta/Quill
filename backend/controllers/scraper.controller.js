@@ -1,67 +1,110 @@
-/* global URL, setTimeout */
+/* global URL */
 const ogs = require("open-graph-scraper");
+const { safeFetchHtml, SecurityValidationError } = require("../services/url-safety.service");
+
+const MAX_URL_LENGTH = 2048;
+const MAX_TITLE_LENGTH = 300;
+const MAX_DESC_LENGTH = 1000;
+const MAX_SITENAME_LENGTH = 100;
+
+/**
+ * Sanitizes and normalizes an extracted image URL:
+ * - Resolves relative paths against the page's final URL
+ * - Strictly enforces http: or https: scheme
+ * - Rejects data:, javascript:, file: and other dangerous schemes
+ * @param {string} rawImageUrl
+ * @param {string} baseUrl
+ * @returns {string} Sanitized absolute image URL or empty string
+ */
+const sanitizeImageUrl = (rawImageUrl, baseUrl) => {
+    if (!rawImageUrl || typeof rawImageUrl !== "string") return "";
+    try {
+        const resolved = new URL(rawImageUrl.trim(), baseUrl);
+        if (resolved.protocol === "http:" || resolved.protocol === "https:") {
+            return resolved.href;
+        }
+        return "";
+    } catch {
+        return "";
+    }
+};
 
 const extractLinkPreview = async (req, res) => {
     const { url } = req.body;
 
-    if (!url) {
-        return res.status(400).json({ error: true, message: "URL is required" });
+    if (!url || typeof url !== "string") {
+        return res.status(400).json({ error: true, message: "URL is required and must be a string" });
     }
 
-    // Basic URL validation
-    let validUrl;
+    const trimmedUrl = url.trim();
+    if (trimmedUrl.length > MAX_URL_LENGTH) {
+        return res.status(400).json({
+            error: true,
+            message: `URL exceeds maximum length of ${MAX_URL_LENGTH} characters`
+        });
+    }
+
+    let fetchResult;
     try {
-        validUrl = new URL(url);
-    } catch {
-        return res.status(400).json({ error: true, message: "Invalid URL format" });
-    }
-
-    const options = {
-        url: validUrl.href,
-        timeout: 4000, // 4-second got timeout
-        headers: {
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        fetchResult = await safeFetchHtml(trimmedUrl);
+    } catch (err) {
+        if (err instanceof SecurityValidationError || err?.isClientSecurityError) {
+            return res.status(400).json({
+                error: true,
+                message: "The requested URL or host is restricted or invalid"
+            });
         }
-    };
+        return res.status(422).json({
+            error: true,
+            message: "Failed to scrape metadata from the requested URL"
+        });
+    }
 
-    // Robust Promise-race to guarantee no hanging request under any circumstances
-    const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Request timeout")), 4500)
-    );
+    const { html, finalUrl } = fetchResult;
 
     try {
-        const ogCall = ogs(options);
-        const { result, error } = await Promise.race([ogCall, timeoutPromise]);
+        const { result, error } = await ogs({ html });
 
-        if (error) {
+        if (error || !result) {
             return res.status(422).json({ error: true, message: "Failed to scrape metadata" });
         }
 
         // Handle image extraction (ogs returns array or object)
-        let imageUrl = null;
-        if (result.ogImage && result.ogImage.length > 0) {
-            imageUrl = result.ogImage[0].url;
+        let rawImageUrl = null;
+        if (Array.isArray(result.ogImage) && result.ogImage.length > 0) {
+            rawImageUrl = result.ogImage[0].url;
         } else if (result.ogImage && typeof result.ogImage === "object") {
-            imageUrl = result.ogImage.url;
-        } else if (result.twitterImage && result.twitterImage.length > 0) {
-            imageUrl = result.twitterImage[0].url;
+            rawImageUrl = result.ogImage.url;
+        } else if (Array.isArray(result.twitterImage) && result.twitterImage.length > 0) {
+            rawImageUrl = result.twitterImage[0].url;
+        } else if (result.twitterImage && typeof result.twitterImage === "object") {
+            rawImageUrl = result.twitterImage.url;
         }
 
+        const imageUrl = sanitizeImageUrl(rawImageUrl, finalUrl);
+
         // Format clean siteName from hostname fallback
-        let siteName = result.ogSiteName || "";
+        let siteName = (result.ogSiteName || "").trim();
         if (!siteName) {
-            const host = validUrl.hostname;
-            siteName = host.startsWith("www.") ? host.substring(4) : host;
+            try {
+                const host = new URL(finalUrl).hostname;
+                siteName = host.startsWith("www.") ? host.substring(4) : host;
+            } catch {
+                siteName = "";
+            }
         }
+
+        const rawTitle = result.ogTitle || result.twitterTitle || result.dcTitle || finalUrl;
+        const rawDescription = result.ogDescription || result.twitterDescription || "";
 
         return res.json({
             error: false,
             preview: {
-                url: validUrl.href,
-                title: result.ogTitle || result.twitterTitle || result.dcTitle || validUrl.href,
-                description: result.ogDescription || result.twitterDescription || "",
-                image: imageUrl || "",
-                siteName
+                url: finalUrl,
+                title: String(rawTitle).trim().slice(0, MAX_TITLE_LENGTH),
+                description: String(rawDescription).trim().slice(0, MAX_DESC_LENGTH),
+                image: imageUrl,
+                siteName: String(siteName).trim().slice(0, MAX_SITENAME_LENGTH)
             }
         });
     } catch (err) {

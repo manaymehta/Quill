@@ -8,7 +8,7 @@ import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutati
 
 const Pinned = () => {
   const { data: homeNotes = [] } = useHomeNotesQuery();
-  const allPinnedNotes = homeNotes.filter(n => n.showInHome || n.isPinned);
+  const allPinnedNotes = homeNotes.filter(n => Boolean(n.showInHome));
 
   const [showToast, setShowToast] = useState(false);
   const { openTab } = useTabsStore();
