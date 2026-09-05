@@ -5,6 +5,7 @@ import axiosInstance from '../utils/axiosInstance';
 export const QUERY_KEYS = {
   HOME_NOTES: ['notes', 'home'],
   ALL_NOTES: ['notes', 'all'],
+  GRAPH_NOTES: (includeArchived) => ['notes', 'graph', { includeArchived: Boolean(includeArchived) }],
   FOLDER_NOTES: (folderId) => ['notes', 'folder', folderId],
   TRASH_NOTES: ['notes', 'trash'],
   ARCHIVED_NOTES: ['notes', 'archived'],
@@ -30,6 +31,17 @@ export const useAllNotesQuery = (options = {}) => {
     queryKey: QUERY_KEYS.ALL_NOTES,
     queryFn: async () => {
       const response = await axiosInstance.get("/get-all-notes");
+      return response.data?.notes || [];
+    },
+    ...options,
+  });
+};
+
+export const useGraphNotesQuery = (includeArchived = false, options = {}) => {
+  return useQuery({
+    queryKey: QUERY_KEYS.GRAPH_NOTES(includeArchived),
+    queryFn: async () => {
+      const response = await axiosInstance.get(`/get-graph-notes?includeArchived=${Boolean(includeArchived)}`);
       return response.data?.notes || [];
     },
     ...options,

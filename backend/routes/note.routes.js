@@ -3,6 +3,7 @@ const {
     addNote,
     editNote,
     getAllNotes,
+    getGraphNotes,
     getHomeNotes,
     getFolderNotes,
     deleteNote,
@@ -35,6 +36,7 @@ router.post("/add-note", authenticateToken, validateObjectBody, addNote);
 router.put("/edit-note/:noteId", authenticateToken, validateObjectBody, editNote);
 router.post("/notes/extract-preview", authenticateToken, validateObjectBody, extractLinkPreview);
 router.get("/get-all-notes", authenticateToken, getAllNotes);
+router.get("/get-graph-notes", authenticateToken, validateQueryParam("includeArchived", { required: false, maxLength: 10 }), getGraphNotes);
 router.get("/get-home-notes", authenticateToken, getHomeNotes);
 router.get("/get-folder-notes", authenticateToken, validateQueryParam("folderIds", { required: true, maxLength: 4096 }), getFolderNotes);
 router.get("/get-all-archived-notes", authenticateToken, getArchivedNotes);

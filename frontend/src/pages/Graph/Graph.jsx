@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { useAllNotesQuery } from '../../hooks/useNotesQuery';
+import { useGraphNotesQuery } from '../../hooks/useNotesQuery';
 import { useUIStore } from '../../store/useUIStore';
 import { forceX, forceY, forceCollide } from 'd3-force';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MdLocalOffer, MdClose, MdCheck } from 'react-icons/md';
+import { MdLocalOffer, MdClose, MdCheck, MdOutlineArchive } from 'react-icons/md';
 
 const Graph = () => {
   const fgRef = useRef();
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
-  const { data: allNotes = [] } = useAllNotesQuery();
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const { data: graphNotes = [] } = useGraphNotesQuery(includeArchived);
   const [hoveredNode, setHoveredNode] = useState(null);
   const [selectedTag, setSelectedTag] = useState(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -89,18 +90,19 @@ const Graph = () => {
     fgRef.current.d3ReheatSimulation();
   }, [dimensions.width, dimensions.height]);
 
-
   const lerp = (a, b, t) => a + (b - a) * t;
   const LERP_FACTOR = 0.5;
 
   const uniqueTags = useMemo(() => {
-    const allTags = allNotes.flatMap(note => note.tags);
+    const allTags = graphNotes.flatMap(note => note.tags || []);
     return [...new Set(allTags)];
-  }, [allNotes]);
+  }, [graphNotes]);
+
+  const activeSelectedTag = (selectedTag && uniqueTags.includes(selectedTag)) ? selectedTag : null;
 
   const graphData = useMemo(() => {
     // calculate tag frequencies to find connecting tags
-    const tagFrequencies = allNotes.flatMap(note => note.tags).reduce((acc, tag) => {
+    const tagFrequencies = graphNotes.flatMap(note => note.tags || []).reduce((acc, tag) => {
       acc[tag] = (acc[tag] || 0) + 1;
       return acc;
     }, {});
@@ -108,17 +110,18 @@ const Graph = () => {
     const connectingTagsSet = new Set(Object.keys(tagFrequencies).filter(tag => tagFrequencies[tag] > 1));
 
     // transform notes into graph nodes
-    const nodes = allNotes.map(note => ({
+    const nodes = graphNotes.map(note => ({
       id: note._id,
       name: note.title,
-      tags: note.tags,
-      connectingTags: note.tags.filter(tag => connectingTagsSet.has(tag)),
+      tags: note.tags || [],
+      isArchived: Boolean(note.isArchived),
+      connectingTags: (note.tags || []).filter(tag => connectingTagsSet.has(tag)),
     }));
 
     // generate links based on shared tags
     const tagMap = {};
-    allNotes.forEach(note => {
-      note.tags.forEach(tag => {
+    graphNotes.forEach(note => {
+      (note.tags || []).forEach(tag => {
         if (connectingTagsSet.has(tag)) { // only consider connecting tags for links
           if (!tagMap[tag]) {
             tagMap[tag] = [];
@@ -151,32 +154,34 @@ const Graph = () => {
     }
 
     return { nodes, links };
-  }, [allNotes]);
+  }, [graphNotes]);
 
   const handleTagClick = (tag) => {
     setSelectedTag(tag);
   };
 
   const handleNodeHover = (node) => {
-    if (selectedTag) return;
+    if (activeSelectedTag) return;
     if (hoveredNode !== node) {
       setHoveredNode(node);
     }
   };
 
+  const activeHoveredNode = (hoveredNode && graphData.nodes.some(n => n.id === hoveredNode.id)) ? hoveredNode : null;
+
   const highlightedNodes = useMemo(() => {
-    if (selectedTag) {
+    if (activeSelectedTag) {
       const set = new Set();
       graphData.nodes.forEach(node => {
-        if (node.tags.includes(selectedTag)) set.add(node);
+        if (node.tags.includes(activeSelectedTag)) set.add(node);
       });
       return set;
     }
-    if (hoveredNode) {
+    if (activeHoveredNode) {
       const set = new Set();
-      set.add(hoveredNode);
+      set.add(activeHoveredNode);
       graphData.links.forEach(link => {
-        if (link.source === hoveredNode || link.target === hoveredNode) {
+        if (link.source === activeHoveredNode || link.target === activeHoveredNode) {
           set.add(link.source);
           set.add(link.target);
         }
@@ -184,7 +189,7 @@ const Graph = () => {
       return set;
     }
     return new Set();
-  }, [selectedTag, hoveredNode, graphData]);
+  }, [activeSelectedTag, activeHoveredNode, graphData]);
 
   const nodesById = useMemo(() => {
     const map = new Map();
@@ -195,30 +200,30 @@ const Graph = () => {
   }, [graphData.nodes]);
 
   const highlightedLinks = useMemo(() => {
-    if (selectedTag) {
+    if (activeSelectedTag) {
       const set = new Set();
       graphData.links.forEach(link => {
         const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
         const targetId = typeof link.target === 'object' ? link.target.id : link.target;
         const sourceNode = nodesById.get(sourceId);
         const targetNode = nodesById.get(targetId);
-        if (sourceNode && targetNode && sourceNode.tags.includes(selectedTag) && targetNode.tags.includes(selectedTag)) {
+        if (sourceNode && targetNode && sourceNode.tags.includes(activeSelectedTag) && targetNode.tags.includes(activeSelectedTag)) {
           set.add(link);
         }
       });
       return set;
     }
-    if (hoveredNode) {
+    if (activeHoveredNode) {
       const set = new Set();
       graphData.links.forEach(link => {
-        if (link.source === hoveredNode || link.target === hoveredNode) {
+        if (link.source === activeHoveredNode || link.target === activeHoveredNode) {
           set.add(link);
         }
       });
       return set;
     }
     return new Set();
-  }, [selectedTag, hoveredNode, graphData.links, nodesById]);
+  }, [activeSelectedTag, activeHoveredNode, graphData.links, nodesById]);
 
   // Prune stale animation records when graph data changes to prevent memory leaks
   useEffect(() => {
@@ -261,20 +266,29 @@ const Graph = () => {
     animationFrameId = requestAnimationFrame(animate);
 
     return () => cancelAnimationFrame(animationFrameId);
-  }, [highlightedNodes, hoveredNode]);
+  }, [highlightedNodes, activeHoveredNode]);
 
   const isMobile = dimensions.width < 640;
   const navbarMargin = isMobile ? '-60px' : '-72px';
 
   return (
-    <div className={'bg-[#202124b5]'} style={{ width: '100%', height: dimensions.height, marginTop: navbarMargin, overflow: 'hidden', position: 'relative', cursor: hoveredNode ? 'pointer' : 'default' }}>
+    <div className={'bg-[#202124b5]'} style={{ width: '100%', height: dimensions.height, marginTop: navbarMargin, overflow: 'hidden', position: 'relative', cursor: activeHoveredNode ? 'pointer' : 'default' }}>
       <ForceGraph2D
         ref={fgRef}
         width={dimensions.width}
         height={dimensions.height}
         extraRenderTick={animTick}
         graphData={graphData}
-        nodeLabel={node => node.connectingTags.join(', ')}
+        nodeLabel={node => {
+          const tags = (node.connectingTags && node.connectingTags.length > 0)
+            ? node.connectingTags
+            : (node.tags || []);
+          const tagsStr = tags.join(', ');
+          if (node.isArchived) {
+            return tagsStr ? `${tagsStr} (Archived)` : 'Archived';
+          }
+          return tagsStr;
+        }}
         linkCanvasObjectMode={() => 'replace'}
         linkCanvasObject={(link, ctx) => {
           const hasHighlight = highlightedNodes.size > 0;
@@ -304,8 +318,7 @@ const Graph = () => {
         }}
         onNodeHover={handleNodeHover}
         onBackgroundClick={() => {
-          if (selectedTag) handleTagClick(null);
-
+          if (activeSelectedTag) handleTagClick(null);
         }}
         nodePointerAreaPaint={(node, color, ctx) => {
           ctx.fillStyle = color;
@@ -316,7 +329,7 @@ const Graph = () => {
         nodeCanvasObject={(node, ctx) => {
           const hasHighlight = highlightedNodes.size > 0;
           const isHighlighted = highlightedNodes.has(node);
-          const isHovered = hoveredNode === node;
+          const isHovered = activeHoveredNode === node;
 
           // init animated state for this node
           if (!nodeAnimRef.current[node.id]) {
@@ -361,110 +374,159 @@ const Graph = () => {
         }}
       />
 
-      {/* Minimal Tag Filter Control */}
-      <div
-        ref={filterDropdownRef}
-        className="absolute top-[80px] md:top-[92px] right-4 sm:right-6 z-20"
-      >
-        {/* Trigger Button / Morphing Pill */}
-        <motion.div
-          layout
-          transition={{ type: 'spring', damping: 30, stiffness: 750, mass: 0.3 }}
-          className={`h-10 rounded-full flex items-center border shadow-lg backdrop-blur-md overflow-hidden ${
-            selectedTag
-              ? 'bg-[#202124]/90 border-[#e85d56]/60 text-white'
-              : isDropdownOpen
-              ? 'bg-[#e85d56] border-[#e85d56] text-white w-10 justify-center'
-              : 'bg-[#202124]/80 hover:bg-[#2c2d30] border-white/15 text-stone-300 hover:text-white w-10 justify-center'
-          }`}
-        >
-          <AnimatePresence mode="popLayout" initial={false}>
-            {!selectedTag ? (
-              <motion.button
-                key="circle-icon-btn"
-                initial={{ opacity: 0, scale: 0.6 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.6 }}
-                transition={{ duration: 0.08, ease: [0.16, 1, 0.3, 1] }}
-                onClick={() => setIsDropdownOpen(prev => !prev)}
-                title="Filter by Tag"
-                className="w-10 h-10 flex items-center justify-center cursor-pointer shrink-0"
-              >
-                <MdLocalOffer className="w-4 h-4" />
-              </motion.button>
-            ) : (
-              <motion.div
-                key="pill-content-box"
-                initial={{ opacity: 0, x: 8 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -6 }}
-                transition={{ duration: 0.09, ease: [0.16, 1, 0.3, 1] }}
-                className="flex items-center gap-2 text-sm font-medium whitespace-nowrap pl-3.5 pr-2 h-full"
-              >
-                <button
-                  onClick={() => setIsDropdownOpen(prev => !prev)}
-                  className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity"
-                >
-                  <span className="w-2 h-2 rounded-full bg-[#e85d56] shrink-0" />
-                  <span className="max-w-[140px] truncate">#{selectedTag}</span>
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleTagClick(null);
-                  }}
-                  title="Clear Filter"
-                  className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
-                >
-                  <MdClose className="w-4 h-4" />
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        {/* Popover Menu with smooth sliding unfolding/tucking */}
+      {/* Minimal Controls Container: Dynamic Pills & Tag Filter */}
+      <div className="absolute top-[80px] md:top-[92px] right-4 sm:right-6 z-20 flex items-center gap-2.5">
+        {/* Dynamic Archived Pill (shows only when includeArchived is active) */}
         <AnimatePresence>
-          {isDropdownOpen && (
+          {includeArchived && (
             <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: -8 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: -6 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 500, mass: 0.45 }}
-              style={{ transformOrigin: 'top right' }}
-              className="absolute top-12 right-0 min-w-[130px] max-w-[220px] w-max bg-[#202124]/95 backdrop-blur-xl border border-white/15 rounded-2xl p-1.5 shadow-2xl z-30 flex flex-col"
+              layout
+              initial={{ opacity: 0, scale: 0.85, x: 10 }}
+              animate={{ opacity: 1, scale: 1, x: 0 }}
+              exit={{ opacity: 0, scale: 0.85, x: 10 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 750, mass: 0.3 }}
+              className="h-10 rounded-full flex items-center border shadow-lg backdrop-blur-md overflow-hidden bg-[#202124]/90 border-[#e85d56]/60 text-white pl-3.5 pr-2 gap-2 text-sm font-medium whitespace-nowrap"
             >
-              <div className="flex flex-col gap-1 max-h-[min(50vh,300px)] overflow-y-auto editor-scrollbar">
-                {uniqueTags.length === 0 ? (
-                  <div className="py-3 px-4 text-center text-xs text-stone-500">
-                    No tags
-                  </div>
-                ) : (
-                  uniqueTags.map(tag => {
-                    const isSelected = selectedTag === tag;
-                    return (
-                      <button
-                        key={tag}
-                        onClick={() => {
-                          handleTagClick(isSelected ? null : tag);
-                          setIsDropdownOpen(false);
-                        }}
-                        className={`w-full px-3 py-2 text-sm font-medium rounded-xl flex items-center justify-between gap-3 transition-all cursor-pointer text-left ${
-                          isSelected
-                            ? 'bg-[#e85d56] text-white shadow-sm font-semibold'
-                            : 'text-stone-300 hover:text-white hover:bg-white/5'
-                        }`}
-                      >
-                        <span className="truncate">#{tag}</span>
-                        {isSelected && <MdCheck className="w-4 h-4 shrink-0" />}
-                      </button>
-                    );
-                  })
-                )}
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#e85d56] shrink-0" />
+                <span>Archived</span>
               </div>
+              <button
+                type="button"
+                onClick={() => setIncludeArchived(false)}
+                title="Hide Archived Notes"
+                className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
+              >
+                <MdClose className="w-4 h-4" />
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Minimal Tag Filter Control */}
+        <div
+          ref={filterDropdownRef}
+          className="relative"
+        >
+          {/* Trigger Button / Morphing Pill */}
+          <motion.div
+            layout
+            transition={{ type: 'spring', damping: 30, stiffness: 750, mass: 0.3 }}
+            className={`h-10 rounded-full flex items-center border shadow-lg backdrop-blur-md overflow-hidden ${
+              activeSelectedTag
+                ? 'bg-[#202124]/90 border-[#e85d56]/60 text-white'
+                : isDropdownOpen
+                ? 'bg-[#e85d56] border-[#e85d56] text-white w-10 justify-center'
+                : 'bg-[#202124]/80 hover:bg-[#2c2d30] border-white/15 text-stone-300 hover:text-white w-10 justify-center'
+            }`}
+          >
+            <AnimatePresence mode="popLayout" initial={false}>
+              {!activeSelectedTag ? (
+                <motion.button
+                  key="circle-icon-btn"
+                  initial={{ opacity: 0, scale: 0.6 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.6 }}
+                  transition={{ duration: 0.08, ease: [0.16, 1, 0.3, 1] }}
+                  onClick={() => setIsDropdownOpen(prev => !prev)}
+                  title="Filter by Tag"
+                  className="w-10 h-10 flex items-center justify-center cursor-pointer shrink-0"
+                >
+                  <MdLocalOffer className="w-4 h-4" />
+                </motion.button>
+              ) : (
+                <motion.div
+                  key="pill-content-box"
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -6 }}
+                  transition={{ duration: 0.09, ease: [0.16, 1, 0.3, 1] }}
+                  className="flex items-center gap-2 text-sm font-medium whitespace-nowrap pl-3.5 pr-2 h-full"
+                >
+                  <button
+                    onClick={() => setIsDropdownOpen(prev => !prev)}
+                    className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-[#e85d56] shrink-0" />
+                    <span className="max-w-[140px] truncate">#{activeSelectedTag}</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTagClick(null);
+                    }}
+                    title="Clear Filter"
+                    className="p-1 hover:bg-white/10 rounded-full text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                  >
+                    <MdClose className="w-4 h-4" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+
+          {/* Popover Menu with smooth sliding unfolding/tucking */}
+          <AnimatePresence>
+            {isDropdownOpen && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.92, y: -8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.92, y: -6 }}
+                transition={{ type: 'spring', damping: 28, stiffness: 500, mass: 0.45 }}
+                style={{ transformOrigin: 'top right' }}
+                className="absolute top-12 right-0 min-w-[160px] max-w-[240px] w-max max-h-[calc(100vh-140px)] md:max-h-[calc(100vh-150px)] bg-[#202124]/95 backdrop-blur-xl border border-white/15 rounded-2xl p-1.5 shadow-2xl z-30 flex flex-col"
+              >
+                {/* Archive Option Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setIncludeArchived(prev => !prev)}
+                  className={`shrink-0 w-full px-3 py-2 text-sm font-medium rounded-xl flex items-center justify-between gap-3 transition-all cursor-pointer text-left ${
+                    includeArchived
+                      ? 'bg-[#e85d56]/15 text-[#e85d56] font-semibold border border-[#e85d56]/30'
+                      : 'text-stone-300 hover:text-white hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <MdOutlineArchive className={`w-4 h-4 shrink-0 ${includeArchived ? 'text-[#e85d56]' : 'text-stone-400'}`} />
+                    <span>Archived</span>
+                  </div>
+                  {includeArchived && <MdCheck className="w-4 h-4 shrink-0 text-[#e85d56]" />}
+                </button>
+
+                <div className="shrink-0 my-1 border-t border-white/10" />
+
+                <div className="flex-1 min-h-0 flex flex-col gap-1 overflow-y-auto editor-scrollbar">
+                  {uniqueTags.length === 0 ? (
+                    <div className="py-3 px-4 text-center text-xs text-stone-500">
+                      No tags
+                    </div>
+                  ) : (
+                    uniqueTags.map(tag => {
+                      const isSelected = activeSelectedTag === tag;
+                      return (
+                        <button
+                          key={tag}
+                          onClick={() => {
+                            handleTagClick(isSelected ? null : tag);
+                            setIsDropdownOpen(false);
+                          }}
+                          className={`w-full px-3 py-2 text-sm font-medium rounded-xl flex items-center justify-between gap-3 transition-all cursor-pointer text-left ${
+                            isSelected
+                              ? 'bg-[#e85d56] text-white shadow-sm font-semibold'
+                              : 'text-stone-300 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="truncate">#{tag}</span>
+                          {isSelected && <MdCheck className="w-4 h-4 shrink-0" />}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );

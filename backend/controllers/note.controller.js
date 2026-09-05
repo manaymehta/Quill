@@ -8,6 +8,7 @@ const FASTAPI_EMBEDDING_TIMEOUT_MS = 10_000;
 const embeddingLocks = new Map();
 const NOTE_LIST_FIELDS = "_id title content tags folderId showInHome isArchived isChecklist checklist orderIndex homeOrderIndex linkPreviews createdAt updatedAt";
 const NOTE_TRASH_FIELDS = `${NOTE_LIST_FIELDS} isDeleted deletedAt deletedBatchId`;
+const NOTE_GRAPH_FIELDS = "_id title tags isArchived";
 
 const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -284,6 +285,47 @@ const getAllNotes = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({
+            error: true,
+            message: "Internal Server Error",
+        });
+    }
+};
+
+const getGraphNotes = async (req, res) => {
+    const userId = req.user._id;
+    const includeArchived = req.query.includeArchived === "true";
+
+    try {
+        const query = {
+            userId,
+            isDeleted: { $ne: true },
+        };
+        if (!includeArchived) {
+            query.isArchived = { $ne: true };
+        }
+
+        const notes = await Note.find(query)
+            .select(NOTE_GRAPH_FIELDS)
+            .sort({ orderIndex: 1, createdAt: -1 })
+            .lean();
+
+        const formattedNotes = notes.map((note) => ({
+            _id: note._id,
+            title: note.title || "",
+            tags: Array.isArray(note.tags)
+                ? [...new Set(note.tags.filter((t) => t != null).map((t) => String(t).trim()).filter(Boolean))]
+                : [],
+            isArchived: Boolean(note.isArchived),
+        }));
+
+        return res.json({
+            error: false,
+            message: "Graph notes retrieved successfully",
+            notes: formattedNotes,
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({
             error: true,
             message: "Internal Server Error",
         });
@@ -840,6 +882,7 @@ module.exports = {
     addNote,
     editNote,
     getAllNotes,
+    getGraphNotes,
     getHomeNotes,
     getFolderNotes,
     deleteNote,
