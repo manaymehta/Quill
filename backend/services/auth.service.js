@@ -71,6 +71,8 @@ const createRefreshSession = async (user, req, familyId = crypto.randomUUID()) =
         userId: String(user._id),
         familyId,
         tokenHash,
+        replacedByHash: null,
+        revokedAt: null,
         userAgent: req.get("user-agent") || "",
         ipAddress: req.ip || "",
         expiresAt: getRefreshExpiry(),
@@ -88,6 +90,8 @@ const issueAuthentication = async (user, req, res) => {
     };
 };
 
+const REFRESH_REUSE_GRACE_PERIOD_MS = 30 * 1000;
+
 const rotateAuthentication = async (req, res, User) => {
     const rawToken = getRefreshTokenFromRequest(req);
     if (!rawToken) return null;
@@ -98,9 +102,25 @@ const rotateAuthentication = async (req, res, User) => {
 
     if (!existingSession || existingSession.expiresAt <= now) return null;
 
-    // Reuse of a rotated token indicates possible theft. Revoke the whole
-    // family so an attacker cannot continue using sibling refresh tokens.
+    // Check if the session was already revoked
     if (existingSession.revokedAt) {
+        const timeSinceRevoked = now.getTime() - existingSession.revokedAt.getTime();
+
+        // 1. Within grace period: Legitimate concurrent request or network jitter
+        // Return a fresh access token without revoking the token family
+        if (timeSinceRevoked <= REFRESH_REUSE_GRACE_PERIOD_MS) {
+            const user = await User.findById(existingSession.userId);
+            if (user) {
+                return {
+                    accessToken: createAccessToken(user),
+                    user: serializeUser(user),
+                };
+            }
+            return null;
+        }
+
+        // 2. Outside grace period: Genuine replay attack detected! Revoke the whole
+        // family so an attacker cannot continue using sibling refresh tokens.
         await RefreshSession.updateMany(
             { familyId: existingSession.familyId, revokedAt: null },
             { $set: { revokedAt: now } }
@@ -113,7 +133,26 @@ const rotateAuthentication = async (req, res, User) => {
         { $set: { revokedAt: now } },
         { new: true }
     );
-    if (!claimedSession) return null;
+
+    if (!claimedSession) {
+        // A concurrent request claimed this session at this exact moment.
+        // Verify it was claimed within the grace window and issue a fresh access token.
+        const freshlyClaimed = await RefreshSession.findById(existingSession._id);
+        if (
+            freshlyClaimed
+            && freshlyClaimed.revokedAt
+            && (now.getTime() - freshlyClaimed.revokedAt.getTime() <= REFRESH_REUSE_GRACE_PERIOD_MS)
+        ) {
+            const user = await User.findById(freshlyClaimed.userId);
+            if (user) {
+                return {
+                    accessToken: createAccessToken(user),
+                    user: serializeUser(user),
+                };
+            }
+        }
+        return null;
+    }
 
     const user = await User.findById(claimedSession.userId);
     if (!user) return null;
@@ -134,15 +173,25 @@ const rotateAuthentication = async (req, res, User) => {
 const revokeAuthentication = async (req, res) => {
     const rawToken = getRefreshTokenFromRequest(req);
     if (rawToken) {
-        await RefreshSession.updateOne(
-            { tokenHash: hashRefreshToken(rawToken), revokedAt: null },
-            { $set: { revokedAt: new Date() } }
-        );
+        const tokenHash = hashRefreshToken(rawToken);
+        const session = await RefreshSession.findOne({ tokenHash });
+        if (session) {
+            await RefreshSession.updateMany(
+                { familyId: session.familyId, revokedAt: null },
+                { $set: { revokedAt: new Date() } }
+            );
+        } else {
+            await RefreshSession.updateOne(
+                { tokenHash, revokedAt: null },
+                { $set: { revokedAt: new Date() } }
+            );
+        }
     }
     clearRefreshCookie(res);
 };
 
 module.exports = {
+    REFRESH_REUSE_GRACE_PERIOD_MS,
     clearRefreshCookie,
     createAccessToken,
     issueAuthentication,

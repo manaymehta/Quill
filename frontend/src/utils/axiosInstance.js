@@ -5,10 +5,10 @@ import {
     getAccessToken,
     getRefreshLockName,
     hasCrossTabCoordination,
+    hasRecentRefreshFailure,
     publishAccessToken,
     publishRefreshFailure,
     setAccessToken,
-    waitForCrossTabAccessToken,
 } from "./authSession";
 
 const axiosInstance = axios.create({
@@ -32,7 +32,7 @@ axiosInstance.interceptors.request.use((config) => {
 
 const refreshClient = axios.create({
     baseURL: BASE_URL,
-    timeout: 30000,
+    timeout: 15000,
     withCredentials: true,
     headers: {
         "Content-Type": "application/json",
@@ -59,7 +59,7 @@ const refreshAccessToken = async () => {
                 return data;
             })
             .catch((error) => {
-                publishRefreshFailure();
+                publishRefreshFailure(error);
                 throw error;
             })
             .finally(() => {
@@ -70,21 +70,44 @@ const refreshAccessToken = async () => {
 };
 
 const coordinateRefresh = async (failedToken) => {
+    // 1. If another request already refreshed the access token in memory, return it immediately.
     if (getAccessToken() && getAccessToken() !== failedToken) {
         return { accessToken: getAccessToken() };
     }
 
+    // 2. Intra-tab deduplication: If THIS tab already has a refresh in flight, reuse it!
+    // All concurrent requests in the same tab share one single network call.
+    if (refreshPromise) {
+        const data = await refreshPromise;
+        return { accessToken: data?.accessToken || getAccessToken() };
+    }
+
+    // 3. If a refresh recently failed across any tab, reject immediately without redundant network calls.
+    if (hasRecentRefreshFailure()) {
+        throw new Error("Session refresh recently failed");
+    }
+
+    // 4. Fallback if cross-tab coordination is unavailable
     if (!hasCrossTabCoordination()) {
         return refreshAccessToken();
     }
 
-    return navigator.locks.request(getRefreshLockName(), { ifAvailable: true }, async (lock) => {
-        if (!lock) {
-            return { accessToken: await waitForCrossTabAccessToken() };
-        }
-
+    // 5. Cross-tab coordination via Web Locks
+    return navigator.locks.request(getRefreshLockName(), async () => {
+        // Re-check: did another tab refresh the token while we were waiting for the lock?
         if (getAccessToken() && getAccessToken() !== failedToken) {
             return { accessToken: getAccessToken() };
+        }
+
+        // Re-check: is an in-flight refresh promise active in this tab?
+        if (refreshPromise) {
+            const data = await refreshPromise;
+            return { accessToken: data?.accessToken || getAccessToken() };
+        }
+
+        // Re-check: did another tab fail the refresh while we were waiting?
+        if (hasRecentRefreshFailure()) {
+            throw new Error("Session refresh recently failed in another tab");
         }
 
         return refreshAccessToken();
@@ -105,8 +128,20 @@ axiosInstance.interceptors.response.use((response) => response, async (error) =>
 
     originalRequest._retry = true;
     try {
-        const failedToken = getAccessToken();
-        const { accessToken: refreshedToken } = await coordinateRefresh(failedToken);
+        const authHeader = originalRequest.headers?.Authorization
+            || originalRequest.headers?.authorization
+            || (typeof originalRequest.headers?.get === "function" ? originalRequest.headers.get("Authorization") : null);
+        const failedToken = typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+            ? authHeader.slice(7)
+            : (getAccessToken() || null);
+
+        const refreshResult = await coordinateRefresh(failedToken);
+        const refreshedToken = refreshResult?.accessToken || getAccessToken();
+
+        if (!refreshedToken) {
+            throw new Error("Unable to obtain refreshed access token");
+        }
+
         originalRequest.headers = originalRequest.headers || {};
         originalRequest.headers.Authorization = `Bearer ${refreshedToken}`;
         return axiosInstance(originalRequest);

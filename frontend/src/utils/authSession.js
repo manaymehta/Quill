@@ -1,4 +1,6 @@
 let accessToken = null;
+let lastRefreshFailedAt = 0;
+const REFRESH_FAILURE_COOLDOWN_MS = 5000;
 const REFRESH_LOCK_NAME = 'quill-auth-refresh';
 const AUTH_CHANNEL_NAME = 'quill-auth-session';
 const tabId = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -7,22 +9,31 @@ const tabId = typeof crypto !== 'undefined' && crypto.randomUUID
 const authChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
   ? new BroadcastChannel(AUTH_CHANNEL_NAME)
   : null;
-const accessTokenWaiters = new Set();
 const authEventListeners = new Set();
+
+export const markRefreshFailed = () => {
+  lastRefreshFailedAt = Date.now();
+};
+
+export const hasRecentRefreshFailure = () => {
+  return Date.now() - lastRefreshFailedAt < REFRESH_FAILURE_COOLDOWN_MS;
+};
+
+export const clearRefreshFailure = () => {
+  lastRefreshFailedAt = 0;
+};
 
 if (authChannel) {
   authChannel.addEventListener('message', ({ data }) => {
     if (!data || data.senderId === tabId) return;
 
     if (data.type === 'access-token' && data.token) {
-      setAccessToken(data.token);
-      accessTokenWaiters.forEach(({ resolve }) => resolve(data.token));
-      accessTokenWaiters.clear();
+      accessToken = data.token;
+      clearRefreshFailure();
     }
 
     if (data.type === 'refresh-failed') {
-      accessTokenWaiters.forEach(({ reject }) => reject(new Error('Session refresh failed')));
-      accessTokenWaiters.clear();
+      markRefreshFailed();
     }
 
     authEventListeners.forEach((listener) => listener(data));
@@ -33,6 +44,9 @@ export const getAccessToken = () => accessToken;
 
 export const setAccessToken = (token) => {
   accessToken = token || null;
+  if (accessToken) {
+    clearRefreshFailure();
+  }
 };
 
 export const clearAccessToken = () => {
@@ -40,35 +54,23 @@ export const clearAccessToken = () => {
 };
 
 export const publishAccessToken = (token) => {
+  setAccessToken(token);
   authChannel?.postMessage({ type: 'access-token', token, senderId: tabId });
 };
 
-export const publishRefreshFailure = () => {
-  authChannel?.postMessage({ type: 'refresh-failed', senderId: tabId });
+export const publishRefreshFailure = (error) => {
+  markRefreshFailed();
+  authChannel?.postMessage({
+    type: 'refresh-failed',
+    senderId: tabId,
+    message: error?.message || 'Session refresh failed',
+  });
 };
 
 export const publishLogout = () => {
+  clearRefreshFailure();
   authChannel?.postMessage({ type: 'logout', senderId: tabId });
 };
-
-export const waitForCrossTabAccessToken = (timeoutMs = 35000) => new Promise((resolve, reject) => {
-  const waiter = {
-    resolve: (token) => {
-      clearTimeout(timeoutId);
-      resolve(token);
-    },
-    reject: (error) => {
-      clearTimeout(timeoutId);
-      reject(error);
-    },
-  };
-  const timeoutId = setTimeout(() => {
-    accessTokenWaiters.delete(waiter);
-    waiter.reject(new Error('Timed out waiting for another tab to refresh the session'));
-  }, timeoutMs);
-
-  accessTokenWaiters.add(waiter);
-});
 
 export const subscribeToAuthEvents = (listener) => {
   authEventListeners.add(listener);
