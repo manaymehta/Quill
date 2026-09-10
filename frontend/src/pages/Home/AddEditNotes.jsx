@@ -11,6 +11,7 @@ import { quillTheme, quillMarkdownHighlight, hideMarkdownSyntax, lineWrap } from
 import MoveToPicker from '../../components/Cards/MoveToPicker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
+import { useToastStore } from '../../store/useToastStore';
 import { historyField } from '@codemirror/commands';
 import { editorRegistry } from '../../utils/editorRegistry';
 import { useTabsStore } from '../../store/useTabsStore';
@@ -442,7 +443,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           editorRegistry.setDraft(currentNoteId, response.data.note);
         }
         onSaveSuccess();
-        showToastMessage(
+        const notify = showToastMessage || useToastStore.getState().showToast;
+        notify(
           getSaveToast(isDraft ? "Note added successfully" : "Note updated successfully", response.data.embedding),
           getSaveToastType(response.data.embedding)
         );

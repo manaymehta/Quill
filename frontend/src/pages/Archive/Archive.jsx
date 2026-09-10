@@ -1,53 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import { useTabsStore } from '../../store/useTabsStore';
-import Toast from '../../components/ToastMessage/Toast';
+import { useToastStore } from '../../store/useToastStore';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { useArchivedNotesQuery } from '../../hooks/useNotesQuery';
 import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation } from '../../hooks/useNoteMutations';
 
 const Archive = () => {
     const { data: archivedNotes = [] } = useArchivedNotesQuery();
-    const [showToast, setShowToast] = useState(false);
 
     const { openTab } = useTabsStore();
     const { openConfirmModal } = useModalStore();
 
-    const [toastMessageVisibility, setToastMessageVisibility] = useState({
-        isShown: false,
-        message: "",
-        type: "add"
-    });
-
-    const showToastMessage = (message, type) => {
-        setToastMessageVisibility({ isShown: true, message, type });
-        setShowToast(true);
-    };
-
-    const deleteNoteMutation = useDeleteNoteMutation(showToastMessage);
-    const archiveNoteMutation = useArchiveNoteMutation(showToastMessage);
+    const deleteNoteMutation = useDeleteNoteMutation();
+    const archiveNoteMutation = useArchiveNoteMutation();
     const checklistToggleMutation = useChecklistToggleMutation();
-
-    const handleCloseToast = () => {
-        setToastMessageVisibility((prev) => ({ ...prev, isShown: false }));
-        setTimeout(() => {
-            setShowToast(false);
-        }, 400);
-    };
-
-    useEffect(() => {
-        if (toastMessageVisibility.isShown) {
-            setTimeout(() => {
-                handleCloseToast();
-            }, 3000);
-        }
-    }, [toastMessageVisibility.isShown]);
 
     const handleEdit = (note) => {
         openTab(note);
     };
 
     const handleDeleteNoteClick = (note) => {
+        if (useTabsStore.getState().openTabs.some((t) => t._id === note._id)) {
+            useToastStore.getState().showToast({
+                message: "Close the editor tab for this note before deleting.",
+                type: "warning",
+            });
+            return;
+        }
         openConfirmModal({
             title: "Delete note?",
             message: "This moves the note to Trash.",
@@ -96,19 +76,8 @@ const Archive = () => {
                     allowDrag={false}
                 />
             </div>
-
-
-
-            {showToast && (
-                <Toast
-                    isShown={toastMessageVisibility.isShown}
-                    message={toastMessageVisibility.message}
-                    type={toastMessageVisibility.type}
-                    onClose={handleCloseToast}
-                />
-            )}
         </div>
-    )
-}
+    );
+};
 
-export default Archive
+export default Archive;

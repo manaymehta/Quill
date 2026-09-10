@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
-import Toast from '../../components/ToastMessage/Toast';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { useTrashNotesQuery, useTrashFoldersQuery } from '../../hooks/useNotesQuery';
 import { useRestoreNoteMutation, useDeleteTrashNotePermanentMutation } from '../../hooks/useNoteMutations';
@@ -12,23 +11,12 @@ const Trash = () => {
   const { data: trashNotes = [] } = useTrashNotesQuery();
   const { data: trashFolders = [] } = useTrashFoldersQuery();
 
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState({ message: '', type: '' });
   const { openConfirmModal } = useModalStore();
 
-  const showToastMsg = (message, type) => {
-    setShowToast(true);
-    setToastMessage({ message, type });
-  };
-
-  const handleCloseToast = () => {
-    setShowToast(false);
-  };
-
-  const restoreNoteMutation = useRestoreNoteMutation(showToastMsg);
-  const deleteTrashNotePermanentMutation = useDeleteTrashNotePermanentMutation(showToastMsg);
-  const restoreFolderMutation = useRestoreFolderMutation(showToastMsg);
-  const deleteFolderPermanentMutation = useDeleteFolderPermanentMutation(showToastMsg);
+  const restoreNoteMutation = useRestoreNoteMutation();
+  const deleteTrashNotePermanentMutation = useDeleteTrashNotePermanentMutation();
+  const restoreFolderMutation = useRestoreFolderMutation();
+  const deleteFolderPermanentMutation = useDeleteFolderPermanentMutation();
 
   const handleRestoreNote = (note) => {
     restoreNoteMutation.mutate(note._id);
@@ -65,59 +53,50 @@ const Trash = () => {
   const isEmpty = individualTrashNotes.length === 0 && trashFolders.length === 0;
 
   return (
-    <>
-      <div className="pb-24 px-2 md:px-4">
-        {isEmpty ? (
-          <div className="flex flex-col items-center justify-center min-h-[50vh] text-center">
-            <p className="text-stone-400 text-sm">
-              Trash is empty! Good job keeping things tidy.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {trashFolders.length > 0 && (
-              <div>
-                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
-                  <MdOutlineFolder className="mr-2" size={16} />
-                  Folders
-                </h3>
-                <FoldersGrid
-                  folders={trashFolders}
-                  isTrash={true}
-                  onRestore={handleRestoreFolder}
-                  onDeletePermanent={handleDeleteFolderPermanentClick}
-                />
-              </div>
-            )}
+    <div className="pb-24 px-2 md:px-4">
+      {isEmpty ? (
+        <div className="flex flex-col items-center justify-center min-h-[50vh] text-center">
+          <p className="text-stone-400 text-sm">
+            Trash is empty! Good job keeping things tidy.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {trashFolders.length > 0 && (
+            <div>
+              <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
+                <MdOutlineFolder className="mr-2" size={16} />
+                Folders
+              </h3>
+              <FoldersGrid
+                folders={trashFolders}
+                isTrash={true}
+                onRestore={handleRestoreFolder}
+                onDeletePermanent={handleDeleteFolderPermanentClick}
+              />
+            </div>
+          )}
 
-            {individualTrashNotes.length > 0 && (
-              <div>
-                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
-                  <MdOutlineStickyNote2 className="mr-2" size={16} />
-                  Notes
-                </h3>
-                <NotesGrid
-                  notes={individualTrashNotes}
-                  emptyMessage=""
-                  onRestore={handleRestoreNote}
-                  onDelete={handleDeleteNotePermanentClick}
-                  isTrash={true}
-                  allowDrag={false}
-                />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+          {individualTrashNotes.length > 0 && (
+            <div>
+              <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
+                <MdOutlineStickyNote2 className="mr-2" size={16} />
+                Notes
+              </h3>
+              <NotesGrid
+                notes={individualTrashNotes}
+                emptyMessage=""
+                onRestore={handleRestoreNote}
+                onDelete={handleDeleteNotePermanentClick}
+                isTrash={true}
+                allowDrag={false}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
-      <Toast
-        isShown={showToast}
-        message={toastMessage.message}
-        type={toastMessage.type}
-        onClose={handleCloseToast}
-      />
-    </>
-  )
-}
-
-export default Trash
+export default Trash;

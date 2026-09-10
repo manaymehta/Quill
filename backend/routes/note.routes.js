@@ -2,6 +2,7 @@ const express = require("express");
 const {
     addNote,
     editNote,
+    getNoteById,
     getAllNotes,
     getGraphNotes,
     getHomeNotes,
@@ -35,6 +36,7 @@ router.param("noteId", validateObjectIdParam("noteId"));
 router.post("/add-note", authenticateToken, validateObjectBody, addNote);
 router.put("/edit-note/:noteId", authenticateToken, validateObjectBody, editNote);
 router.post("/notes/extract-preview", authenticateToken, validateObjectBody, extractLinkPreview);
+router.get("/get-note/:noteId", authenticateToken, getNoteById);
 router.get("/get-all-notes", authenticateToken, getAllNotes);
 router.get("/get-graph-notes", authenticateToken, validateQueryParam("includeArchived", { required: false, maxLength: 10 }), getGraphNotes);
 router.get("/get-home-notes", authenticateToken, getHomeNotes);

@@ -12,6 +12,8 @@ import { useSortable, defaultAnimateLayoutChanges } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useFoldersStore } from '../../store/useFoldersStore';
+import { useTabsStore } from '../../store/useTabsStore';
+import { useToastStore } from '../../store/useToastStore';
 import MoveToPicker from './MoveToPicker';
 
 const animateLayoutChanges = (args) => {
@@ -66,7 +68,7 @@ const PREVIEW_CHARS = 150;
 
 // ── Inner static rendering component ─────────────────────────────────────────
 const InnerNoteCard = memo(({
-  title, content, tags, folder, folderId, isChecklist, checklist,
+  id, title, content, tags, folder, folderId, isChecklist, checklist,
   isTrash, isArchived, showInHome, isDragging, isOverlay, hideFolderBadge,
   linkPreviews, onDelete, onArchive, onToggleHome, onMove, onChecklistToggle, onRestore,
   isMenuOpen, toggleMenu, index, coords, setCoords
@@ -134,7 +136,16 @@ const InnerNoteCard = memo(({
     ...(onDelete ? [{
       label: "Move to Trash",
       icon: <MdDelete size={14} />,
-      onClick: () => onDelete && onDelete(),
+      onClick: () => {
+        if (!isTrash && id && useTabsStore.getState().openTabs.some((t) => t._id === id)) {
+          useToastStore.getState().showToast({
+            message: "Close the editor tab for this note before deleting.",
+            type: "warning",
+          });
+          return;
+        }
+        onDelete && onDelete();
+      },
       variant: "danger",
       dividerBefore: true
     }] : [])
@@ -507,6 +518,7 @@ const NoteCard = ({
       className={`w-full note-card-wrapper cursor-grab active:cursor-grabbing select-none [touch-action:manipulation] [-webkit-touch-callout:none] ${isDragging ? 'is-dragging-active touch-none' : ''}`}
     >
       <InnerNoteCard
+        id={id}
         title={title}
         content={content}
         tags={tags}

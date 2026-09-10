@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef, memo, Fragment } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { FiMenu } from 'react-icons/fi';
 import AddEditNotes from '../../pages/Home/AddEditNotes';
-import Toast from '../ToastMessage/Toast';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
 
-const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, showToastMessage, onToggleMockPanel, onSummaryReceived }) => {
+const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, onToggleMockPanel, onSummaryReceived }) => {
   const closeTab = useTabsStore((state) => state.closeTab);
   const updateTabState = useTabsStore((state) => state.updateTabState);
 
@@ -33,7 +32,6 @@ const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, showToastMessage, onTo
       onUpdateTabState={handleUpdateTabState}
       onClose={handleClose}
       onSaveSuccess={handleSaveSuccess}
-      showToastMessage={showToastMessage}
       onToggleMockPanel={onToggleMockPanel}
       onSummaryReceived={onSummaryReceived}
     />
@@ -46,19 +44,11 @@ const GlobalEditorOverlay = () => {
   const activeTabId = useTabsStore((state) => state.activeTabId);
   const openTab = useTabsStore((state) => state.openTab);
   const closeTab = useTabsStore((state) => state.closeTab);
-  const tabToast = useTabsStore((state) => state.tabToast);
-  const hideTabToast = useTabsStore((state) => state.hideTabToast);
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
 
   const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
   const [panelContent, setPanelContent] = useState('');
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessageVisibility, setToastMessageVisibility] = useState({
-    isShown: false,
-    message: '',
-    type: 'add',
-  });
 
   const isEditorOpen = activeTabId !== 'home';
   const activeIndex = openTabs.findIndex((t) => t._id === activeTabId);
@@ -69,25 +59,6 @@ const GlobalEditorOverlay = () => {
     setIsMockPanelOpen(false);
     setPanelContent('');
   }, [activeTabId]);
-
-  const dismissTimerRef = useRef(null);
-
-  const showToastMessage = useCallback((message, type) => {
-    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
-    setToastMessageVisibility({ isShown: true, message, type });
-    setShowToast(true);
-  }, []);
-
-  const handleCloseToast = useCallback(() => {
-    setToastMessageVisibility((prev) => ({ ...prev, isShown: false }));
-    dismissTimerRef.current = setTimeout(() => setShowToast(false), 400);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
-    };
-  }, []);
 
   const handleNoteSaved = useCallback((tabId) => {
     closeTab(tabId, true);
@@ -102,7 +73,7 @@ const GlobalEditorOverlay = () => {
     setIsMockPanelOpen((prev) => !prev);
   }, []);
 
-  if (!isEditorOpen && openTabs.length === 0 && !tabToast?.isShown && !showToast) {
+  if (!isEditorOpen && openTabs.length === 0) {
     return null;
   }
 
@@ -209,7 +180,6 @@ const GlobalEditorOverlay = () => {
                 tab={activeTab}
                 isActive={true}
                 onNoteSaved={handleNoteSaved}
-                showToastMessage={showToastMessage}
                 onToggleMockPanel={handleToggleMockPanel}
                 onSummaryReceived={handleSummaryReceived}
               />
@@ -283,24 +253,6 @@ const GlobalEditorOverlay = () => {
             </AnimatePresence>
           </div>
         </div>
-      )}
-
-      {tabToast?.isShown && (
-        <Toast
-          isShown={tabToast.isShown}
-          message={tabToast.message}
-          type={tabToast.type}
-          onClose={hideTabToast}
-        />
-      )}
-
-      {showToast && (
-        <Toast
-          isShown={toastMessageVisibility.isShown}
-          message={toastMessageVisibility.message}
-          type={toastMessageVisibility.type}
-          onClose={handleCloseToast}
-        />
       )}
     </>
   );

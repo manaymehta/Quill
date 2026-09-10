@@ -1,13 +1,39 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import ForceGraph2D from 'react-force-graph-2d';
+import { useQueryClient } from '@tanstack/react-query';
+import axiosInstance from '../../utils/axiosInstance';
 import { useGraphNotesQuery } from '../../hooks/useNotesQuery';
 import { useUIStore } from '../../store/useUIStore';
+import { useFoldersStore } from '../../store/useFoldersStore';
+import { useTabsStore } from '../../store/useTabsStore';
+import { useToastStore } from '../../store/useToastStore';
+import { useDeleteNoteMutation, useArchiveNoteMutation } from '../../hooks/useNoteMutations';
 import { forceX, forceY, forceCollide } from 'd3-force';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MdLocalOffer, MdClose, MdCheck, MdOutlineArchive } from 'react-icons/md';
+import { 
+  MdLocalOffer, MdClose, MdCheck, MdOutlineArchive, 
+  MdOutlineUnarchive, MdEdit, MdDelete 
+} from 'react-icons/md';
 
 const Graph = () => {
   const fgRef = useRef();
+  const containerRef = useRef(null);
+  const queryClient = useQueryClient();
+  const { openTab } = useTabsStore();
+  const { showToast } = useToastStore();
+  const { activeDropdownNoteId, setActiveDropdownNoteId } = useFoldersStore();
+
+  const deleteNoteMutation = useDeleteNoteMutation();
+  const archiveNoteMutation = useArchiveNoteMutation();
+
+  const [graphMenuCoords, setGraphMenuCoords] = useState(null);
+  const hoveredNodeRef = useRef(null);
+  const longPressTimerRef = useRef(null);
+  const touchStartPosRef = useRef({ x: 0, y: 0 });
+  const isOpeningNodeRef = useRef(new Set());
+  const isLongPressJustEndedRef = useRef(false);
+
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const [includeArchived, setIncludeArchived] = useState(false);
   const { data: graphNotes = [] } = useGraphNotesQuery(includeArchived);
@@ -32,6 +58,34 @@ const Graph = () => {
       document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [isDropdownOpen]);
+
+  // Close node context menu on outside click or contextmenu
+  useEffect(() => {
+    if (!activeDropdownNoteId) return;
+    const handleOutside = (e) => {
+      if (isLongPressJustEndedRef.current) return;
+      if (e.target.closest('.context-menu-pop')) return;
+      setActiveDropdownNoteId(null);
+      setGraphMenuCoords(null);
+    };
+    document.addEventListener('click', handleOutside);
+    document.addEventListener('contextmenu', handleOutside);
+    return () => {
+      document.removeEventListener('click', handleOutside);
+      document.removeEventListener('contextmenu', handleOutside);
+    };
+  }, [activeDropdownNoteId, setActiveDropdownNoteId]);
+
+  // Cleanup mobile long-press timer and reset dropdown on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      useFoldersStore.getState().setActiveDropdownNoteId(null);
+    };
+  }, []);
 
   const [dimensions, setDimensions] = useState(() => {
     if (typeof window === 'undefined') return { width: 800, height: 600 };
@@ -161,13 +215,227 @@ const Graph = () => {
   };
 
   const handleNodeHover = (node) => {
+    hoveredNodeRef.current = node;
     if (activeSelectedTag) return;
     if (hoveredNode !== node) {
       setHoveredNode(node);
     }
   };
 
+  const handleOpenInEditor = async (node) => {
+    setActiveDropdownNoteId(null);
+    setGraphMenuCoords(null);
+
+    // Fast-path: check if note is already open in an active tab
+    const existingTab = useTabsStore.getState().openTabs.find((t) => t._id === node.id);
+    if (existingTab) {
+      openTab(existingTab);
+      return;
+    }
+
+    // 1. Search TanStack query cache for full note
+    const noteQueries = queryClient.getQueriesData({ queryKey: ['notes'] });
+    let fullNote = null;
+    for (const [, data] of noteQueries) {
+      if (Array.isArray(data)) {
+        const found = data.find((n) => n._id === node.id);
+        if (found && (found.content !== undefined || found.checklist !== undefined)) {
+          fullNote = found;
+          break;
+        }
+      }
+    }
+
+    if (fullNote) {
+      openTab(fullNote);
+      return;
+    }
+
+    // Guard against duplicate in-flight network requests on rapid clicks
+    if (isOpeningNodeRef.current.has(node.id)) return;
+    isOpeningNodeRef.current.add(node.id);
+
+    // 2. Fallback: fetch from GET /get-note/:nodeId
+    try {
+      const res = await axiosInstance.get(`/get-note/${node.id}`);
+      if (res.data && res.data.note) {
+        openTab(res.data.note);
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || "Failed to open note", "error");
+    } finally {
+      isOpeningNodeRef.current.delete(node.id);
+    }
+  };
+
+  const handleArchiveNote = (node) => {
+    setActiveDropdownNoteId(null);
+    setGraphMenuCoords(null);
+    archiveNoteMutation.mutate({ noteId: node.id, isArchived: !node.isArchived });
+  };
+
+  const handleDeleteNote = (node) => {
+    setActiveDropdownNoteId(null);
+    setGraphMenuCoords(null);
+    if (useTabsStore.getState().openTabs.some((t) => t._id === node.id)) {
+      showToast({
+        message: "Close the editor tab for this note before deleting.",
+        type: "warning",
+      });
+      return;
+    }
+    deleteNoteMutation.mutate(node.id);
+  };
+
+  // Mobile touch-and-hold (long-press) and desktop right-click on graph nodes
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handlePointerDown = (e) => {
+      // Mouse right-click is handled natively by container contextmenu listener; only listen for touch/pen
+      if (e.pointerType === 'mouse') return;
+
+      // Reset the long-press guard so outside-click and onBackgroundClick work normally again
+      isLongPressJustEndedRef.current = false;
+
+      touchStartPosRef.current = { x: e.clientX, y: e.clientY };
+
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+
+      longPressTimerRef.current = setTimeout(() => {
+        longPressTimerRef.current = null;
+        if (!fgRef.current?.graph2ScreenCoords) return;
+
+        const canvas = container.querySelector('canvas') || container;
+        const rect = canvas.getBoundingClientRect();
+        const touchCanvasX = touchStartPosRef.current.x - rect.left;
+        const touchCanvasY = touchStartPosRef.current.y - rect.top;
+
+        // Find target node whose projected screen position is closest to touch point
+        let closestNode = null;
+        let minDistance = Infinity;
+        const HIT_RADIUS = 28; // Comfortable touch target radius in screen pixels
+
+        for (const node of graphData.nodes) {
+          if (node.x == null || node.y == null) continue;
+          const screenCoords = fgRef.current.graph2ScreenCoords(node.x, node.y);
+          if (!screenCoords) continue;
+          const dist = Math.hypot(screenCoords.x - touchCanvasX, screenCoords.y - touchCanvasY);
+          if (dist <= HIT_RADIUS && dist < minDistance) {
+            minDistance = dist;
+            closestNode = node;
+          }
+        }
+
+        if (closestNode) {
+          flushSync(() => {
+            setGraphMenuCoords({ x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
+            setActiveDropdownNoteId(closestNode.id);
+          });
+          // Mark that a long-press just opened the menu. Both onBackgroundClick (fired by
+          // ForceGraph2D's internal pointerup listener) and the document 'click' outside-listener
+          // will see this flag and bail out. The flag is reset on the NEXT pointerdown — the
+          // user's next actual touch — instead of an arbitrary timer, matching NoteCard's philosophy.
+          isLongPressJustEndedRef.current = true;
+        }
+      }, 500);
+    };
+
+    const handlePointerMove = (e) => {
+      if (!longPressTimerRef.current) return;
+      const dx = Math.abs(e.clientX - touchStartPosRef.current.x);
+      const dy = Math.abs(e.clientY - touchStartPosRef.current.y);
+      // Abort pending long-press if finger moves more than 10px (user is dragging/panning, not holding)
+      if (dx > 10 || dy > 10) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    };
+
+    const handlePointerUp = () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    };
+
+    // Native desktop right-click on graph canvas:
+    // Only intercepts when clicking on a node. On empty canvas, default browser context menu appears naturally!
+    const handleContextMenu = (e) => {
+      if (e.target.closest('.context-menu-pop')) return;
+      if (!fgRef.current?.graph2ScreenCoords) return;
+
+      const canvas = container.querySelector('canvas') || container;
+      const rect = canvas.getBoundingClientRect();
+      const clickCanvasX = e.clientX - rect.left;
+      const clickCanvasY = e.clientY - rect.top;
+
+      let closestNode = null;
+      let minDistance = Infinity;
+      const HIT_RADIUS = 28;
+
+      for (const node of graphData.nodes) {
+        if (node.x == null || node.y == null) continue;
+        const screenCoords = fgRef.current.graph2ScreenCoords(node.x, node.y);
+        if (!screenCoords) continue;
+        const dist = Math.hypot(screenCoords.x - clickCanvasX, screenCoords.y - clickCanvasY);
+        if (dist <= HIT_RADIUS && dist < minDistance) {
+          minDistance = dist;
+          closestNode = node;
+        }
+      }
+
+      if (closestNode) {
+        e.preventDefault();
+        e.stopPropagation();
+        setGraphMenuCoords({ x: e.clientX, y: e.clientY });
+        setActiveDropdownNoteId(closestNode.id);
+      } else {
+        // Empty canvas right-click: close dropdown if open, but do NOT preventDefault
+        // This preserves native browser contextmenu everywhere by default.
+        if (useFoldersStore.getState().activeDropdownNoteId) {
+          setActiveDropdownNoteId(null);
+          setGraphMenuCoords(null);
+        }
+      }
+    };
+
+    container.addEventListener('pointerdown', handlePointerDown, { capture: true, passive: true });
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    window.addEventListener('pointerup', handlePointerUp, { passive: true });
+    window.addEventListener('pointercancel', handlePointerUp, { passive: true });
+    container.addEventListener('contextmenu', handleContextMenu);
+
+    return () => {
+      container.removeEventListener('pointerdown', handlePointerDown, { capture: true });
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+      container.removeEventListener('contextmenu', handleContextMenu);
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    };
+  }, [graphData.nodes, setActiveDropdownNoteId]);
+
+  const activeMenuNode = activeDropdownNoteId
+    ? graphData.nodes.find((n) => n.id === activeDropdownNoteId)
+    : null;
+
   const activeHoveredNode = (hoveredNode && graphData.nodes.some(n => n.id === hoveredNode.id)) ? hoveredNode : null;
+
+  const nodesById = useMemo(() => {
+    const map = new Map();
+    for (const node of graphData.nodes) {
+      map.set(node.id, node);
+    }
+    return map;
+  }, [graphData.nodes]);
 
   const highlightedNodes = useMemo(() => {
     if (activeSelectedTag) {
@@ -181,23 +449,19 @@ const Graph = () => {
       const set = new Set();
       set.add(activeHoveredNode);
       graphData.links.forEach(link => {
-        if (link.source === activeHoveredNode || link.target === activeHoveredNode) {
-          set.add(link.source);
-          set.add(link.target);
+        const sId = link.source?.id ?? link.source;
+        const tId = link.target?.id ?? link.target;
+        if (sId === activeHoveredNode.id || tId === activeHoveredNode.id) {
+          const sNode = typeof link.source === 'object' ? link.source : nodesById.get(sId);
+          const tNode = typeof link.target === 'object' ? link.target : nodesById.get(tId);
+          if (sNode) set.add(sNode);
+          if (tNode) set.add(tNode);
         }
       });
       return set;
     }
     return new Set();
-  }, [activeSelectedTag, activeHoveredNode, graphData]);
-
-  const nodesById = useMemo(() => {
-    const map = new Map();
-    for (const node of graphData.nodes) {
-      map.set(node.id, node);
-    }
-    return map;
-  }, [graphData.nodes]);
+  }, [activeSelectedTag, activeHoveredNode, graphData, nodesById]);
 
   const highlightedLinks = useMemo(() => {
     if (activeSelectedTag) {
@@ -216,7 +480,9 @@ const Graph = () => {
     if (activeHoveredNode) {
       const set = new Set();
       graphData.links.forEach(link => {
-        if (link.source === activeHoveredNode || link.target === activeHoveredNode) {
+        const sId = link.source?.id ?? link.source;
+        const tId = link.target?.id ?? link.target;
+        if (sId === activeHoveredNode.id || tId === activeHoveredNode.id) {
           set.add(link);
         }
       });
@@ -272,7 +538,11 @@ const Graph = () => {
   const navbarMargin = isMobile ? '-60px' : '-72px';
 
   return (
-    <div className={'bg-[#202124b5]'} style={{ width: '100%', height: dimensions.height, marginTop: navbarMargin, overflow: 'hidden', position: 'relative', cursor: activeHoveredNode ? 'pointer' : 'default' }}>
+    <div
+      ref={containerRef}
+      className={'bg-[#202124b5]'}
+      style={{ width: '100%', height: dimensions.height, marginTop: navbarMargin, overflow: 'hidden', position: 'relative', cursor: activeHoveredNode ? 'pointer' : 'default' }}
+    >
       <ForceGraph2D
         ref={fgRef}
         width={dimensions.width}
@@ -316,8 +586,31 @@ const Graph = () => {
           ctx.lineWidth = isHighlightedLink ? 3.5 : 0.8;
           ctx.stroke();
         }}
+        onZoom={() => {
+          if (useFoldersStore.getState().activeDropdownNoteId) {
+            queueMicrotask(() => {
+              if (useFoldersStore.getState().activeDropdownNoteId) {
+                setActiveDropdownNoteId(null);
+                setGraphMenuCoords(null);
+              }
+            });
+          }
+        }}
         onNodeHover={handleNodeHover}
+        onNodeClick={() => {
+          // Left click does nothing (per user requirement)
+        }}
+        onNodeDrag={() => {
+          if (isLongPressJustEndedRef.current) return;
+          if (activeDropdownNoteId) {
+            setActiveDropdownNoteId(null);
+            setGraphMenuCoords(null);
+          }
+        }}
         onBackgroundClick={() => {
+          if (isLongPressJustEndedRef.current) return;
+          setActiveDropdownNoteId(null);
+          setGraphMenuCoords(null);
           if (activeSelectedTag) handleTagClick(null);
         }}
         nodePointerAreaPaint={(node, color, ctx) => {
@@ -528,6 +821,64 @@ const Graph = () => {
           </AnimatePresence>
         </div>
       </div>
+
+      {activeMenuNode && graphMenuCoords && createPortal(
+        <div
+          style={(() => {
+            const menuWidth = 190;
+            const menuHeight = 140;
+            let finalX = graphMenuCoords.x;
+            if (finalX + menuWidth > window.innerWidth - 8) {
+              finalX = Math.max(8, window.innerWidth - menuWidth - 8);
+            }
+            finalX = Math.max(8, finalX);
+            let finalY = graphMenuCoords.y;
+            if (finalY + menuHeight > window.innerHeight - 8) {
+              finalY = Math.max(8, graphMenuCoords.y - menuHeight - 12);
+            }
+            finalY = Math.max(8, finalY);
+            return { position: 'fixed', left: `${finalX}px`, top: `${finalY}px`, zIndex: 9999 };
+          })()}
+          className="bg-[#1e1e20] py-1.5 rounded-2xl shadow-2xl flex flex-col min-w-[165px] max-w-[220px] w-max context-menu-pop no-card-click select-none border-0 outline-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => handleOpenInEditor(activeMenuNode)}
+            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.15] hover:text-white text-stone-300"
+          >
+            <MdEdit size={14} className="shrink-0" />
+            <span>Open in Editor Tab</span>
+          </button>
+
+          <div className="h-[1px] bg-white/[0.05] my-1 mx-2" />
+
+          <button
+            type="button"
+            onClick={() => handleArchiveNote(activeMenuNode)}
+            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.15] hover:text-white text-stone-300"
+          >
+            {activeMenuNode.isArchived ? (
+              <MdOutlineUnarchive size={14} className="shrink-0" />
+            ) : (
+              <MdOutlineArchive size={14} className="shrink-0" />
+            )}
+            <span>{activeMenuNode.isArchived ? 'Unarchive Note' : 'Archive Note'}</span>
+          </button>
+
+          <div className="h-[1px] bg-white/[0.05] my-1 mx-2" />
+
+          <button
+            type="button"
+            onClick={() => handleDeleteNote(activeMenuNode)}
+            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-red-500/20 hover:text-red-400 text-red-400"
+          >
+            <MdDelete size={14} className="shrink-0" />
+            <span>Move to Trash</span>
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

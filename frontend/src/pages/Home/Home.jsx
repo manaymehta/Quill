@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import AiSearchPanel from '../../components/Cards/AiSearchPanel';
-import Toast from '../../components/ToastMessage/Toast';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
+import { useToastStore } from '../../store/useToastStore';
 import { useHomeNotesQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
 import { buildFolderHierarchy } from '../../utils/folderHierarchy';
 import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
@@ -42,26 +42,15 @@ const Home = () => {
     return allNotes;
   }, [allNotes, searchMode, searchQuery]);
 
-  const [showToast, setShowToast] = useState(false);
   const [isAddingFolder, setIsAddingFolder] = useState(false);
   const { openFolderDeleteModal, openConfirmModal } = useModalStore();
-  const [toastMessageVisibility, setToastMessageVisibility] = useState({
-    isShown: false,
-    message: '',
-    type: 'add',
-  });
 
-  const showToastMessage = useCallback((message, type) => {
-    setToastMessageVisibility({ isShown: true, message, type });
-    setShowToast(true);
-  }, []);
-
-  const deleteNoteMutation = useDeleteNoteMutation(showToastMessage);
-  const archiveNoteMutation = useArchiveNoteMutation(showToastMessage);
-  const toggleHomePinMutation = useToggleHomePinMutation(showToastMessage);
-  const moveNoteMutation = useMoveNoteMutation(showToastMessage);
+  const deleteNoteMutation = useDeleteNoteMutation();
+  const archiveNoteMutation = useArchiveNoteMutation();
+  const toggleHomePinMutation = useToggleHomePinMutation();
+  const moveNoteMutation = useMoveNoteMutation();
   const checklistToggleMutation = useChecklistToggleMutation();
-  const editFolderMutation = useEditFolderMutation(showToastMessage);
+  const editFolderMutation = useEditFolderMutation();
 
   // Set search scope context
   useEffect(() => {
@@ -82,6 +71,13 @@ const Home = () => {
   };
 
   const handleDeleteNoteClick = (note) => {
+    if (useTabsStore.getState().openTabs.some((t) => t._id === note._id)) {
+      useToastStore.getState().showToast({
+        message: "Close the editor tab for this note before deleting.",
+        type: "warning",
+      });
+      return;
+    }
     openConfirmModal({
       title: "Delete note?",
       message: "This moves the note to Trash.",
@@ -118,18 +114,6 @@ const Home = () => {
     }
     checklistToggleMutation.mutate({ noteId: note._id, checklist: newChecklist });
   };
-
-  const handleCloseToast = useCallback(() => {
-    setToastMessageVisibility((prev) => ({ ...prev, isShown: false }));
-    setTimeout(() => setShowToast(false), 400);
-  }, []);
-
-  useEffect(() => {
-    if (toastMessageVisibility.isShown) {
-      const t = setTimeout(handleCloseToast, 3000);
-      return () => clearTimeout(t);
-    }
-  }, [toastMessageVisibility.isShown, handleCloseToast]);
 
   const handleEdit = useCallback((note) => openTab(note), [openTab]);
 
@@ -202,15 +186,6 @@ const Home = () => {
           />
         )}
       </div>
-
-      {showToast && (
-        <Toast
-          isShown={toastMessageVisibility.isShown}
-          message={toastMessageVisibility.message}
-          type={toastMessageVisibility.type}
-          onClose={handleCloseToast}
-        />
-      )}
     </div>
   );
 };

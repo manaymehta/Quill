@@ -2,39 +2,62 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosInstance from '../utils/axiosInstance';
 import { QUERY_KEYS } from './useNotesQuery';
 import { useTabsStore } from '../store/useTabsStore';
+import { useToastStore } from '../store/useToastStore';
 
 const hasEmbeddingIssue = (data) => ["failed", "partial"].includes(data?.embedding?.status);
 
-export const useDeleteNoteMutation = (showToast) => {
+export const useDeleteNoteMutation = (legacyShowToast) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (noteId) => {
+    mutationFn: async (variables) => {
+      const noteId = typeof variables === 'string' ? variables : variables?.noteId || variables?._id;
+      if (noteId && useTabsStore.getState().openTabs.some((t) => t._id === noteId)) {
+        useToastStore.getState().showToast({
+          message: "Close the editor tab for this note before deleting.",
+          type: "warning",
+        });
+        const err = new Error("NOTE_OPEN_IN_TAB");
+        err.suppressToast = true;
+        throw err;
+      }
       const response = await axiosInstance.delete(`/delete-note/${noteId}`);
       return response.data;
     },
     onSuccess: (data, variables) => {
-      const id = typeof variables === 'string' ? variables : variables?.noteId || variables?._id;
-      if (id) {
-        useTabsStore.getState().forceCloseTab(id);
-      }
-      if (showToast) {
-        const embeddingIssue = hasEmbeddingIssue(data);
-        showToast(
-          embeddingIssue
-            ? "Note moved to Trash. Embedding cleanup failed."
-            : "Note moved to Trash",
-          embeddingIssue ? "warning" : "delete"
-        );
-      }
+      const noteId = typeof variables === 'string' ? variables : variables?.noteId || variables?._id;
+      const embeddingIssue = hasEmbeddingIssue(data);
+      const message = embeddingIssue
+        ? "Note moved to Trash. Embedding cleanup failed."
+        : "Note moved to Trash";
+      const type = embeddingIssue ? "warning" : "delete";
+
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify({
+        message,
+        type,
+        onUndo: noteId
+          ? async () => {
+              try {
+                await axiosInstance.put(`/restore-note/${noteId}`);
+                queryClient.invalidateQueries({ queryKey: ['notes'] });
+              } catch (err) {
+                useToastStore.getState().showToast(err.response?.data?.message || "Failed to restore note", "error");
+              }
+            }
+          : null,
+      });
+
       queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
     onError: (error) => {
-      if (showToast) showToast(error.response?.data?.message || "Failed to delete note", "error");
+      if (error?.message === "NOTE_OPEN_IN_TAB" || error?.suppressToast) return;
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify(error.response?.data?.message || "Failed to delete note", "error");
     },
   });
 };
 
-export const useArchiveNoteMutation = (showToast) => {
+export const useArchiveNoteMutation = (legacyShowToast) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ noteId, isArchived }) => {
@@ -42,18 +65,32 @@ export const useArchiveNoteMutation = (showToast) => {
       return response.data;
     },
     onSuccess: (data, variables) => {
-      if (showToast) {
-        const message = `Note ${variables.isArchived ? "archived" : "unarchived"}`;
-        const embeddingIssue = hasEmbeddingIssue(data);
-        showToast(
-          embeddingIssue ? `${message}. Embedding update failed.` : message,
-          embeddingIssue ? "warning" : "success"
-        );
-      }
+      const isArchived = variables?.isArchived;
+      const noteId = variables?.noteId;
+      const message = `Note ${isArchived ? "archived" : "unarchived"}`;
+      const embeddingIssue = hasEmbeddingIssue(data);
+
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify({
+        message: embeddingIssue ? `${message}. Embedding update failed.` : message,
+        type: embeddingIssue ? "warning" : "success",
+        onUndo: noteId
+          ? async () => {
+              try {
+                await axiosInstance.put(`/update-note-archive/${noteId}`, { isArchived: !isArchived });
+                queryClient.invalidateQueries({ queryKey: ['notes'] });
+              } catch (err) {
+                useToastStore.getState().showToast(err.response?.data?.message || "Failed to reverse archive", "error");
+              }
+            }
+          : null,
+      });
+
       queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
     onError: (error) => {
-      if (showToast) showToast(error.response?.data?.message || "Failed to update note archive", "error");
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify(error.response?.data?.message || "Failed to update note archive", "error");
     },
   });
 };
@@ -71,32 +108,33 @@ export const useChecklistToggleMutation = () => {
   });
 };
 
-export const useToggleHomePinMutation = (showToast) => {
+export const useToggleHomePinMutation = (legacyShowToast) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ noteId, showInHome }) => {
-      const response = await axiosInstance.put(`/update-note-home-pin/${noteId}`, { showInHome });
+    mutationFn: async (variables) => {
+      const noteId = typeof variables === 'string' ? variables : variables?.noteId || variables?._id;
+      const response = await axiosInstance.put(`/toggle-home-pin/${noteId}`, {});
       return response.data;
     },
     onSuccess: (data, variables) => {
-      if (showToast) {
-        const message = `Note ${variables.showInHome ? "shown on" : "hidden from"} Home`;
-        const embeddingIssue = hasEmbeddingIssue(data);
-        showToast(
-          embeddingIssue ? `${message}. Embedding update failed.` : message,
-          embeddingIssue ? "warning" : "success"
-        );
-      }
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.HOME_NOTES });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ALL_NOTES });
+      const isPinned = data?.note?.showInHome ?? (typeof variables === 'object' ? variables.showInHome : true);
+      const message = `Note ${isPinned ? "shown on" : "hidden from"} Home`;
+      const embeddingIssue = hasEmbeddingIssue(data);
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify(
+        embeddingIssue ? `${message}. Embedding update failed.` : message,
+        embeddingIssue ? "warning" : "success"
+      );
+      queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
     onError: (error) => {
-      if (showToast) showToast(error.response?.data?.message || "Failed to toggle pin", "error");
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify(error.response?.data?.message || "Failed to toggle pin", "error");
     },
   });
 };
 
-export const useMoveNoteMutation = (showToast) => {
+export const useMoveNoteMutation = (legacyShowToast) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ noteId, targetFolderId }) => {
@@ -104,7 +142,8 @@ export const useMoveNoteMutation = (showToast) => {
       return response.data;
     },
     onSuccess: (data, variables) => {
-      if (showToast) showToast("Note moved successfully", "success");
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify("Note moved successfully", "success");
       if (variables?.noteId && variables?.targetFolderId !== undefined) {
         useTabsStore.getState().updateTabState(variables.noteId, { folderId: variables.targetFolderId });
       }
@@ -112,7 +151,8 @@ export const useMoveNoteMutation = (showToast) => {
       queryClient.invalidateQueries({ queryKey: ['folders'] });
     },
     onError: (error) => {
-      if (showToast) showToast(error.response?.data?.message || "Failed to move note", "error");
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify(error.response?.data?.message || "Failed to move note", "error");
     },
   });
 };
@@ -181,7 +221,7 @@ export const useReorderHomeNotesMutation = () => {
   });
 };
 
-export const useRestoreNoteMutation = (showToast) => {
+export const useRestoreNoteMutation = (legacyShowToast) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (noteId) => {
@@ -189,24 +229,24 @@ export const useRestoreNoteMutation = (showToast) => {
       return response.data;
     },
     onSuccess: (data) => {
-      if (showToast) {
-        const embeddingIssue = hasEmbeddingIssue(data);
-        showToast(
-          embeddingIssue
-            ? "Note restored. Embedding failed."
-            : "Note restored successfully",
-          embeddingIssue ? "warning" : "success"
-        );
-      }
+      const embeddingIssue = hasEmbeddingIssue(data);
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify(
+        embeddingIssue
+          ? "Note restored. Embedding failed."
+          : "Note restored successfully",
+        embeddingIssue ? "warning" : "success"
+      );
       queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
     onError: (error) => {
-      if (showToast) showToast(error.response?.data?.message || "Failed to restore note", "error");
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify(error.response?.data?.message || "Failed to restore note", "error");
     },
   });
 };
 
-export const useDeleteTrashNotePermanentMutation = (showToast) => {
+export const useDeleteTrashNotePermanentMutation = (legacyShowToast) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (noteId) => {
@@ -214,19 +254,19 @@ export const useDeleteTrashNotePermanentMutation = (showToast) => {
       return response.data;
     },
     onSuccess: (data) => {
-      if (showToast) {
-        const embeddingIssue = hasEmbeddingIssue(data);
-        showToast(
-          embeddingIssue
-            ? "Note deleted permanently. Embedding cleanup failed."
-            : "Note deleted permanently",
-          embeddingIssue ? "warning" : "delete"
-        );
-      }
+      const embeddingIssue = hasEmbeddingIssue(data);
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify(
+        embeddingIssue
+          ? "Note deleted permanently. Embedding cleanup failed."
+          : "Note deleted permanently",
+        embeddingIssue ? "warning" : "delete"
+      );
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.TRASH_NOTES });
     },
     onError: (error) => {
-      if (showToast) showToast(error.response?.data?.message || "Failed to permanently delete note", "error");
+      const notify = legacyShowToast || useToastStore.getState().showToast;
+      notify(error.response?.data?.message || "Failed to permanently delete note", "error");
     },
   });
 };

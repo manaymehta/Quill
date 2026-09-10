@@ -332,6 +332,37 @@ const getGraphNotes = async (req, res) => {
     }
 };
 
+const getNoteById = async (req, res) => {
+    const noteId = req.params.noteId;
+    const userId = req.user._id;
+
+    try {
+        const note = await Note.findOne({
+            _id: noteId,
+            userId,
+            isDeleted: { $ne: true },
+        })
+            .select(NOTE_LIST_FIELDS)
+            .lean();
+
+        if (!note) {
+            return res.status(404).json({ error: true, message: "Note not found" });
+        }
+
+        return res.json({
+            error: false,
+            message: "Note retrieved successfully",
+            note,
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            error: true,
+            message: "Internal Server Error",
+        });
+    }
+};
+
 const getHomeNotes = async (req, res) => {
     const userId = req.user._id;
 
@@ -881,6 +912,7 @@ const reorderHomeNotes = async (req, res) => {
 module.exports = {
     addNote,
     editNote,
+    getNoteById,
     getAllNotes,
     getGraphNotes,
     getHomeNotes,

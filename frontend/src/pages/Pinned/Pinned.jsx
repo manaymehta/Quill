@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import { useTabsStore } from '../../store/useTabsStore';
-import Toast from '../../components/ToastMessage/Toast';
+import { useToastStore } from '../../store/useToastStore';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { useHomeNotesQuery } from '../../hooks/useNotesQuery';
 import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation } from '../../hooks/useNoteMutations';
@@ -10,46 +10,26 @@ const Pinned = () => {
   const { data: homeNotes = [] } = useHomeNotesQuery();
   const allPinnedNotes = homeNotes.filter(n => Boolean(n.showInHome));
 
-  const [showToast, setShowToast] = useState(false);
   const { openTab } = useTabsStore();
   const { openConfirmModal } = useModalStore();
 
-  const [toastMessageVisibility, setToastMessageVisibility] = useState({
-    isShown: false,
-    message: "",
-    type: "add"
-  });
-
-  const showToastMessage = (message, type) => {
-    setToastMessageVisibility({ isShown: true, message, type });
-    setShowToast(true);
-  };
-
-  const deleteNoteMutation = useDeleteNoteMutation(showToastMessage);
-  const archiveNoteMutation = useArchiveNoteMutation(showToastMessage);
+  const deleteNoteMutation = useDeleteNoteMutation();
+  const archiveNoteMutation = useArchiveNoteMutation();
   const checklistToggleMutation = useChecklistToggleMutation();
-  const toggleHomePinMutation = useToggleHomePinMutation(showToastMessage);
-
-  const handleCloseToast = () => {
-    setToastMessageVisibility((prev) => ({ ...prev, isShown: false }));
-    setTimeout(() => {
-      setShowToast(false);
-    }, 400);
-  };
-
-  useEffect(() => {
-    if (toastMessageVisibility.isShown) {
-      setTimeout(() => {
-        handleCloseToast();
-      }, 3000);
-    }
-  }, [toastMessageVisibility.isShown]);
+  const toggleHomePinMutation = useToggleHomePinMutation();
 
   const handleEdit = (note) => {
     openTab(note);
   };
 
   const handleDeleteNoteClick = (note) => {
+    if (useTabsStore.getState().openTabs.some((t) => t._id === note._id)) {
+      useToastStore.getState().showToast({
+        message: "Close the editor tab for this note before deleting.",
+        type: "warning",
+      });
+      return;
+    }
     openConfirmModal({
       title: "Delete note?",
       message: "This moves the note to Trash.",
@@ -58,7 +38,7 @@ const Pinned = () => {
   };
 
   const handlePinToggle = (noteData) => {
-    toggleHomePinMutation.mutate(noteData._id);
+    toggleHomePinMutation.mutate({ noteId: noteData._id, showInHome: false });
   };
 
   const handleArchiveToggle = (note) => {
@@ -75,18 +55,22 @@ const Pinned = () => {
     }
   };
 
-  const handleChecklist = (note, index) => {
-    const newChecklist = [...(note.checklist || [])];
-    if (newChecklist[index]) {
-      newChecklist[index] = { ...newChecklist[index], completed: !newChecklist[index].completed };
-    }
-    checklistToggleMutation.mutate({ noteId: note._id, checklist: newChecklist });
+  const handleChecklist = (note, itemIndex) => {
+    if (!note || !note.checklist || !note.checklist[itemIndex]) return;
+    const updatedChecklist = note.checklist.map((item, index) => {
+      if (index === itemIndex) {
+        return { ...item, completed: !item.completed };
+      }
+      return item;
+    });
+
+    checklistToggleMutation.mutate({ noteId: note._id, checklist: updatedChecklist });
   };
 
   return (
-    <div className="relative min-h-0">
-      <div className="pb-24 px-2 md:px-4">
-        <NotesGrid
+    <div className=''>
+      <div className='max-w-[1400px] mx-auto px-4 md:px-12 pt-6 pb-28 md:pb-12'>
+        <NotesGrid 
           notes={allPinnedNotes}
           emptyMessage={"No Pinned Notes..."}
           onEdit={handleEdit}
@@ -97,17 +81,8 @@ const Pinned = () => {
           allowDrag={false}
         />
       </div>
-
-      {showToast && (
-        <Toast
-          isShown={toastMessageVisibility.isShown}
-          message={toastMessageVisibility.message}
-          type={toastMessageVisibility.type}
-          onClose={handleCloseToast}
-        />
-      )}
     </div>
-  )
-}
+  );
+};
 
-export default Pinned
+export default Pinned;

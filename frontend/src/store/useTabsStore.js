@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { editorRegistry } from '../utils/editorRegistry';
 import { useModalStore } from '../components/Modals/useModalStore';
+import { useToastStore } from './useToastStore';
 
 export const MAX_OPEN_TABS = 12;
 
@@ -10,10 +11,12 @@ export const useTabsStore = create((set, get) => ({
   tabToast: { isShown: false, message: '', type: 'error' },
 
   showTabToast: (message, type = 'error') => {
+    useToastStore.getState().showToast(message, type);
     set({ tabToast: { isShown: true, message, type } });
   },
 
   hideTabToast: () => {
+    useToastStore.getState().hideToast();
     set((state) => ({ tabToast: { ...state.tabToast, isShown: false } }));
   },
 

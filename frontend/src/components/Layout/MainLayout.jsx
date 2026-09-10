@@ -8,6 +8,7 @@ import { useUIStore } from "../../store/useUIStore";
 import { useTabsStore } from "../../store/useTabsStore";
 import TabDock from "../TabDock/TabDock";
 import GlobalEditorOverlay from "../Editor/GlobalEditorOverlay";
+import Toast from "../ToastMessage/Toast";
 import { useModalStore } from "../Modals/useModalStore";
 import ParticleBackground from "../Background/ParticleBackground";
 
@@ -85,6 +86,7 @@ const MainLayout = () => {
             <Sidebar ref={sidebarRef} />
 
             <TabDock />
+            <Toast />
             <ConfirmModal />
             <FolderDeleteModal />
         </div>
