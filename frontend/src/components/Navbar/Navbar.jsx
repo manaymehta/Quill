@@ -5,6 +5,7 @@ import SearchBar from '../Cards/SearchBar';
 import { FiMenu } from 'react-icons/fi';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
+import { useTabsStore } from '../../store/useTabsStore';
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -12,6 +13,7 @@ const Navbar = () => {
   const { isNavbarVisible, toggleSidebar } = useUIStore();
 
   const onLogout = () => {
+    useTabsStore.getState().resetTabs();
     logout();
     navigate('/');
   };

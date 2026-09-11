@@ -1,5 +1,6 @@
 import React, { memo, useState, useEffect, useRef, cloneElement } from 'react';
 import { createPortal, flushSync } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { 
@@ -66,6 +67,46 @@ const CARD_MD_COMPONENTS = {
 
 const PREVIEW_CHARS = 150;
 
+const shutterMenuVariants = {
+  closed: {
+    opacity: 0,
+    scaleY: 0.82,
+    y: -8,
+    transition: {
+      duration: 0.12,
+      ease: [0.4, 0, 1, 1],
+    },
+  },
+  open: {
+    opacity: 1,
+    scaleY: 1,
+    y: 0,
+    transition: {
+      duration: 0.16,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+};
+
+const shutterItemVariants = {
+  closed: {
+    opacity: 0,
+    y: -4,
+    transition: {
+      duration: 0.1,
+      ease: [0.4, 0, 1, 1],
+    },
+  },
+  open: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.15,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+};
+
 // ── Inner static rendering component ─────────────────────────────────────────
 const InnerNoteCard = memo(({
   id, title, content, tags, folder, folderId, isChecklist, checklist,
@@ -78,7 +119,7 @@ const InnerNoteCard = memo(({
   const [showMovePicker, setShowMovePicker] = useState(false);
   const observerTargetRef = useRef(null);
 
-  const { setActiveDropdownNoteId } = useFoldersStore();
+  const setActiveDropdownNoteId = useFoldersStore((s) => s.setActiveDropdownNoteId);
 
   useEffect(() => {
     const el = observerTargetRef.current;
@@ -116,28 +157,28 @@ const InnerNoteCard = memo(({
     }
   ] : [
     ...(folderId && folder && onToggleHome ? [{
-      label: showInHome ? "Remove from Home" : "Show in Home",
+      label: showInHome ? "Un Home" : "Home",
       icon: showInHome ? <MdHome size={14} className="text-[#e85d56]" /> : <MdOutlineHome size={14} />,
       onClick: () => onToggleHome && onToggleHome(),
       dividerBefore: false
     }] : []),
     ...(onMove ? [{
-      label: "Move to Folder...",
+      label: "Folder",
       icon: <MdOutlineFolder size={14} />,
       onClick: () => setShowMovePicker(true),
       dividerBefore: false
     }] : []),
     ...(onArchive ? [{
-      label: isArchived ? "Unarchive Note" : "Archive Note",
+      label: isArchived ? "Unarchive" : "Archive",
       icon: isArchived ? <MdOutlineUnarchive size={14} /> : <MdOutlineArchive size={14} />,
       onClick: () => onArchive && onArchive(),
       dividerBefore: false
     }] : []),
     ...(onDelete ? [{
-      label: "Move to Trash",
+      label: "Trash",
       icon: <MdDelete size={14} />,
       onClick: () => {
-        if (!isTrash && id && useTabsStore.getState().openTabs.some((t) => t._id === id)) {
+        if (!isTrash && id && useTabsStore.getState().isTabOpen(id)) {
           useToastStore.getState().showToast({
             message: "Close the editor tab for this note before deleting.",
             type: "warning",
@@ -179,51 +220,63 @@ const InnerNoteCard = memo(({
           )}
         </div>
 
-        {isMenuOpen && coords && createPortal(
-          <div
-            style={(() => {
-              const menuWidth = 175;
-              const menuHeight = isTrash ? 85 : 210;
-              let finalX = coords.x;
-              if (finalX + menuWidth > window.innerWidth - 8) {
-                finalX = Math.max(8, window.innerWidth - menuWidth - 8);
-              }
-              finalX = Math.max(8, finalX);
-              let finalY = coords.y;
-              if (finalY + menuHeight > window.innerHeight - 8) {
-                finalY = Math.max(8, coords.y - menuHeight - 12);
-              }
-              return { position: 'fixed', left: `${finalX}px`, top: `${finalY}px`, zIndex: 9999 };
-            })()}
-            className="bg-[#1e1e20] py-1.5 rounded-2xl shadow-2xl flex flex-col min-w-[165px] context-menu-pop no-card-click select-none border-0 outline-none"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {menuItems.map((item, idx) => (
-              <React.Fragment key={idx}>
-                {idx > 0 && (
-                  <div className="h-[1px] bg-white/[0.05] my-1 mx-2" />
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveDropdownNoteId(null);
-                    setCoords(null);
-                    item.onClick();
-                  }}
-                  className={`flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] ${
-                    item.variant === 'danger'
-                      ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
-                      : item.variant === 'success'
-                      ? 'hover:bg-emerald-500/20 hover:text-emerald-400 text-emerald-400'
-                      : 'hover:bg-white/[0.15] hover:text-white text-stone-300'
-                  }`}
-                >
-                  {cloneElement(item.icon, { className: "shrink-0" })}
-                  <span>{item.label}</span>
-                </button>
-              </React.Fragment>
-            ))}
-          </div>,
+        {(isMenuOpen || coords) && createPortal(
+          <AnimatePresence onExitComplete={() => setCoords(null)}>
+            {isMenuOpen && coords && (
+              <motion.div
+                key="note-context-menu"
+                initial="closed"
+                animate="open"
+                exit="closed"
+                variants={shutterMenuVariants}
+                style={(() => {
+                  const menuWidth = 175;
+                  const menuHeight = isTrash ? 85 : 210;
+                  const bottomMargin = window.innerWidth < 640 ? 76 : 8;
+                  let finalX = coords.x;
+                  if (finalX + menuWidth > window.innerWidth - 8) {
+                    finalX = Math.max(8, window.innerWidth - menuWidth - 8);
+                  }
+                  finalX = Math.max(8, finalX);
+                  let finalY = coords.y;
+                  if (finalY + menuHeight > window.innerHeight - bottomMargin) {
+                    finalY = Math.max(8, coords.y - menuHeight - 12);
+                  }
+                  return {
+                    position: 'fixed',
+                    left: `${finalX}px`,
+                    top: `${finalY}px`,
+                    zIndex: 9999,
+                    transformOrigin: 'top',
+                  };
+                })()}
+                className="bg-[#1e1e20] p-1 rounded-2xl shadow-2xl flex flex-col gap-[5px] min-w-[165px] no-card-click select-none border-0 outline-none overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {menuItems.map((item, idx) => (
+                  <motion.button
+                    key={idx}
+                    type="button"
+                    variants={shutterItemVariants}
+                    onClick={() => {
+                      setActiveDropdownNoteId(null);
+                      item.onClick();
+                    }}
+                    className={`flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full ${
+                      item.variant === 'danger'
+                        ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
+                        : item.variant === 'success'
+                        ? 'hover:bg-emerald-500/20 hover:text-emerald-400 text-emerald-400'
+                        : 'hover:bg-white/[0.15] hover:text-white text-stone-300'
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    {cloneElement(item.icon, { className: "shrink-0" })}
+                  </motion.button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>,
           document.body
         )}
 
@@ -361,7 +414,8 @@ const NoteCard = ({
     animateLayoutChanges,
   });
 
-  const { activeDropdownNoteId, setActiveDropdownNoteId } = useFoldersStore();
+  const activeDropdownNoteId = useFoldersStore((s) => s.activeDropdownNoteId);
+  const setActiveDropdownNoteId = useFoldersStore((s) => s.setActiveDropdownNoteId);
   const isMenuOpen = activeDropdownNoteId === id;
   const [coords, setCoords] = useState(null);
 
@@ -372,13 +426,11 @@ const NoteCard = ({
     if (activeDropdownNoteId !== id) return;
 
     const handleOutsideClick = (e) => {
-      if (e.target.closest?.('.context-menu-pop')) return;
+      if (e.target.closest?.('.no-card-click')) return;
       setActiveDropdownNoteId(null);
-      setCoords(null);
     };
     const handleScroll = () => {
       setActiveDropdownNoteId(null);
-      setCoords(null);
     };
 
     document.addEventListener('click', handleOutsideClick);
@@ -403,7 +455,6 @@ const NoteCard = ({
     e?.stopPropagation?.();
     if (isMenuOpen) {
       setActiveDropdownNoteId(null);
-      setCoords(null);
     } else {
       const rect = e.currentTarget.getBoundingClientRect();
       setCoords({ x: rect.left, y: rect.bottom + 8 });

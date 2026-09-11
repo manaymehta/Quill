@@ -3,6 +3,7 @@ import axiosInstance from '../utils/axiosInstance';
 import { QUERY_KEYS } from './useNotesQuery';
 import { useTabsStore } from '../store/useTabsStore';
 import { useToastStore } from '../store/useToastStore';
+import { editorRegistry } from '../utils/editorRegistry';
 
 const hasEmbeddingIssue = (data) => ["failed", "partial"].includes(data?.embedding?.status);
 
@@ -11,7 +12,7 @@ export const useDeleteNoteMutation = (legacyShowToast) => {
   return useMutation({
     mutationFn: async (variables) => {
       const noteId = typeof variables === 'string' ? variables : variables?.noteId || variables?._id;
-      if (noteId && useTabsStore.getState().openTabs.some((t) => t._id === noteId)) {
+      if (noteId && useTabsStore.getState().isTabOpen(noteId)) {
         useToastStore.getState().showToast({
           message: "Close the editor tab for this note before deleting.",
           type: "warning",
@@ -146,6 +147,11 @@ export const useMoveNoteMutation = (legacyShowToast) => {
       notify("Note moved successfully", "success");
       if (variables?.noteId && variables?.targetFolderId !== undefined) {
         useTabsStore.getState().updateTabState(variables.noteId, { folderId: variables.targetFolderId });
+        // Also update the baseline so isTabDirty doesn't flag a false dirty-state
+        const baseline = editorRegistry.getBaseline(variables.noteId);
+        if (baseline) {
+          editorRegistry.setBaseline(variables.noteId, { ...baseline, folderId: variables.targetFolderId });
+        }
       }
       queryClient.invalidateQueries({ queryKey: ['notes'] });
       queryClient.invalidateQueries({ queryKey: ['folders'] });
@@ -166,14 +172,13 @@ export const useReorderNotesMutation = () => {
     },
     onMutate: async ({ reorderedNotes, folderId }) => {
       const queryKey = folderId ? QUERY_KEYS.FOLDER_NOTES(folderId) : QUERY_KEYS.ALL_NOTES;
-      const cancelPromise = queryClient.cancelQueries({ queryKey });
+      await queryClient.cancelQueries({ queryKey });
       const previousNotes = queryClient.getQueryData(queryKey);
 
       if (reorderedNotes) {
         queryClient.setQueryData(queryKey, reorderedNotes);
       }
 
-      await cancelPromise;
       return { previousNotes, queryKey };
     },
     onError: (err, variables, context) => {

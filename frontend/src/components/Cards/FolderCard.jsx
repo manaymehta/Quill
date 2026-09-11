@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal, flushSync } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { MdEdit, MdDelete, MdPalette, MdFolder, MdOutlineFolder, MdRestore, MdDeleteForever, MdMoreVert } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
@@ -7,6 +8,46 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'];
+
+const shutterMenuVariants = {
+    closed: {
+        opacity: 0,
+        scaleY: 0.82,
+        y: -8,
+        transition: {
+            duration: 0.12,
+            ease: [0.4, 0, 1, 1],
+        },
+    },
+    open: {
+        opacity: 1,
+        scaleY: 1,
+        y: 0,
+        transition: {
+            duration: 0.16,
+            ease: [0.16, 1, 0.3, 1],
+        },
+    },
+};
+
+const shutterItemVariants = {
+    closed: {
+        opacity: 0,
+        y: -4,
+        transition: {
+            duration: 0.1,
+            ease: [0.4, 0, 1, 1],
+        },
+    },
+    open: {
+        opacity: 1,
+        y: 0,
+        transition: {
+            duration: 0.15,
+            ease: [0.16, 1, 0.3, 1],
+        },
+    },
+};
 
 const FolderCard = ({
     folder,
@@ -48,13 +89,11 @@ const FolderCard = ({
     useEffect(() => {
         if (activeDropdownFolderId !== folder._id) return;
         const handleOutsideClick = (e) => {
-            if (e.target.closest?.('.context-menu-pop')) return;
+            if (e.target.closest?.('.no-card-click')) return;
             setActiveDropdownFolderId(null);
-            setCoords(null);
         };
         const handleScroll = () => {
             setActiveDropdownFolderId(null);
-            setCoords(null);
         };
 
         document.addEventListener('click', handleOutsideClick);
@@ -101,7 +140,6 @@ const FolderCard = ({
             // Card is being dragged — close dropdown if open
             if (showDropdown) {
                 setActiveDropdownFolderId(null);
-                setCoords(null);
             }
             return;
         }
@@ -116,7 +154,6 @@ const FolderCard = ({
             }
             if (showDropdown) {
                 setActiveDropdownFolderId(null);
-                setCoords(null);
             }
         }
     };
@@ -164,11 +201,11 @@ const FolderCard = ({
     // Unified option menu configurations
     const menuItems = isTrash ? [
         { icon: <MdRestore size={13} />, label: "Restore", onClick: () => onRestore && onRestore(folder) },
-        { icon: <MdDeleteForever size={13} />, label: "Delete Forever", onClick: () => onDeletePermanent && onDeletePermanent(folder), danger: true }
+        { icon: <MdDeleteForever size={13} />, label: "Delete Forever", onClick: () => onDeletePermanent && onDeletePermanent(folder), danger: true, dividerBefore: true }
     ] : [
         { icon: <MdPalette size={13} />, label: "Color", onClick: () => setShowColorPicker(true) },
         { icon: <MdEdit size={13} />, label: "Rename", onClick: () => setIsEditing(true) },
-        { icon: <MdDelete size={13} />, label: "Delete", onClick: () => onDelete(folder), danger: true }
+        { icon: <MdDelete size={13} />, label: "Delete", onClick: () => onDelete(folder), danger: true, dividerBefore: true }
     ];
 
     const dragProps = isOverlay ? {} : { ...attributes, ...listeners };
@@ -255,7 +292,6 @@ const FolderCard = ({
                                     e.stopPropagation();
                                     if (showDropdown) {
                                         setActiveDropdownFolderId(null);
-                                        setCoords(null);
                                     } else {
                                         const rect = e.currentTarget.getBoundingClientRect();
                                         // Default: align menu start (left edge) with button position, expanding to the right
@@ -308,62 +344,63 @@ const FolderCard = ({
                 </div>
             </div>
 
-            {/* Viewport-Aware portal context menu */}
-            {showDropdown && coords && createPortal(
-                <div
-                    style={(() => {
-                        const menuWidth = 165;
-                        const menuHeight = isTrash ? 85 : 150;
-                        
-                        // Default to right of anchor point; flip left if it overflows right screen boundary
-                        let finalX = coords.x;
-                        if (finalX + menuWidth > window.innerWidth - 8) {
-                            finalX = Math.max(8, window.innerWidth - menuWidth - 8);
-                        }
-                        finalX = Math.max(8, finalX);
-                        
-                        // Ensure Y flips if bottom overflows screen
-                        let finalY = coords.y;
-                        if (finalY + menuHeight > window.innerHeight - 8) {
-                            finalY = Math.max(8, coords.y - menuHeight - 12);
-                        }
+            {/* Viewport-Aware Portal Context Menu */}
+            {(showDropdown || coords) && createPortal(
+                <AnimatePresence onExitComplete={() => setCoords(null)}>
+                    {showDropdown && coords && (
+                        <motion.div
+                            key="folder-context-menu"
+                            initial="closed"
+                            animate="open"
+                            exit="closed"
+                            variants={shutterMenuVariants}
+                            style={(() => {
+                                const menuWidth = 165;
+                                const menuHeight = isTrash ? 85 : 130;
+                                const bottomMargin = window.innerWidth < 640 ? 76 : 16;
+                                let finalX = coords.x;
+                                if (finalX + menuWidth > window.innerWidth - 8) {
+                                    finalX = Math.max(8, window.innerWidth - menuWidth - 8);
+                                }
+                                finalX = Math.max(8, finalX);
+                                
+                                // Ensure Y flips if bottom overflows screen
+                                let finalY = coords.y;
+                                if (finalY + menuHeight > window.innerHeight - bottomMargin) {
+                                    finalY = Math.max(8, coords.y - menuHeight - 12);
+                                }
 
-                        return {
-                            position: 'fixed',
-                            left: `${finalX}px`,
-                            top: `${finalY}px`,
-                            zIndex: 9999,
-                        };
-                    })()}
-                    className="bg-[#1e1e20] py-1.5 rounded-2xl shadow-2xl flex flex-col min-w-[165px] context-menu-pop no-card-click border-0 outline-none"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    {menuItems.map((item, idx) => (
-                        <React.Fragment key={idx}>
-                            {idx > 0 && (
-                                <div className="h-[1px] bg-white/[0.05] my-1 mx-2" />
-                            )}
-                            <button
-                                onClick={() => {
-                                    if (item.label !== "Color") {
+                                return {
+                                    position: 'fixed',
+                                    left: `${finalX}px`,
+                                    top: `${finalY}px`,
+                                    zIndex: 9999,
+                                    transformOrigin: 'top',
+                                };
+                            })()}
+                            className="bg-[#1e1e20] p-1 rounded-2xl shadow-2xl flex flex-col gap-[5px] min-w-[165px] no-card-click border-0 outline-none overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {menuItems.map((item, idx) => (
+                                <motion.button
+                                    key={idx}
+                                    variants={shutterItemVariants}
+                                    onClick={() => {
                                         setActiveDropdownFolderId(null);
-                                        setCoords(null);
-                                    } else {
-                                        setActiveDropdownFolderId(null);
-                                    }
-                                    item.onClick();
-                                }}
-                                className={`flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] ${item.danger
-                                    ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
-                                    : 'hover:bg-white/[0.15] hover:text-white text-stone-300'
-                                    }`}
-                            >
-                                {React.cloneElement(item.icon, { className: "shrink-0" })}
-                                <span>{item.label}</span>
-                            </button>
-                        </React.Fragment>
-                    ))}
-                </div>,
+                                        item.onClick();
+                                    }}
+                                    className={`flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full ${item.danger
+                                        ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
+                                        : 'hover:bg-white/[0.15] hover:text-white text-stone-300'
+                                        }`}
+                                >
+                                    <span>{item.label}</span>
+                                    {React.cloneElement(item.icon, { className: "shrink-0" })}
+                                </motion.button>
+                            ))}
+                        </motion.div>
+                    )}
+                </AnimatePresence>,
                 document.body
             )}
 
@@ -392,7 +429,7 @@ const FolderCard = ({
                             zIndex: 9999,
                         };
                     })()}
-                    className="bg-[#1e1e20] p-2 rounded-2xl shadow-2xl flex items-center space-x-2 z-[9999] no-card-click border-0 outline-none"
+                    className="bg-[#1e1e20] p-2 rounded-2xl shadow-2xl flex items-center space-x-2 z-[9999] no-card-click color-picker-pop border-0 outline-none"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {COLORS.map(c => (

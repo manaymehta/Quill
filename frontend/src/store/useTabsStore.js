@@ -8,16 +8,10 @@ export const MAX_OPEN_TABS = 12;
 export const useTabsStore = create((set, get) => ({
   openTabs: [], // list of note/draft objects
   activeTabId: 'home', // 'home' | noteId | 'draft-'
-  tabToast: { isShown: false, message: '', type: 'error' },
+  isTabOpen: (id) => Boolean(id && get().openTabs.some((t) => t._id === id)),
 
   showTabToast: (message, type = 'error') => {
     useToastStore.getState().showToast(message, type);
-    set({ tabToast: { isShown: true, message, type } });
-  },
-
-  hideTabToast: () => {
-    useToastStore.getState().hideToast();
-    set((state) => ({ tabToast: { ...state.tabToast, isShown: false } }));
   },
 
   setActiveTab: (id) => set({ activeTabId: id }),
@@ -119,5 +113,11 @@ export const useTabsStore = create((set, get) => ({
     set({
       openTabs: get().openTabs.map((t) => (t._id === id ? { ...t, ...patch } : t)),
     });
+  },
+
+  // Close all tabs and clean up registry — call on logout
+  resetTabs: () => {
+    get().openTabs.forEach((t) => editorRegistry.cleanupTab(t._id));
+    set({ openTabs: [], activeTabId: 'home' });
   },
 }));

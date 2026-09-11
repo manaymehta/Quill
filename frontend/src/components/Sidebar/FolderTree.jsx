@@ -4,13 +4,53 @@ import { useUIStore } from '../../store/useUIStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useModalStore } from '../Modals/useModalStore';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import { buildFolderHierarchy } from '../../utils/folderHierarchy';
 import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdEdit, MdDelete, MdPalette, MdFolder, MdFolderOpen } from 'react-icons/md';
 
 const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'];
+
+const shutterMenuVariants = {
+    closed: {
+        opacity: 0,
+        scaleY: 0.82,
+        y: -8,
+        transition: {
+            duration: 0.12,
+            ease: [0.4, 0, 1, 1],
+        },
+    },
+    open: {
+        opacity: 1,
+        scaleY: 1,
+        y: 0,
+        transition: {
+            duration: 0.16,
+            ease: [0.16, 1, 0.3, 1],
+        },
+    },
+};
+
+const shutterItemVariants = {
+    closed: {
+        opacity: 0,
+        y: -4,
+        transition: {
+            duration: 0.1,
+            ease: [0.4, 0, 1, 1],
+        },
+    },
+    open: {
+        opacity: 1,
+        y: 0,
+        transition: {
+            duration: 0.15,
+            ease: [0.16, 1, 0.3, 1],
+        },
+    },
+};
 
 // Row variants — children inherit timing from parent stagger
 const rowVariants = {
@@ -28,6 +68,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
     const [nameVal, setNameVal] = useState(folder.name);
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [contextMenu, setContextMenu] = useState(null);
+    const [closingMenuCoords, setClosingMenuCoords] = useState(null);
 
     const hasChildren = hierarchy ? hierarchy.hasChildren(folder._id) : false;
     const isActive = activeFolderId === folder._id;
@@ -67,6 +108,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
                         e.preventDefault();
                         e.stopPropagation();
                         setContextMenu({ x: e.clientX, y: e.clientY });
+                        setClosingMenuCoords({ x: e.clientX, y: e.clientY });
                     }
                 }}
                 className={`flex items-center justify-between h-10 w-full rounded-lg cursor-pointer transition-colors duration-150 ${isActive ? 'bg-[#4c2f2e] text-[#e85d56]' : 'text-gray-300 hover:bg-[#282a2d]'} select-none`}
@@ -105,71 +147,84 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
             </div>
 
             {/* Context Menu inside React Portal */}
-            {contextMenu && createPortal(
-                <>
-                    <div
-                        className="fixed inset-0 z-[9998]"
-                        onClick={() => setContextMenu(null)}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
-                    />
-                    <div
-                        style={(() => {
-                            const menuWidth = 160;
-                            const menuHeight = 130;
-                            let finalX = contextMenu.x;
-                            let finalY = contextMenu.y;
-                            let originX = 'left';
-                            let originY = 'top';
+            {(contextMenu || closingMenuCoords) && createPortal(
+                <AnimatePresence onExitComplete={() => setClosingMenuCoords(null)}>
+                    {contextMenu && (
+                        <>
+                            <motion.div
+                                key="tree-backdrop"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.12 }}
+                                className="fixed inset-0 z-[9998]"
+                                onClick={() => setContextMenu(null)}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+                            />
+                            <motion.div
+                                key="tree-context-menu"
+                                initial="closed"
+                                animate="open"
+                                exit="closed"
+                                variants={shutterMenuVariants}
+                                style={(() => {
+                                    const coords = contextMenu || closingMenuCoords;
+                                    const menuWidth = 160;
+                                    const menuHeight = 130;
+                                    let finalX = coords.x;
+                                    let finalY = coords.y;
 
-                            if (contextMenu.x + menuWidth > window.innerWidth) {
-                                finalX = Math.max(8, contextMenu.x - menuWidth);
-                                originX = 'right';
-                            }
-                            if (contextMenu.y + menuHeight > window.innerHeight) {
-                                finalY = Math.max(8, contextMenu.y - menuHeight);
-                                originY = 'bottom';
-                            }
+                                    if (coords.x + menuWidth > window.innerWidth) {
+                                        finalX = Math.max(8, coords.x - menuWidth);
+                                    }
+                                    if (coords.y + menuHeight > window.innerHeight) {
+                                        finalY = Math.max(8, coords.y - menuHeight);
+                                    }
 
-                            return {
-                                position: 'fixed',
-                                left: `${finalX}px`,
-                                top: `${finalY}px`,
-                                transformOrigin: `${originY} ${originX}`,
-                                zIndex: 9999,
-                            };
-                        })()}
-                        className="bg-[#1e1e20] py-1.5 rounded-2xl shadow-2xl flex flex-col min-w-[160px] context-menu-pop border-0 outline-none"
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                    >
-                        <div className="px-3 pb-1 pt-0.5 text-[10px] font-semibold text-stone-500 uppercase tracking-widest select-none">
-                            Folder Options
-                        </div>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setContextMenu(null); setIsEditing(true); }}
-                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.09] hover:text-white text-stone-300"
-                        >
-                            <MdEdit size={13} />
-                            Rename
-                        </button>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setContextMenu(null); setShowColorPicker(true); }}
-                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.09] hover:text-white text-stone-300"
-                        >
-                            <MdPalette size={13} />
-                            Color
-                        </button>
-                        <div className="h-[1px] bg-white/[0.06] mx-0 my-1" />
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setContextMenu(null); openFolderDeleteModal(folder); }}
-                            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-red-500/15 hover:text-red-400 text-red-400"
-                        >
-                            <MdDelete size={13} />
-                            Delete
-                        </button>
-                    </div>
-                </>,
+                                    return {
+                                        position: 'fixed',
+                                        left: `${finalX}px`,
+                                        top: `${finalY}px`,
+                                        transformOrigin: 'top',
+                                        zIndex: 9999,
+                                    };
+                                })()}
+                                className="bg-[#1e1e20] p-1 rounded-2xl shadow-2xl flex flex-col gap-[5px] min-w-[160px] no-card-click border-0 outline-none overflow-hidden"
+                                onClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                            >
+                                <motion.div variants={shutterItemVariants} className="px-2 pb-1 pt-0.5 text-[10px] font-semibold text-stone-500 uppercase tracking-widest select-none">
+                                    Folder Options
+                                </motion.div>
+                                <motion.button
+                                    variants={shutterItemVariants}
+                                    onClick={(e) => { e.stopPropagation(); setContextMenu(null); setIsEditing(true); }}
+                                    className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-white/[0.09] hover:text-white text-stone-300"
+                                >
+                                    <span>Rename</span>
+                                    <MdEdit size={13} className="shrink-0" />
+                                </motion.button>
+                                <motion.button
+                                    variants={shutterItemVariants}
+                                    onClick={(e) => { e.stopPropagation(); setContextMenu(null); setShowColorPicker(true); }}
+                                    className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-white/[0.09] hover:text-white text-stone-300"
+                                >
+                                    <span>Color</span>
+                                    <MdPalette size={13} className="shrink-0" />
+                                </motion.button>
+                                <motion.button
+                                    variants={shutterItemVariants}
+                                    onClick={(e) => { e.stopPropagation(); setContextMenu(null); openFolderDeleteModal(folder); }}
+                                    className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-red-500/15 hover:text-red-400 text-red-400"
+                                >
+                                    <span>Delete</span>
+                                    <MdDelete size={13} className="shrink-0" />
+                                </motion.button>
+                            </motion.div>
+                        </>
+                    )}
+                </AnimatePresence>,
                 document.body
             )}
 

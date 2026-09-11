@@ -23,7 +23,7 @@ const Pinned = () => {
   };
 
   const handleDeleteNoteClick = (note) => {
-    if (useTabsStore.getState().openTabs.some((t) => t._id === note._id)) {
+    if (useTabsStore.getState().isTabOpen(note._id)) {
       useToastStore.getState().showToast({
         message: "Close the editor tab for this note before deleting.",
         type: "warning",

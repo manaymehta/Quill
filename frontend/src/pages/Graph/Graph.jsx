@@ -16,6 +16,46 @@ import {
   MdOutlineUnarchive, MdEdit, MdDelete 
 } from 'react-icons/md';
 
+const shutterMenuVariants = {
+  closed: {
+    opacity: 0,
+    scaleY: 0.92,
+    y: -6,
+    transition: {
+      duration: 0.14,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+  open: {
+    opacity: 1,
+    scaleY: 1,
+    y: 0,
+    transition: {
+      duration: 0.16,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+};
+
+const shutterItemVariants = {
+  closed: {
+    opacity: 0,
+    y: -4,
+    transition: {
+      duration: 0.14,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+  open: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.16,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  },
+};
+
 const Graph = () => {
   const fgRef = useRef();
   const containerRef = useRef(null);
@@ -28,6 +68,7 @@ const Graph = () => {
   const archiveNoteMutation = useArchiveNoteMutation();
 
   const [graphMenuCoords, setGraphMenuCoords] = useState(null);
+  const [selectedMenuNode, setSelectedMenuNode] = useState(null);
   const hoveredNodeRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const touchStartPosRef = useRef({ x: 0, y: 0 });
@@ -64,9 +105,8 @@ const Graph = () => {
     if (!activeDropdownNoteId) return;
     const handleOutside = (e) => {
       if (isLongPressJustEndedRef.current) return;
-      if (e.target.closest('.context-menu-pop')) return;
+      if (e.target.closest('.no-card-click')) return;
       setActiveDropdownNoteId(null);
-      setGraphMenuCoords(null);
     };
     document.addEventListener('click', handleOutside);
     document.addEventListener('contextmenu', handleOutside);
@@ -224,7 +264,6 @@ const Graph = () => {
 
   const handleOpenInEditor = async (node) => {
     setActiveDropdownNoteId(null);
-    setGraphMenuCoords(null);
 
     // Fast-path: check if note is already open in an active tab
     const existingTab = useTabsStore.getState().openTabs.find((t) => t._id === node.id);
@@ -270,14 +309,12 @@ const Graph = () => {
 
   const handleArchiveNote = (node) => {
     setActiveDropdownNoteId(null);
-    setGraphMenuCoords(null);
     archiveNoteMutation.mutate({ noteId: node.id, isArchived: !node.isArchived });
   };
 
   const handleDeleteNote = (node) => {
     setActiveDropdownNoteId(null);
-    setGraphMenuCoords(null);
-    if (useTabsStore.getState().openTabs.some((t) => t._id === node.id)) {
+    if (useTabsStore.getState().isTabOpen(node.id)) {
       showToast({
         message: "Close the editor tab for this note before deleting.",
         type: "warning",
@@ -293,11 +330,11 @@ const Graph = () => {
     if (!container) return;
 
     const handlePointerDown = (e) => {
+      // Reset the long-press guard on ANY pointer down (touch or mouse) so outside-click works reliably
+      isLongPressJustEndedRef.current = false;
+
       // Mouse right-click is handled natively by container contextmenu listener; only listen for touch/pen
       if (e.pointerType === 'mouse') return;
-
-      // Reset the long-press guard so outside-click and onBackgroundClick work normally again
-      isLongPressJustEndedRef.current = false;
 
       touchStartPosRef.current = { x: e.clientX, y: e.clientY };
 
@@ -334,6 +371,7 @@ const Graph = () => {
         if (closestNode) {
           flushSync(() => {
             setGraphMenuCoords({ x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
+            setSelectedMenuNode(closestNode);
             setActiveDropdownNoteId(closestNode.id);
           });
           // Mark that a long-press just opened the menu. Both onBackgroundClick (fired by
@@ -366,7 +404,7 @@ const Graph = () => {
     // Native desktop right-click on graph canvas:
     // Only intercepts when clicking on a node. On empty canvas, default browser context menu appears naturally!
     const handleContextMenu = (e) => {
-      if (e.target.closest('.context-menu-pop')) return;
+      if (e.target.closest('.no-card-click')) return;
       if (!fgRef.current?.graph2ScreenCoords) return;
 
       const canvas = container.querySelector('canvas') || container;
@@ -393,13 +431,13 @@ const Graph = () => {
         e.preventDefault();
         e.stopPropagation();
         setGraphMenuCoords({ x: e.clientX, y: e.clientY });
+        setSelectedMenuNode(closestNode);
         setActiveDropdownNoteId(closestNode.id);
       } else {
         // Empty canvas right-click: close dropdown if open, but do NOT preventDefault
         // This preserves native browser contextmenu everywhere by default.
         if (useFoldersStore.getState().activeDropdownNoteId) {
           setActiveDropdownNoteId(null);
-          setGraphMenuCoords(null);
         }
       }
     };
@@ -423,11 +461,45 @@ const Graph = () => {
     };
   }, [graphData.nodes, setActiveDropdownNoteId]);
 
-  const activeMenuNode = activeDropdownNoteId
-    ? graphData.nodes.find((n) => n.id === activeDropdownNoteId)
-    : null;
+  const activeNodeInGraph = selectedMenuNode ? graphData.nodes.find((n) => n.id === selectedMenuNode.id) : null;
+  const currentMenuNode = activeNodeInGraph || selectedMenuNode;
+  const isMenuOpen = Boolean(activeDropdownNoteId && currentMenuNode && activeDropdownNoteId === currentMenuNode.id);
 
-  const activeHoveredNode = (hoveredNode && graphData.nodes.some(n => n.id === hoveredNode.id)) ? hoveredNode : null;
+  const menuTargetNode = (graphMenuCoords && activeNodeInGraph) ? activeNodeInGraph : null;
+  const activeHoveredNode = menuTargetNode || ((hoveredNode && graphData.nodes.some(n => n.id === hoveredNode.id)) ? hoveredNode : null);
+
+  const menuStyle = useMemo(() => {
+    if (!graphMenuCoords) return null;
+
+    const menuWidth = 160;
+    const menuHeight = 155;
+    const screenWidth = typeof window !== 'undefined' ? window.innerWidth : dimensions.width;
+    const screenHeight = typeof window !== 'undefined' ? window.innerHeight : dimensions.height;
+    const isMobile = screenWidth < 640;
+    const bottomMargin = isMobile ? 76 : 16;
+
+    let finalX = Math.round(graphMenuCoords.x);
+    if (finalX + menuWidth > screenWidth - 8) {
+      finalX = Math.max(8, screenWidth - menuWidth - 8);
+    }
+    finalX = Math.max(8, finalX);
+
+    let finalY = Math.round(graphMenuCoords.y);
+    if (finalY + menuHeight > screenHeight - bottomMargin) {
+      finalY = Math.max(8, Math.round(graphMenuCoords.y) - menuHeight - 12);
+    }
+    finalY = Math.max(8, finalY);
+
+    return {
+      position: 'fixed',
+      left: `${finalX}px`,
+      top: `${finalY}px`,
+      zIndex: 9999,
+      transformOrigin: 'top',
+      willChange: 'transform, opacity',
+      backfaceVisibility: 'hidden',
+    };
+  }, [graphMenuCoords, dimensions.width, dimensions.height]);
 
   const nodesById = useMemo(() => {
     const map = new Map();
@@ -586,12 +658,14 @@ const Graph = () => {
           ctx.lineWidth = isHighlightedLink ? 3.5 : 0.8;
           ctx.stroke();
         }}
+        // Canvas interactions dismiss the menu by clearing activeDropdownNoteId.
+        // Coordinate cleanup (graphMenuCoords, selectedMenuNode) is deferred to
+        // AnimatePresence.onExitComplete to allow the shutter closing animation to finish.
         onZoom={() => {
           if (useFoldersStore.getState().activeDropdownNoteId) {
             queueMicrotask(() => {
               if (useFoldersStore.getState().activeDropdownNoteId) {
                 setActiveDropdownNoteId(null);
-                setGraphMenuCoords(null);
               }
             });
           }
@@ -604,13 +678,11 @@ const Graph = () => {
           if (isLongPressJustEndedRef.current) return;
           if (activeDropdownNoteId) {
             setActiveDropdownNoteId(null);
-            setGraphMenuCoords(null);
           }
         }}
         onBackgroundClick={() => {
           if (isLongPressJustEndedRef.current) return;
           setActiveDropdownNoteId(null);
-          setGraphMenuCoords(null);
           if (activeSelectedTag) handleTagClick(null);
         }}
         nodePointerAreaPaint={(node, color, ctx) => {
@@ -662,8 +734,10 @@ const Graph = () => {
           const textAlpha = hasHighlight
             ? isHovered ? anim.opacity : isHighlighted ? anim.opacity * 0.85 : anim.opacity * 0.5
             : 0.8;
-          ctx.fillStyle = `rgba(255, 255, 255, ${textAlpha})`;
-          ctx.fillText(node.name, node.x, node.y + anim.radius + 2);
+          if (activeDropdownNoteId !== node.id) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${textAlpha})`;
+            ctx.fillText(node.name, node.x, node.y + anim.radius + 2);
+          }
         }}
       />
 
@@ -822,61 +896,66 @@ const Graph = () => {
         </div>
       </div>
 
-      {activeMenuNode && graphMenuCoords && createPortal(
-        <div
-          style={(() => {
-            const menuWidth = 190;
-            const menuHeight = 140;
-            let finalX = graphMenuCoords.x;
-            if (finalX + menuWidth > window.innerWidth - 8) {
-              finalX = Math.max(8, window.innerWidth - menuWidth - 8);
-            }
-            finalX = Math.max(8, finalX);
-            let finalY = graphMenuCoords.y;
-            if (finalY + menuHeight > window.innerHeight - 8) {
-              finalY = Math.max(8, graphMenuCoords.y - menuHeight - 12);
-            }
-            finalY = Math.max(8, finalY);
-            return { position: 'fixed', left: `${finalX}px`, top: `${finalY}px`, zIndex: 9999 };
-          })()}
-          className="bg-[#1e1e20] py-1.5 rounded-2xl shadow-2xl flex flex-col min-w-[165px] max-w-[220px] w-max context-menu-pop no-card-click select-none border-0 outline-none"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={() => handleOpenInEditor(activeMenuNode)}
-            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.15] hover:text-white text-stone-300"
-          >
-            <MdEdit size={14} className="shrink-0" />
-            <span>Open in Editor Tab</span>
-          </button>
+      {(isMenuOpen || graphMenuCoords) && graphMenuCoords && currentMenuNode && createPortal(
+        <AnimatePresence onExitComplete={() => { setGraphMenuCoords(null); setSelectedMenuNode(null); }}>
+          {isMenuOpen && (
+            <motion.div
+              key="graph-context-menu"
+              initial="closed"
+              animate="open"
+              exit="closed"
+              variants={shutterMenuVariants}
+              style={menuStyle}
+              className="bg-[#1e1e20] p-1 rounded-2xl shadow-2xl flex flex-col gap-[5px] w-[160px] min-w-[160px] max-w-[160px] no-card-click select-none border-0 outline-none overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Node name on top */}
+              <motion.div
+                variants={shutterItemVariants}
+                title={currentMenuNode.name || 'Untitled Note'}
+                className="px-2 pt-1 pb-0.5 text-[13px] font-medium text-stone-400 truncate w-full"
+              >
+                {currentMenuNode.name || 'Untitled Note'}
+              </motion.div>
 
-          <div className="h-[1px] bg-white/[0.05] my-1 mx-2" />
+              <motion.div variants={shutterItemVariants} className="h-[1px] bg-white/[0.05] -my-[2px] mx-1" />
 
-          <button
-            type="button"
-            onClick={() => handleArchiveNote(activeMenuNode)}
-            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-white/[0.15] hover:text-white text-stone-300"
-          >
-            {activeMenuNode.isArchived ? (
-              <MdOutlineUnarchive size={14} className="shrink-0" />
-            ) : (
-              <MdOutlineArchive size={14} className="shrink-0" />
-            )}
-            <span>{activeMenuNode.isArchived ? 'Unarchive Note' : 'Archive Note'}</span>
-          </button>
+              <motion.button
+                variants={shutterItemVariants}
+                type="button"
+                onClick={() => handleOpenInEditor(currentMenuNode)}
+                className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-white/[0.15] hover:text-white text-stone-300"
+              >
+                <span>Open Note</span>
+                <MdEdit size={14} className="shrink-0" />
+              </motion.button>
 
-          <div className="h-[1px] bg-white/[0.05] my-1 mx-2" />
+              <motion.button
+                variants={shutterItemVariants}
+                type="button"
+                onClick={() => handleArchiveNote(currentMenuNode)}
+                className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-white/[0.15] hover:text-white text-stone-300"
+              >
+                <span>{currentMenuNode.isArchived ? 'Unarchive' : 'Archive'}</span>
+                {currentMenuNode.isArchived ? (
+                  <MdOutlineUnarchive size={14} className="shrink-0" />
+                ) : (
+                  <MdOutlineArchive size={14} className="shrink-0" />
+                )}
+              </motion.button>
 
-          <button
-            type="button"
-            onClick={() => handleDeleteNote(activeMenuNode)}
-            className="flex items-center gap-2 mx-1 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-[calc(100%-8px)] hover:bg-red-500/20 hover:text-red-400 text-red-400"
-          >
-            <MdDelete size={14} className="shrink-0" />
-            <span>Move to Trash</span>
-          </button>
-        </div>,
+              <motion.button
+                variants={shutterItemVariants}
+                type="button"
+                onClick={() => handleDeleteNote(currentMenuNode)}
+                className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-red-500/20 hover:text-red-400 text-red-400"
+              >
+                <span>Trash</span>
+                <MdDelete size={14} className="shrink-0" />
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>,
         document.body
       )}
     </div>

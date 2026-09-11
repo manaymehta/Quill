@@ -4,48 +4,44 @@ import { LuCheck } from 'react-icons/lu';
 import { MdDeleteOutline, MdWarningAmber, MdErrorOutline, MdClose } from 'react-icons/md';
 import { useToastStore } from '../../store/useToastStore';
 
-const Toast = ({ isShown: propIsShown, message: propMessage, type: propType, onClose: propOnClose, onUndo: propOnUndo }) => {
-  const storeToast = useToastStore((state) => state.toast);
+const Toast = () => {
+  const toast = useToastStore((state) => state.toast);
   const hideToast = useToastStore((state) => state.hideToast);
 
-  // Store last active toast during exit animation without accessing refs in render
-  const [prevToast, setPrevToast] = useState(null);
-  const [cachedToast, setCachedToast] = useState(null);
   const [undoneToastId, setUndoneToastId] = useState(null);
 
-  if (storeToast !== prevToast) {
-    setPrevToast(storeToast);
-    if (storeToast) {
-      setCachedToast(storeToast);
+  const isDelete = toast?.type === 'delete';
+  const isError = toast?.type === 'error';
+  const isWarning = toast?.type === 'warning';
+
+  const isUndone = Boolean(toast?.id && undoneToastId === toast.id);
+
+  const handleUndo = async () => {
+    if (isUndone || !toast?.onUndo) return;
+    const currentToastId = toast.id;
+    if (currentToastId) {
+      setUndoneToastId(currentToastId);
     }
-  }
-
-  // If props are provided, use them; otherwise use storeToast (or cachedToast during exit animation)
-  const isControlled = typeof propIsShown !== 'undefined';
-  const isShown = isControlled ? Boolean(propIsShown) : Boolean(storeToast);
-
-  const activeToast = isControlled
-    ? { message: propMessage, type: propType, onUndo: propOnUndo }
-    : (storeToast || cachedToast);
-
-  const message = activeToast?.message;
-  const type = activeToast?.type;
-  const onUndo = activeToast?.onUndo;
-  const handleClose = isControlled ? (propOnClose || (() => {})) : hideToast;
-
-  const isDelete = type === 'delete';
-  const isError = type === 'error';
-  const isWarning = type === 'warning';
-
-  const toastKey = isControlled ? 'controlled' : (storeToast?.id || cachedToast?.id || 'toast');
-  const isUndone = Boolean(activeToast?.id && undoneToastId === activeToast.id);
+    try {
+      await Promise.resolve(toast.onUndo());
+    } catch (err) {
+      console.error("Toast undo error:", err);
+    } finally {
+      // Only hide if no new toast has been shown since we started the undo.
+      // onUndo() may call showToast() to display an error; we must not erase it.
+      const currentState = useToastStore.getState();
+      if (!currentState.toast || currentState.toast.id === currentToastId) {
+        hideToast();
+      }
+    }
+  };
 
   return (
     <div className="fixed top-16 md:top-20 right-4 sm:right-6 z-[200] pointer-events-none">
       <AnimatePresence mode="wait">
-        {isShown && (
+        {toast && (
           <motion.div
-            key={toastKey}
+            key={toast.id}
             initial={{ opacity: 0, y: -12, scale: 0.94 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.94 }}
@@ -75,22 +71,15 @@ const Toast = ({ isShown: propIsShown, message: propMessage, type: propType, onC
 
             {/* Message */}
             <p className="text-sm font-medium text-stone-200 leading-snug break-words">
-              {message}
+              {toast.message}
             </p>
 
             {/* Action Buttons: Undo & Dismiss */}
             <div className="flex items-center gap-1.5 ml-auto shrink-0">
-              {onUndo && (
+              {toast.onUndo && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (isUndone) return;
-                    if (activeToast?.id) {
-                      setUndoneToastId(activeToast.id);
-                    }
-                    onUndo();
-                    handleClose();
-                  }}
+                  onClick={handleUndo}
                   className="px-2 py-1 text-xs font-semibold text-[#e85d56] hover:text-[#ff7670] bg-[#e85d56]/10 hover:bg-[#e85d56]/20 rounded-lg transition-colors cursor-pointer"
                 >
                   Undo
@@ -99,7 +88,7 @@ const Toast = ({ isShown: propIsShown, message: propMessage, type: propType, onC
 
               <button
                 type="button"
-                onClick={handleClose}
+                onClick={hideToast}
                 className="p-1 rounded-lg text-stone-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                 title="Dismiss"
               >
