@@ -6,7 +6,6 @@ import FoldersGrid from '../../components/Cards/FoldersGrid';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
-import { useToastStore } from '../../store/useToastStore';
 import { useHomeNotesQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
 import { buildFolderHierarchy } from '../../utils/folderHierarchy';
 import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
@@ -43,10 +42,10 @@ const Home = () => {
   }, [allNotes, searchMode, searchQuery]);
 
   const [isAddingFolder, setIsAddingFolder] = useState(false);
-  const { openFolderDeleteModal, openConfirmModal } = useModalStore();
+  const { openFolderDeleteModal } = useModalStore();
 
-  const deleteNoteMutation = useDeleteNoteMutation();
-  const archiveNoteMutation = useArchiveNoteMutation();
+  const { promptDelete } = useDeleteNoteMutation();
+  const { promptToggleArchive } = useArchiveNoteMutation();
   const toggleHomePinMutation = useToggleHomePinMutation();
   const moveNoteMutation = useMoveNoteMutation();
   const checklistToggleMutation = useChecklistToggleMutation();
@@ -68,35 +67,6 @@ const Home = () => {
 
   const handleDeleteFolder = (folderObj) => {
     openFolderDeleteModal(folderObj);
-  };
-
-  const handleDeleteNoteClick = (note) => {
-    if (useTabsStore.getState().isTabOpen(note._id)) {
-      useToastStore.getState().showToast({
-        message: "Close the editor tab for this note before deleting.",
-        type: "warning",
-      });
-      return;
-    }
-    openConfirmModal({
-      title: "Delete note?",
-      message: "This moves the note to Trash.",
-      onConfirm: () => deleteNoteMutation.mutate(note._id)
-    });
-  };
-
-  const handleArchiveToggle = (note) => {
-    if (note.isArchived) {
-      archiveNoteMutation.mutate({ noteId: note._id, isArchived: false });
-    } else {
-      openConfirmModal({
-        title: "Archive note?",
-        message: "This moves the note to Archive.",
-        confirmLabel: "Archive",
-        variant: "warning",
-        onConfirm: () => archiveNoteMutation.mutate({ noteId: note._id, isArchived: true })
-      });
-    }
   };
 
   const handleToggleHome = (note) => {
@@ -159,8 +129,8 @@ const Home = () => {
                   loading={isLoading}
                   emptyMessage="No matching notes found."
                   onEdit={handleEdit}
-                  onDelete={handleDeleteNoteClick}
-                  onArchive={handleArchiveToggle}
+                  onDelete={promptDelete}
+                  onArchive={promptToggleArchive}
                   onToggleHome={handleToggleHome}
                   onMove={handleMoveNote}
                   onChecklistToggle={handleChecklist}
@@ -178,8 +148,8 @@ const Home = () => {
             loading={isLoading}
             emptyMessage={"It's quiet here… Start by adding a note."}
             onEdit={handleEdit}
-            onDelete={handleDeleteNoteClick}
-            onArchive={handleArchiveToggle}
+            onDelete={promptDelete}
+            onArchive={promptToggleArchive}
             onToggleHome={handleToggleHome}
             onMove={handleMoveNote}
             onChecklistToggle={handleChecklist}

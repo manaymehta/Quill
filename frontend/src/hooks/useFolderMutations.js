@@ -3,7 +3,7 @@ import axiosInstance from '../utils/axiosInstance';
 import { QUERY_KEYS } from './useNotesQuery';
 import { useToastStore } from '../store/useToastStore';
 
-export const useCreateFolderMutation = (showToast) => {
+export const useCreateFolderMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ name, parentId, color, icon }) => {
@@ -16,18 +16,16 @@ export const useCreateFolderMutation = (showToast) => {
       return response.data;
     },
     onSuccess: () => {
-      const notify = showToast || useToastStore.getState().showToast;
-      notify("Folder created successfully", "success");
+      useToastStore.getState().showToast("Folder created successfully", "success");
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDERS });
     },
     onError: (error) => {
-      const notify = showToast || useToastStore.getState().showToast;
-      notify(error.response?.data?.message || "Failed to create folder", "error");
+      useToastStore.getState().showToast(error.response?.data?.message || "Failed to create folder", "error");
     },
   });
 };
 
-export const useEditFolderMutation = (showToast) => {
+export const useEditFolderMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ folderId, patch }) => {
@@ -38,13 +36,12 @@ export const useEditFolderMutation = (showToast) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDERS });
     },
     onError: (error) => {
-      const notify = showToast || useToastStore.getState().showToast;
-      notify(error.response?.data?.message || "Failed to update folder", "error");
+      useToastStore.getState().showToast(error.response?.data?.message || "Failed to update folder", "error");
     },
   });
 };
 
-export const useDeleteFolderMutation = (showToast) => {
+export const useDeleteFolderMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ folderId }) => {
@@ -52,14 +49,12 @@ export const useDeleteFolderMutation = (showToast) => {
       return response.data;
     },
     onSuccess: () => {
-      const notify = showToast || useToastStore.getState().showToast;
-      notify("Folder moved to Trash", "delete");
+      useToastStore.getState().showToast("Folder moved to Trash", "delete");
       queryClient.invalidateQueries({ queryKey: ['folders'] });
       queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
     onError: (error) => {
-      const notify = showToast || useToastStore.getState().showToast;
-      notify(error.response?.data?.message || "Failed to delete folder", "error");
+      useToastStore.getState().showToast(error.response?.data?.message || "Failed to delete folder", "error");
     },
   });
 };
@@ -77,7 +72,7 @@ export const useReorderFoldersMutation = () => {
   });
 };
 
-export const useRestoreFolderMutation = (showToast) => {
+export const useRestoreFolderMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (folderId) => {
@@ -85,19 +80,17 @@ export const useRestoreFolderMutation = (showToast) => {
       return response.data;
     },
     onSuccess: () => {
-      const notify = showToast || useToastStore.getState().showToast;
-      notify("Folder restored successfully", "success");
+      useToastStore.getState().showToast("Folder restored successfully", "success");
       queryClient.invalidateQueries({ queryKey: ['folders'] });
       queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
     onError: (error) => {
-      const notify = showToast || useToastStore.getState().showToast;
-      notify(error.response?.data?.message || "Failed to restore folder", "error");
+      useToastStore.getState().showToast(error.response?.data?.message || "Failed to restore folder", "error");
     },
   });
 };
 
-export const useDeleteFolderPermanentMutation = (showToast) => {
+export const useDeleteFolderPermanentMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (folderId) => {
@@ -105,14 +98,12 @@ export const useDeleteFolderPermanentMutation = (showToast) => {
       return response.data;
     },
     onSuccess: () => {
-      const notify = showToast || useToastStore.getState().showToast;
-      notify("Folder deleted permanently", "delete");
+      useToastStore.getState().showToast("Folder deleted permanently", "delete");
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.TRASH_FOLDERS });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.TRASH_NOTES });
     },
     onError: (error) => {
-      const notify = showToast || useToastStore.getState().showToast;
-      notify(error.response?.data?.message || "Failed to permanently delete folder", "error");
+      useToastStore.getState().showToast(error.response?.data?.message || "Failed to permanently delete folder", "error");
     },
   });
 };

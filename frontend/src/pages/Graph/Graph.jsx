@@ -64,8 +64,8 @@ const Graph = () => {
   const { showToast } = useToastStore();
   const { activeDropdownNoteId, setActiveDropdownNoteId } = useFoldersStore();
 
-  const deleteNoteMutation = useDeleteNoteMutation();
-  const archiveNoteMutation = useArchiveNoteMutation();
+  const { mutateWithTabGuard: deleteNoteWithTabGuard } = useDeleteNoteMutation();
+  const { promptToggleArchive } = useArchiveNoteMutation();
 
   const [graphMenuCoords, setGraphMenuCoords] = useState(null);
   const [selectedMenuNode, setSelectedMenuNode] = useState(null);
@@ -309,19 +309,12 @@ const Graph = () => {
 
   const handleArchiveNote = (node) => {
     setActiveDropdownNoteId(null);
-    archiveNoteMutation.mutate({ noteId: node.id, isArchived: !node.isArchived });
+    promptToggleArchive(node.id, { isArchived: node.isArchived });
   };
 
   const handleDeleteNote = (node) => {
     setActiveDropdownNoteId(null);
-    if (useTabsStore.getState().isTabOpen(node.id)) {
-      showToast({
-        message: "Close the editor tab for this note before deleting.",
-        type: "warning",
-      });
-      return;
-    }
-    deleteNoteMutation.mutate(node.id);
+    deleteNoteWithTabGuard(node.id);
   };
 
   // Mobile touch-and-hold (long-press) and desktop right-click on graph nodes

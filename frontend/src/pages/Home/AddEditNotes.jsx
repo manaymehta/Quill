@@ -38,10 +38,6 @@ const EDITOR_BASIC_SETUP = {
   searchKeymap: false,
 };
 
-const getSaveToast = (message) => message;
-
-const getSaveToastType = () => "add";
-
 const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChecklistItemChange, removeChecklistItem }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
@@ -436,10 +432,12 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         }
         onSaveSuccess();
         const notify = showToastMessage || useToastStore.getState().showToast;
-        notify(
-          getSaveToast(isDraft ? "Note added successfully" : "Note updated successfully", response.data.embedding),
-          getSaveToastType(response.data.embedding)
-        );
+        const embeddingIssue = ["failed", "partial"].includes(response.data?.embedding?.status);
+        if (embeddingIssue) {
+          notify("Note saved. Embedding failed.", "warning");
+        } else {
+          notify(isDraft ? "Note added successfully" : "Note updated successfully", "success");
+        }
       }
     } catch (error) {
       if (error.response && error.response.data && error.response.data.message) {

@@ -7,39 +7,27 @@ import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useToastStore } from '../../store/useToastStore';
 
-const cleanToastMessage = (rawMessage, type) => {
-  if (!rawMessage) {
-    if (type === 'delete') return 'Deleted';
-    if (type === 'archive') return 'Archived';
-    if (type === 'error') return 'Error';
-    return 'Saved';
+const getToastDisplayText = (toast) => {
+  if (!toast) return '';
+  if (toast.type === 'warning' || toast.type === 'error') {
+    return toast.message || toast.label || 'Warning';
   }
-  const str = String(rawMessage).trim();
-  if (/archive/i.test(str)) return 'Archived';
-  if (/trash|delete/i.test(str)) return 'Deleted';
-  if (/updated/i.test(str)) return 'Updated';
-  if (/added|created|saved/i.test(str)) return 'Saved';
-  if (/restore/i.test(str)) return 'Restored';
-  if (/unpin/i.test(str)) return 'Unpinned';
-  if (/pin/i.test(str)) return 'Pinned';
-
-  return str
-    .replace(/^(Note|Folder)\s+/i, '')
-    .replace(/\s+successfully\.?$/i, '')
-    .replace(/\s*Embedding.*$/i, '')
-    .trim() || (type === 'delete' ? 'Deleted' : 'Saved');
+  return toast.label || toast.message || 'Saved';
 };
 
-const renderToastIcon = (type, message, isEditorActive) => {
+const renderToastIcon = (type, isEditorActive) => {
   const iconClass = isEditorActive ? 'text-sm shrink-0' : 'text-base shrink-0';
-  if (type === 'delete' || /delete|trash/i.test(message)) {
-    return <MdDeleteOutline className={`${iconClass} text-red-400`} />;
-  }
-  if (type === 'archive' || /archive/i.test(message)) {
-    return <MdOutlineArchive className={`${iconClass} text-stone-300`} />;
+  if (type === 'warning') {
+    return <MdErrorOutline className={`${iconClass} text-amber-400`} />;
   }
   if (type === 'error') {
     return <MdErrorOutline className={`${iconClass} text-red-400`} />;
+  }
+  if (type === 'archive') {
+    return <MdOutlineArchive className={`${iconClass} text-stone-300`} />;
+  }
+  if (type === 'delete') {
+    return <MdDeleteOutline className={`${iconClass} text-red-400`} />;
   }
   return <LuCheck className={`${iconClass} text-stone-300`} />;
 };
@@ -101,6 +89,13 @@ const TabDock = () => {
   // Unified spring physics for dock and toast
   const DOCK_SPRING = { type: 'spring', stiffness: 440, damping: 32, mass: 0.5 };
 
+  // Determine whether split mode should be active:
+  // When controls width exceeds toast pill width and tabs are open, split into floating satellite island.
+  // Defaults to 150px baseline before toastRef is attached.
+  const currentControlsW = controlsRef.current?.offsetWidth || 0;
+  const currentToastW = toastRef.current?.offsetWidth || 150;
+  const isSplit = Boolean(toast && openTabs.length > 0 && currentControlsW > currentToastW);
+
   const updateDimensions = useCallback(() => {
     const controlsEl = controlsRef.current;
     if (!controlsEl) return;
@@ -116,17 +111,28 @@ const TabDock = () => {
       const toastH = toastRef.current.offsetHeight;
       const gap = isEditorActive ? 6 : 8;
 
-      setDimensions({
-        width: Math.max(controlsW, toastW) + padX + border,
-        height: controlsH + toastH + gap + padY + border,
-      });
+      const shouldSplit = openTabs.length > 0 && controlsW > toastW;
+
+      if (shouldSplit) {
+        // Wide dock: dock stays at resting height, toast floats independently above
+        setDimensions({
+          width: controlsW + padX + border,
+          height: controlsH + padY + border,
+        });
+      } else {
+        // Compact dock: dock expands vertically into unified cohesive squircle
+        setDimensions({
+          width: Math.max(controlsW, toastW) + padX + border,
+          height: controlsH + toastH + gap + padY + border,
+        });
+      }
     } else {
       setDimensions({
         width: controlsW + padX + border,
         height: controlsH + padY + border,
       });
     }
-  }, [toast, isEditorActive]);
+  }, [toast, isEditorActive, openTabs.length]);
 
   useLayoutEffect(() => {
     updateDimensions();
@@ -137,18 +143,123 @@ const TabDock = () => {
     return () => window.removeEventListener('resize', updateDimensions);
   }, [updateDimensions]);
 
+  const renderToastPill = (mode) => {
+    if (mode === 'split') {
+      return (
+        <div
+          ref={toastRef}
+          onClick={toast.onUndo ? handleUndo : hideToast}
+          style={dimensions?.height ? { height: dimensions.height } : undefined}
+          className={`
+            flex items-center justify-between select-none cursor-pointer whitespace-nowrap
+            max-w-[90vw] sm:max-w-[400px]
+            bg-[#2a2a2a]/85 backdrop-blur-md border border-white/10 shadow-2xl text-stone-100 hover:bg-[#333336]
+            transition-[border-radius,background-color] duration-300
+            ${isEditorActive ? 'h-[50px] rounded-[24px] px-3.5' : 'h-[58px] rounded-[28px] px-4'}
+            ${toast.onUndo ? (isEditorActive ? 'pr-2' : 'pr-2.5') : ''}
+          `}
+        >
+          {/* Status Icon & Message */}
+          <div className="flex items-center gap-2 min-w-0 pr-1">
+            {renderToastIcon(toast.type, isEditorActive)}
+            <span className={`truncate font-semibold tracking-wide text-stone-100 ${isEditorActive ? 'text-xs' : 'text-sm'}`}>
+              {getToastDisplayText(toast)}
+            </span>
+          </div>
+
+          {/* Circular Undo Button */}
+          {toast.onUndo && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleUndo(); }}
+              title="Undo"
+              className={`
+                shrink-0 ${isEditorActive ? 'w-7 h-7' : 'w-8 h-8'}
+                rounded-full bg-white/20 hover:bg-white/30 active:scale-90
+                flex items-center justify-center text-white
+                border border-white/25 shadow-sm transition-all cursor-pointer ml-2
+              `}
+            >
+              <LuUndo2 className={isEditorActive ? 'text-[11px]' : 'text-xs'} />
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    // Unified mode (compact dock, 0 tabs open): frosted inner pill inside dock container
+    return (
+      <div
+        ref={toastRef}
+        onClick={toast.onUndo ? handleUndo : hideToast}
+        className={`
+          flex items-center justify-between rounded-full select-none cursor-pointer whitespace-nowrap
+          max-w-[90vw] sm:max-w-[400px]
+          pl-3.5 ${toast.onUndo ? (isEditorActive ? 'pr-1.5' : 'pr-2') : 'pr-3.5'}
+          bg-white/10 hover:bg-white/15 backdrop-blur-md border border-white/20 text-stone-100 shadow-lg shadow-black/20
+          transition-colors
+          ${isEditorActive ? 'h-8 min-h-[32px] text-xs' : 'h-10 min-h-[40px] text-xs'}
+        `}
+      >
+        {/* Status Icon & Message */}
+        <div className="flex items-center gap-2 min-w-0 pr-1">
+          {renderToastIcon(toast.type, isEditorActive)}
+          <span className="truncate font-semibold tracking-wide text-stone-100">
+            {getToastDisplayText(toast)}
+          </span>
+        </div>
+
+        {/* Circular Undo Button */}
+        {toast.onUndo && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleUndo(); }}
+            title="Undo"
+            className={`
+              shrink-0 ${isEditorActive ? 'w-6 h-6' : 'w-7 h-7'}
+              rounded-full bg-white/20 hover:bg-white/30 active:scale-90
+              flex items-center justify-center text-white
+              border border-white/25 shadow-sm transition-all cursor-pointer ml-2
+            `}
+          >
+            <LuUndo2 className={isEditorActive ? 'text-[11px]' : 'text-xs'} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     /*
-     * Outer wrapper: full-width fixed bar with flex centering.
+     * Outer wrapper: full-width fixed bar with vertical column layout, centered horizontally.
      * Pinned at the bottom of the viewport with responsive padding.
      */
     <div
       className={`
-        fixed bottom-0 left-0 right-0 z-50 flex justify-center items-end pointer-events-none
+        fixed bottom-0 left-0 right-0 z-50 flex flex-col justify-end items-center pointer-events-none
         transition-[padding-bottom] duration-300 ease-in-out
         ${isEditorActive ? 'pb-1 sm:pb-1' : 'pb-2 sm:pb-4'}
       `}
     >
+      {/*
+       * Floating Satellite Toast Capsule (Split Mode)
+       * Rendered when dock controls width exceeds the toast pill width.
+       */}
+      <AnimatePresence>
+        {isSplit && toast && (
+          <motion.div
+            key={toast.id}
+            initial={{ opacity: 0, scale: 0.85, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: isEditorActive ? -4 : -6 }}
+            exit={{ opacity: 0, scale: 0.85, y: 6 }}
+            transition={DOCK_SPRING}
+            className={`pointer-events-auto shrink-0 flex justify-center ${isEditorActive ? 'mb-1.5' : 'mb-2'}`}
+          >
+            {renderToastPill('split')}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/*
        * Dock container: spring-animates width & height simultaneously based on
        * dynamically measured DOM components (100% relative, 0% hardcoded).
@@ -175,11 +286,11 @@ const TabDock = () => {
         `}
       >
         {/*
-         * Upper Tier: Toast Notification Pill
-         * Fades and scales in with physical spring.
+         * Upper Tier: Toast Notification Pill (Unified Mode only)
+         * Fades and scales in with physical spring inside unified dock squircle.
          */}
         <AnimatePresence>
-          {toast && (
+          {!isSplit && toast && (
             <motion.div
               key={toast.id}
               initial={{ opacity: 0, scale: 0.85, y: -6 }}
@@ -188,41 +299,7 @@ const TabDock = () => {
               transition={{ ...DOCK_SPRING, opacity: { duration: 0.12 } }}
               className={`w-full flex justify-center shrink-0 ${isEditorActive ? 'mb-1.5' : 'mb-2'}`}
             >
-              <div
-                ref={toastRef}
-                onClick={toast.onUndo ? handleUndo : hideToast}
-                className={`
-                  flex items-center justify-between rounded-full select-none cursor-pointer whitespace-nowrap
-                  pl-3.5 ${toast.onUndo ? (isEditorActive ? 'pr-1.5' : 'pr-2') : 'pr-3.5'}
-                  bg-white/10 hover:bg-white/15 backdrop-blur-md border border-white/20 text-stone-100 shadow-lg shadow-black/20 transition-colors
-                  ${isEditorActive ? 'h-8 min-h-[32px] text-xs' : 'h-10 min-h-[40px] text-xs'}
-                `}
-              >
-                {/* Status Icon & Message */}
-                <div className="flex items-center gap-2 min-w-0 pr-1">
-                  {renderToastIcon(toast.type, toast.message, isEditorActive)}
-                  <span className="truncate font-semibold tracking-wide text-stone-100">
-                    {cleanToastMessage(toast.message, toast.type)}
-                  </span>
-                </div>
-
-                {/* Circular Undo Button */}
-                {toast.onUndo && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleUndo(); }}
-                    title="Undo"
-                    className={`
-                      shrink-0 ${isEditorActive ? 'w-6 h-6' : 'w-7 h-7'}
-                      rounded-full bg-white/20 hover:bg-white/30 active:scale-90
-                      flex items-center justify-center text-white
-                      border border-white/25 shadow-sm transition-all cursor-pointer ml-2
-                    `}
-                  >
-                    <LuUndo2 className={isEditorActive ? 'text-[11px]' : 'text-xs'} />
-                  </button>
-                )}
-              </div>
+              {renderToastPill('unified')}
             </motion.div>
           )}
         </AnimatePresence>

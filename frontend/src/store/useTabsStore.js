@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { editorRegistry } from '../utils/editorRegistry';
 import { useModalStore } from '../components/Modals/useModalStore';
 import { useToastStore } from './useToastStore';
+import { MODAL_MESSAGES } from '../constants/toastMessages';
 
 export const MAX_OPEN_TABS = 12;
 
@@ -10,8 +11,8 @@ export const useTabsStore = create((set, get) => ({
   activeTabId: 'home', // 'home' | noteId | 'draft-'
   isTabOpen: (id) => Boolean(id && get().openTabs.some((t) => t._id === id)),
 
-  showTabToast: (message, type = 'error') => {
-    useToastStore.getState().showToast(message, type);
+  showTabToast: (toastOrMsg, type = 'error') => {
+    useToastStore.getState().showToast(toastOrMsg, type);
   },
 
   setActiveTab: (id) => set({ activeTabId: id }),
@@ -93,10 +94,7 @@ export const useTabsStore = create((set, get) => ({
 
     if (!force && editorRegistry.isTabDirty(id, tab)) {
       useModalStore.getState().openConfirmModal({
-        title: 'Discard unsaved changes?',
-        message: 'This note has unsaved changes. Closing this tab will discard them.',
-        confirmLabel: 'Discard',
-        variant: 'danger',
+        ...MODAL_MESSAGES.DISCARD_UNSAVED_CHANGES,
         onConfirm: () => {
           get().forceCloseTab(id);
         },

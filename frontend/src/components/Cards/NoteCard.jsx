@@ -13,8 +13,6 @@ import { useSortable, defaultAnimateLayoutChanges } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useFoldersStore } from '../../store/useFoldersStore';
-import { useTabsStore } from '../../store/useTabsStore';
-import { useToastStore } from '../../store/useToastStore';
 import MoveToPicker from './MoveToPicker';
 
 const animateLayoutChanges = (args) => {
@@ -178,13 +176,6 @@ const InnerNoteCard = memo(({
       label: "Trash",
       icon: <MdDelete size={14} />,
       onClick: () => {
-        if (!isTrash && id && useTabsStore.getState().isTabOpen(id)) {
-          useToastStore.getState().showToast({
-            message: "Close the editor tab for this note before deleting.",
-            type: "warning",
-          });
-          return;
-        }
         onDelete && onDelete();
       },
       variant: "danger",

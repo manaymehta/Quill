@@ -5,6 +5,7 @@ import { useModalStore } from '../../components/Modals/useModalStore';
 import { useTrashNotesQuery, useTrashFoldersQuery } from '../../hooks/useNotesQuery';
 import { useRestoreNoteMutation, useDeleteTrashNotePermanentMutation } from '../../hooks/useNoteMutations';
 import { useRestoreFolderMutation, useDeleteFolderPermanentMutation } from '../../hooks/useFolderMutations';
+import { MODAL_MESSAGES } from '../../constants/toastMessages';
 import { MdOutlineFolder, MdOutlineStickyNote2 } from 'react-icons/md';
 
 const Trash = () => {
@@ -24,10 +25,7 @@ const Trash = () => {
 
   const handleDeleteNotePermanentClick = (note) => {
     openConfirmModal({
-      title: "Delete permanently?",
-      message: "This cannot be undone. Are you sure you want to permanently delete this note?",
-      confirmLabel: "Delete forever",
-      variant: "danger",
+      ...MODAL_MESSAGES.PERMANENT_DELETE_NOTE,
       onConfirm: () => deleteTrashNotePermanentMutation.mutate(note._id)
     });
   };
@@ -38,10 +36,7 @@ const Trash = () => {
 
   const handleDeleteFolderPermanentClick = (folder) => {
     openConfirmModal({
-      title: "Delete folder permanently?",
-      message: `Are you sure you want to permanently delete "${folder.name}"? This action cannot be undone.`,
-      confirmLabel: "Delete forever",
-      variant: "danger",
+      ...MODAL_MESSAGES.PERMANENT_DELETE_FOLDER(folder.name),
       onConfirm: () => deleteFolderPermanentMutation.mutate(folder._id)
     });
   };
