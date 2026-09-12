@@ -38,17 +38,9 @@ const EDITOR_BASIC_SETUP = {
   searchKeymap: false,
 };
 
-const getSaveToast = (message, embedding) => (
-  embedding?.status === "failed"
-    ? `${message} Embedding failed; the note was saved.`
-    : embedding?.status === "partial"
-      ? `${message} Embedding cleanup is incomplete; the note was saved.`
-      : message
-);
+const getSaveToast = (message) => message;
 
-const getSaveToastType = (embedding) => (
-  ["failed", "partial"].includes(embedding?.status) ? "warning" : "add"
-);
+const getSaveToastType = () => "add";
 
 const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChecklistItemChange, removeChecklistItem }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });

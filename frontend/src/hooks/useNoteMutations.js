@@ -26,11 +26,8 @@ export const useDeleteNoteMutation = (legacyShowToast) => {
     },
     onSuccess: (data, variables) => {
       const noteId = typeof variables === 'string' ? variables : variables?.noteId || variables?._id;
-      const embeddingIssue = hasEmbeddingIssue(data);
-      const message = embeddingIssue
-        ? "Note moved to Trash. Embedding cleanup failed."
-        : "Note moved to Trash";
-      const type = embeddingIssue ? "warning" : "delete";
+      const message = "Note moved to Trash";
+      const type = "delete";
 
       const notify = legacyShowToast || useToastStore.getState().showToast;
       notify({
@@ -68,13 +65,13 @@ export const useArchiveNoteMutation = (legacyShowToast) => {
     onSuccess: (data, variables) => {
       const isArchived = variables?.isArchived;
       const noteId = variables?.noteId;
-      const message = `Note ${isArchived ? "archived" : "unarchived"}`;
-      const embeddingIssue = hasEmbeddingIssue(data);
+      const message = isArchived ? "Note archived" : "Note unarchived";
+      const type = isArchived ? "archive" : "success";
 
       const notify = legacyShowToast || useToastStore.getState().showToast;
       notify({
-        message: embeddingIssue ? `${message}. Embedding update failed.` : message,
-        type: embeddingIssue ? "warning" : "success",
+        message,
+        type,
         onUndo: noteId
           ? async () => {
               try {
@@ -119,13 +116,9 @@ export const useToggleHomePinMutation = (legacyShowToast) => {
     },
     onSuccess: (data, variables) => {
       const isPinned = data?.note?.showInHome ?? (typeof variables === 'object' ? variables.showInHome : true);
-      const message = `Note ${isPinned ? "shown on" : "hidden from"} Home`;
-      const embeddingIssue = hasEmbeddingIssue(data);
+      const message = `Note ${isPinned ? "pinned to" : "unpinned from"} Home`;
       const notify = legacyShowToast || useToastStore.getState().showToast;
-      notify(
-        embeddingIssue ? `${message}. Embedding update failed.` : message,
-        embeddingIssue ? "warning" : "success"
-      );
+      notify(message, "success");
       queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
     onError: (error) => {
