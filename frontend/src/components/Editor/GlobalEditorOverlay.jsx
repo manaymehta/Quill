@@ -106,7 +106,7 @@ const GlobalEditorOverlay = () => {
             onClick={() => openTab(tab)}
             style={{
               top: window.innerWidth < 768 ? '1rem' : '2rem',
-              bottom: window.innerWidth < 768 ? '5.5rem' : '4.5rem',
+              bottom: window.innerWidth < 768 ? '54px' : '52px',
               width: window.innerWidth < 768 ? '90vw' : '350px',
               ...(offset < 0
                 ? { right: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 390px)', transformOrigin: 'right center' }
@@ -167,7 +167,7 @@ const GlobalEditorOverlay = () => {
 
       {/* Active editor — centered (only active tab is mounted in the DOM) */}
       {activeTab && isEditorOpen && (
-        <div className="fixed inset-0 flex justify-center px-2 md:px-4 pt-2 md:pt-4 pb-16 md:pb-14 z-20 animate-scale-up pointer-events-none">
+        <div className="fixed inset-0 flex justify-center px-2 md:px-4 pt-2 md:pt-4 pb-[54px] md:pb-[52px] z-20 animate-scale-up pointer-events-none">
           <div
             className={`flex flex-col md:flex-row gap-4 h-full pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full ${
               isMockPanelOpen ? 'md:max-w-[1150px] max-w-3xl' : 'max-w-3xl'

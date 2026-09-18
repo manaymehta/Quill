@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useRef, cloneElement } from 'react';
+import React, { memo, useState, useEffect, useRef, useMemo, cloneElement } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
@@ -63,6 +63,9 @@ const CARD_MD_COMPONENTS = {
   table: () => <span className="text-xs text-stone-400 italic">[table]</span>,
 };
 
+// Stable plugin array hoisted to module scope to avoid re-initializing unified processor on every render
+const CARD_MD_PLUGINS = [remarkGfm];
+
 const PREVIEW_CHARS = 150;
 
 const shutterMenuVariants = {
@@ -116,6 +119,8 @@ const InnerNoteCard = memo(({
   const [hasBeenVisible, setHasBeenVisible] = useState(isOverlay || index < 8);
   const [showMovePicker, setShowMovePicker] = useState(false);
   const observerTargetRef = useRef(null);
+
+  const markdownSlice = useMemo(() => (content || '').slice(0, 500), [content]);
 
   const setActiveDropdownNoteId = useFoldersStore((s) => s.setActiveDropdownNoteId);
 
@@ -304,8 +309,8 @@ const InnerNoteCard = memo(({
             }}
           >
             {hasBeenVisible ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={CARD_MD_COMPONENTS}>
-                {(content || '').slice(0, 500)}
+              <ReactMarkdown remarkPlugins={CARD_MD_PLUGINS} components={CARD_MD_COMPONENTS}>
+                {markdownSlice}
               </ReactMarkdown>
             ) : (
               <span className="whitespace-pre-wrap">{(content || '').slice(0, PREVIEW_CHARS)}{(content || '').length > PREVIEW_CHARS ? '…' : ''}</span>

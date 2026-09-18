@@ -85,7 +85,7 @@ const NotesGrid = ({
 
     // Distribute notes left-to-right into columns (index % cols preserves visual reading order)
     const columns = Array.from({ length: cols }, () => []);
-    items.forEach((note, i) => columns[i % cols].push(note));
+    items.forEach((note, i) => columns[i % cols].push({ note, globalIndex: i }));
 
     const handleDragStart = ({ active }) => setActiveId(active.id);
 
@@ -125,10 +125,10 @@ const NotesGrid = ({
                 <div className={`flex flex-row gap-2 md:gap-3 sm:pr-10 w-full items-start ${activeId ? 'is-dragging-active' : ''}`}>
                     {columns.map((col, colIndex) => (
                         <div key={colIndex} className="flex flex-col gap-2 md:gap-3 flex-1 min-w-0">
-                            {col.map((note, noteIndex) => (
+                            {col.map(({ note, globalIndex }) => (
                                 <NoteCard
                                     key={note._id}
-                                    index={noteIndex}
+                                    index={globalIndex}
                                     id={note._id}
                                     title={note.title}
                                     content={note.content}
