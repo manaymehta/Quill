@@ -46,10 +46,12 @@ const Sidebar = forwardRef((props, ref) => {
     <div
       ref={ref}
       className={`
-        fixed top-0 left-0 h-full bg-[#202124] 
-        transform transition-all duration-200 ease-in-out z-[80]
+        fixed top-0 left-0 h-full h-dvh bg-[#202124] 
+        transform transition-all z-[80]
         sm:translate-x-0 overflow-y-auto overflow-x-hidden scrollbar-thin
-        ${isSidebarOpen ? 'translate-x-0 w-55' : '-translate-x-full w-55 sm:w-16'}
+        ${isSidebarOpen 
+          ? 'translate-x-0 w-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]' 
+          : '-translate-x-full w-55 sm:w-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]'}
       `}
     >
       <div className="py-4">
@@ -59,7 +61,7 @@ const Sidebar = forwardRef((props, ref) => {
         {menuItems.map((item, index) => (
           <li key={index}>
             <button
-              className={`cursor-pointer w-full flex items-center h-14 rounded-4xl transition-colors duration-200 ease-in-out overflow-hidden ${
+              className={`cursor-pointer w-full flex items-center h-14 rounded-4xl transition-colors duration-200 ease-in-out overflow-hidden text-left ${
                 (item.path === '/dashboard'
                   ? location.pathname === '/dashboard' && !location.search.includes('view=folders')
                   : location.pathname === item.path)
@@ -82,11 +84,11 @@ const Sidebar = forwardRef((props, ref) => {
                 }
               }}
             >
-              <div className={`w-14 flex-shrink-0 flex items-center justify-center`}>
+              <div className="w-14 flex-shrink-0 flex items-center justify-center">
                 {item.icon}
               </div>
-              <div className={`transition-all duration-200 overflow-hidden  ${isSidebarOpen ? 'w-23' : 'w-23 sm:w-0'}`}>
-                <span className="whitespace-nowrap">
+              <div className={`transition-[opacity,width] overflow-hidden text-left flex-1 min-w-0 ${isSidebarOpen ? 'opacity-100 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]' : 'opacity-100 sm:w-0 sm:opacity-0 sm:flex-none duration-200 ease-[cubic-bezier(0.2,0,0,1)]'}`}>
+                <span className="whitespace-nowrap text-left block">
                   {item.text}
                 </span>
               </div>
@@ -98,7 +100,7 @@ const Sidebar = forwardRef((props, ref) => {
         <li>
           <div className="flex flex-col">
             <div
-              className={`cursor-pointer w-full flex items-center h-14 rounded-4xl transition-colors duration-200 ease-in-out overflow-hidden ${isFoldersActive ? 'bg-[#4c2f2e]' : 'hover:bg-[#313337]'}`}
+              className={`cursor-pointer w-full flex items-center h-14 rounded-4xl transition-colors duration-200 ease-in-out overflow-hidden text-left ${isFoldersActive ? 'bg-[#4c2f2e]' : 'hover:bg-[#313337]'}`}
               onClick={() => {
                 const targetPath = '/dashboard?view=folders';
                 if (location.pathname === '/dashboard' && location.search.includes('view=folders')) {
@@ -121,8 +123,8 @@ const Sidebar = forwardRef((props, ref) => {
               <div className="w-14 flex-shrink-0 flex items-center justify-center">
                 <MdOutlineFolder size={24} />
               </div>
-              <div className={`transition-all duration-200 overflow-hidden flex items-center justify-between w-full pr-4 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 sm:w-0'}`}>
-                <span className="whitespace-nowrap text-left flex-1 pl-1">Folders</span>
+              <div className={`transition-[opacity,width] overflow-hidden flex items-center justify-between text-left flex-1 min-w-0 pr-4 ${isSidebarOpen ? 'opacity-100 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]' : 'opacity-100 sm:w-0 sm:opacity-0 sm:flex-none duration-200 ease-[cubic-bezier(0.2,0,0,1)]'}`}>
+                <span className="whitespace-nowrap text-left">Folders</span>
                 {isSidebarOpen && (
                   <div className="flex items-center gap-1">
                     <div

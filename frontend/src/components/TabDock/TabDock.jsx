@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MdAdd, MdHome, MdClose, MdDeleteOutline, MdErrorOutline, MdOutlineArchive } from 'react-icons/md';
 import { LuCheck, LuUndo2 } from 'react-icons/lu';
@@ -75,6 +75,19 @@ const TabDock = () => {
   const undoSize   = useTransform(progress, [0, 1], [32, 28]);
   const toastGap   = useTransform(progress, [0, 1], [8, 6]);
 
+  const tabsContainerRef = useRef(null);
+  const [fadeState, setFadeState] = useState({ left: false, right: false });
+
+  const checkScrollFade = useCallback(() => {
+    const el = tabsContainerRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    const isScrollable = maxScroll > 4;
+    const left = isScrollable && el.scrollLeft > 4;
+    const right = isScrollable && el.scrollLeft < maxScroll - 4;
+    setFadeState((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+  }, []);
+
   const [windowWidth, setWindowWidth] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth : 1024
   );
@@ -96,14 +109,39 @@ const TabDock = () => {
   const handleTabClick  = (tabId) => setActiveTab(tabId);
   const handleCloseTab  = (tabId) => closeTab(tabId);
 
-  const tabsContainerRef = useRef(null);
-
   // Reset scroll on Home so the 1st pill docks flush against the left separator
   useEffect(() => {
     if (activeTabId === 'home' && tabsContainerRef.current) {
       tabsContainerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
     }
   }, [activeTabId]);
+
+  // Keep edge fade updated on resize, active tab change, or tab count changes
+  useEffect(() => {
+    const el = tabsContainerRef.current;
+    if (!el) return;
+    checkScrollFade();
+
+    const rafId = requestAnimationFrame(checkScrollFade);
+
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(checkScrollFade);
+      ro.observe(el);
+    }
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (ro) ro.disconnect();
+    };
+  }, [openTabs.length, activeTabId, checkScrollFade]);
+
+  const maskImage = (!fadeState.left && !fadeState.right)
+    ? undefined
+    : `linear-gradient(to right, ${
+        fadeState.left ? 'transparent, black 1rem' : 'black 0px'
+      }, ${
+        fadeState.right ? 'black calc(100% - 1rem), transparent' : 'black 100%'
+      })`;
 
   // Desktop mouse drag-to-scroll. Capture-phase click listener suppresses
   // accidental tab activation when releasing a drag gesture (> 4px).
@@ -216,13 +254,18 @@ const TabDock = () => {
                 style={{ height: sepHeight }}
                 className="shrink-0 w-[1px] bg-white/15 mx-0.5"
               />
-              {/* Zero px preserves 6px divider symmetry; 8rem reserves space for dock controls on mobile */}
               <div
                 ref={tabsContainerRef}
                 onMouseDown={handleMouseDown}
                 onWheel={handleWheel}
-                className="flex items-center gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none] max-w-[calc(100vw-8rem)] sm:max-w-[50vw] md:max-w-[60vw] lg:max-w-[700px] min-w-0 h-full select-none md:cursor-grab md:active:cursor-grabbing"
-                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+                onScroll={checkScrollFade}
+                className="flex items-center gap-1 overflow-x-auto shrink-0 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] max-w-[calc(100vw-8rem)] sm:max-w-[50vw] md:max-w-[60vw] lg:max-w-[700px] min-w-0 h-full select-none md:cursor-grab md:active:cursor-grabbing"
+                style={{
+                  WebkitOverflowScrolling: 'touch',
+                  touchAction: 'pan-x',
+                  WebkitMaskImage: maskImage,
+                  maskImage,
+                }}
               >
               {/* mode="popLayout" removes exiting pill from flex flow so siblings FLIP immediately, mirroring enter spring */}
               <AnimatePresence mode="popLayout">

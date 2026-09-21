@@ -125,7 +125,7 @@ const FoldersGrid = ({
             {isAddingFolder && (
                 <div key="inline-add-folder-wrapper" className="folder-card-wrapper">
                     <div 
-                        className="group relative physical-folder-card select-none flex flex-col justify-between z-10"
+                        className="group relative physical-folder-card select-none flex flex-col justify-between z-10 animate-card-fade-in"
                     >
                         <div 
                             className="p-2 sm:p-3 rounded-xl inline-flex items-center justify-center shadow-sm self-start"

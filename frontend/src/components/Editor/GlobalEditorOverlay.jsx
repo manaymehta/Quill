@@ -79,15 +79,15 @@ const GlobalEditorOverlay = () => {
 
   return (
     <>
-      {/* Persistent Sidebar Hamburger Toggle in Editor Mode */}
+      {/* Persistent Sidebar Hamburger Toggle in Editor Mode (aligned to exact Home Navbar coordinates) */}
       {isEditorOpen && (
-        <div className="fixed top-3 left-4 z-[90] flex items-center">
+        <div className="fixed top-2.5 md:top-4 left-3 z-[90] flex items-center">
           <button
             onClick={toggleSidebar}
-            className="sidebar-toggle-btn p-2 rounded-xl bg-[#202124]/85 hover:bg-[#202124] backdrop-blur-md text-[#dd5e57] hover:text-white border border-white/10 shadow-lg cursor-pointer transition-all duration-150 flex items-center justify-center"
+            className="sidebar-toggle-btn w-10 h-10 rounded-full bg-[#202124]/85 hover:bg-[#202124] backdrop-blur-md text-[#dd5e57] hover:text-white border border-white/10 shadow-lg cursor-pointer transition-all duration-150 flex items-center justify-center"
             title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
           >
-            <FiMenu className="text-xl" />
+            <FiMenu className="text-2xl" />
           </button>
         </div>
       )}
@@ -109,8 +109,8 @@ const GlobalEditorOverlay = () => {
               bottom: window.innerWidth < 768 ? '54px' : '52px',
               width: window.innerWidth < 768 ? '90vw' : '350px',
               ...(offset < 0
-                ? { right: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 390px)', transformOrigin: 'right center' }
-                : { left: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 390px)', transformOrigin: 'left center' }),
+                ? { right: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 411px)', transformOrigin: 'right center' }
+                : { left: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 411px)', transformOrigin: 'left center' }),
               transform: window.innerWidth < 768 ? 'scale(0.85)' : 'scale(0.65)',
             }}
           >
@@ -170,11 +170,11 @@ const GlobalEditorOverlay = () => {
         <div className="fixed inset-0 flex justify-center px-2 md:px-4 pt-2 md:pt-4 pb-[54px] md:pb-[52px] z-20 animate-scale-up pointer-events-none">
           <div
             className={`flex flex-col md:flex-row gap-4 h-full pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full ${
-              isMockPanelOpen ? 'md:max-w-[1150px] max-w-3xl' : 'max-w-3xl'
+              isMockPanelOpen ? 'md:max-w-[1190px] max-w-3xl md:max-w-[810px]' : 'max-w-3xl md:max-w-[810px]'
             }`}
           >
             {/* Main Editor */}
-            <div className="w-full h-full md:max-w-3xl shrink-0">
+            <div className="w-full h-full max-w-3xl md:max-w-[810px] shrink-0">
               <TabEditorSlot
                 key={activeTab._id}
                 tab={activeTab}

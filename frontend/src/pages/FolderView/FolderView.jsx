@@ -5,7 +5,6 @@ import AiSearchPanel from '../../components/Cards/AiSearchPanel';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
-import { useToastStore } from '../../store/useToastStore';
 import { useFoldersQuery, useFolderNotesQuery } from '../../hooks/useNotesQuery';
 import { buildFolderHierarchy } from '../../utils/folderHierarchy';
 import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';

@@ -73,6 +73,12 @@ export const quillTheme = EditorView.theme({
 
   // Placeholder text
   '.cm-placeholder': { color: '#a8a29e', fontStyle: 'normal' },
+
+  // List markers (-, *, 1.) — warm terracotta accent
+  '.cm-list-marker': {
+    color: '#d97757 !important',
+    fontWeight: '500',
+  },
 });
 
 // ─── Markdown Typography Highlight Style ─────────────────────────────────────
@@ -108,8 +114,8 @@ export const quillMarkdownHighlight = syntaxHighlighting(
     // Blockquote text
     { tag: tags.quote, color: '#78716c', fontStyle: 'italic' },
 
-    // List markers (-, *, 1.) — accent color
-    { tag: tags.list, color: '#d97757' },
+    // List markers and syntax marks (1., -, *, #) — warm terracotta accent
+    { tag: tags.processingInstruction, color: '#d97757', fontWeight: '500' },
 
     // HTML / meta syntax — muted
     { tag: tags.meta,    color: '#a8a29e' },
@@ -144,6 +150,7 @@ class HideWidget extends WidgetType {
 }
 
 const hiddenDecoration = Decoration.replace({ widget: new HideWidget() });
+const listMarkerDecoration = Decoration.mark({ class: 'cm-list-marker' });
 
 export const hideMarkdownSyntax = ViewPlugin.fromClass(
   class {
@@ -185,6 +192,10 @@ export const hideMarkdownSyntax = ViewPlugin.fromClass(
         from: view.viewport.from,
         to:   view.viewport.to,
         enter(node) {
+          if (node.name === 'ListMark') {
+            builder.add(node.from, node.to, listMarkerDecoration);
+            return;
+          }
           if (!SYNTAX_MARKS.has(node.name)) return;
           const nodeLine = state.doc.lineAt(node.from).number;
           // Hide the marker on every line EXCEPT the one the cursor is on

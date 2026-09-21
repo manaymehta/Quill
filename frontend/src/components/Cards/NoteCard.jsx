@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useRef, useMemo, cloneElement } from 'react';
+import React, { memo, useState, useEffect, useLayoutEffect, useRef, useMemo, cloneElement } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
@@ -13,6 +13,7 @@ import { useSortable, defaultAnimateLayoutChanges } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useFoldersStore } from '../../store/useFoldersStore';
+import { useTabsStore } from '../../store/useTabsStore';
 import MoveToPicker from './MoveToPicker';
 
 const animateLayoutChanges = (args) => {
@@ -110,7 +111,7 @@ const shutterItemVariants = {
 
 // ── Inner static rendering component ─────────────────────────────────────────
 const InnerNoteCard = memo(({
-  id, title, content, tags, folder, folderId, isChecklist, checklist,
+  title, content, tags, folder, folderId, isChecklist, checklist,
   isTrash, isArchived, showInHome, isDragging, isOverlay, hideFolderBadge,
   linkPreviews, onDelete, onArchive, onToggleHome, onMove, onChecklistToggle, onRestore,
   isMenuOpen, toggleMenu, index, coords, setCoords
@@ -123,6 +124,15 @@ const InnerNoteCard = memo(({
   const markdownSlice = useMemo(() => (content || '').slice(0, 500), [content]);
 
   const setActiveDropdownNoteId = useFoldersStore((s) => s.setActiveDropdownNoteId);
+  const isEditorActive = useTabsStore((s) => s.activeTabId !== 'home');
+  const wasEditorActiveRef = useRef(isEditorActive);
+
+  useLayoutEffect(() => {
+    if (wasEditorActiveRef.current && !isEditorActive) {
+      setShouldAnimate(true);
+    }
+    wasEditorActiveRef.current = isEditorActive;
+  }, [isEditorActive]);
 
   useEffect(() => {
     const el = observerTargetRef.current;
@@ -459,7 +469,7 @@ const NoteCard = ({
   };
 
   const handleTouchStart = (e) => {
-    if (isDragging || isOverlay || isTrash) return;
+    if (isDragging || isOverlay) return;
     const { activeDropdownNoteId, activeDropdownFolderId } = useFoldersStore.getState();
     if (activeDropdownNoteId !== null || activeDropdownFolderId !== null) return;
 

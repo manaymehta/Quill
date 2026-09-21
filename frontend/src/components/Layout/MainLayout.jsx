@@ -61,23 +61,23 @@ const MainLayout = () => {
     }, [isEditorActive]);
 
     return (
-        <div className="relative min-h-screen">
+        <div className="relative min-h-screen min-h-dvh">
             <ParticleBackground isPaused={isEditorActive} />
             
             {/* Navbar rendered on normal pages at z-[100] */}
             {!isEditorActive && <Navbar />}
 
             {/* Main Outlet content (hidden when editor is active) */}
-            <div className={`transition-all duration-200 ease-in-out pt-[60px] md:pt-[72px] ${isSidebarOpen ? "pl-0 sm:pl-55" : "pl-0 sm:pl-16"} ${isEditorActive ? "hidden" : ""}`}>
+            <div className={`transition-[padding] ${isSidebarOpen ? "pl-0 sm:pl-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "pl-0 sm:pl-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]"} pt-[60px] md:pt-[72px] ${isEditorActive ? "hidden" : ""}`}>
                 <Outlet />
             </div>
 
             {/* Global Note Editor Overlay (z-20) */}
             <GlobalEditorOverlay />
             
-            {/* Mobile Backdrop overlay (z-[75]) */}
+            {/* Mobile Backdrop overlay (z-[75]) — minimal 0.5rem overscan (-inset-2) moves blur-kernel edge sampling outside visible viewport, eliminating the 1px line while preserving cinematic motion blur */}
             <div 
-                className={`fixed inset-0 bg-black/60 z-[75] sm:hidden transition-opacity duration-200 ease-in-out ${isSidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+                className={`fixed -inset-2 bg-black/60 backdrop-blur-[2px] z-[75] sm:hidden transition-all ${isSidebarOpen ? "opacity-100 pointer-events-auto duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "opacity-0 pointer-events-none duration-200 ease-[cubic-bezier(0.2,0,0,1)]"}`}
                 onClick={toggleSidebar}
             />
 

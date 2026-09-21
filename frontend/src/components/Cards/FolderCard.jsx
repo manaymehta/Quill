@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { MdEdit, MdDelete, MdPalette, MdFolder, MdOutlineFolder, MdRestore, MdDeleteForever, MdMoreVert } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
+import { useTabsStore } from '../../store/useTabsStore';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -71,6 +72,16 @@ const FolderCard = ({
 
     const [shouldAnimate, setShouldAnimate] = useState(true);
 
+    const isEditorActive = useTabsStore((state) => state.activeTabId !== 'home');
+    const wasEditorActiveRef = useRef(isEditorActive);
+
+    useLayoutEffect(() => {
+        if (wasEditorActiveRef.current && !isEditorActive) {
+            setShouldAnimate(true);
+        }
+        wasEditorActiveRef.current = isEditorActive;
+    }, [isEditorActive]);
+
     const {
         attributes, listeners, setNodeRef, transform, transition, isDragging,
     } = useSortable({ id: folder._id, disabled: isTrash || isOverlay });
@@ -118,7 +129,7 @@ const FolderCard = ({
     }, [isDragging]);
 
     const handleTouchStart = (e) => {
-        if (isDragging || isOverlay || isTrash) return;
+        if (isDragging || isOverlay) return;
         const { activeDropdownNoteId, activeDropdownFolderId } = useFoldersStore.getState();
         if (activeDropdownNoteId !== null || activeDropdownFolderId !== null || showColorPicker) return;
 

@@ -12,7 +12,8 @@ import MoveToPicker from '../../components/Cards/MoveToPicker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useToastStore } from '../../store/useToastStore';
-import { historyField } from '@codemirror/commands';
+import { historyField, redo } from '@codemirror/commands';
+import { keymap } from '@codemirror/view';
 import { editorRegistry } from '../../utils/editorRegistry';
 import { useTabsStore } from '../../store/useTabsStore';
 
@@ -22,6 +23,9 @@ const EDITOR_EXTENSIONS = [
   quillMarkdownHighlight,
   hideMarkdownSyntax,
   lineWrap,
+  keymap.of([
+    { key: 'Mod-Shift-z', run: redo, preventDefault: true },
+  ]),
 ];
 
 const EDITOR_BASIC_SETUP = {
@@ -88,7 +92,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const [isChecklist, setIsChecklist] = useState(noteData?.isChecklist || false);
   const [checklist, setChecklist] = useState(() => (noteData?.checklist || []).map((item, i) => item.id ? item : { ...item, id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${i}` }));
   const [tagInputValue, setTagInputValue] = useState("");
-  const [selectedTag, setSelectedTag] = useState(null);
+  const [editingTagIndex, setEditingTagIndex] = useState(null);
+  const [editingTagValue, setEditingTagValue] = useState("");
   const [activeChecklistId, setActiveChecklistId] = useState(null);
 
   // Ref to the CodeMirror editor view for programmatic focus
@@ -108,6 +113,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     }
     return undefined;
   }, [currentNoteId, isChecklist]);
+
   const tagScrollContainerRef = useRef(null);
   const tagInputRef = useRef(null);
   const [showPinnedAddButton, setShowPinnedAddButton] = useState(false);
@@ -125,18 +131,6 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     window.addEventListener('resize', checkTagOverflow);
     return () => window.removeEventListener('resize', checkTagOverflow);
   }, [tags, checkTagOverflow]);
-
-  // Auto-collapse selected tag on outside click/tap
-  useEffect(() => {
-    if (!selectedTag) return;
-    const handleOutsidePointer = (e) => {
-      if (!e.target.closest('.group\\/removetag')) {
-        setSelectedTag(null);
-      }
-    };
-    document.addEventListener('pointerdown', handleOutsidePointer);
-    return () => document.removeEventListener('pointerdown', handleOutsidePointer);
-  }, [selectedTag]);
 
   const handleScrollToTagInput = () => {
     if (tagScrollContainerRef.current) {
@@ -372,7 +366,28 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   };
 
   const handleRemoveTag = (tagToRemove) => {
-    setTags(tags.filter((tag) => tag !== tagToRemove));
+    setTags((prevTags) => prevTags.filter((tag) => tag !== tagToRemove));
+  };
+
+  const handleSaveEditedTag = (index) => {
+    if (editingTagIndex !== index) return;
+    const trimmed = editingTagValue.trim().replace(/^#+/, '');
+    if (trimmed === "") {
+      setTags((prevTags) => prevTags.filter((_, i) => i !== index));
+    } else {
+      setTags((prevTags) => {
+        const updated = [...prevTags];
+        const existingIdx = updated.indexOf(trimmed);
+        if (existingIdx !== -1 && existingIdx !== index) {
+          updated.splice(index, 1);
+        } else {
+          updated[index] = trimmed;
+        }
+        return updated;
+      });
+    }
+    setEditingTagIndex(null);
+    setEditingTagValue("");
   };
 
 
@@ -516,14 +531,14 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] rounded-[24px] shadow-sm border border-[#e8dcc8] overflow-hidden relative'>
 
       {/* editor content area */}
-      <div className='flex-grow flex flex-col pt-8 md:pt-10 px-5 md:px-14 pb-2 overflow-y-auto editor-scrollbar'>
+      <div className='flex-grow flex flex-col pt-5 md:pt-6 px-5 md:px-7 pb-2 overflow-y-auto editor-scrollbar'>
 
         {/* metadata area */}
-        <div className="text-[11px] md:text-[13px] font-medium tracking-widest md:tracking-[0.15em] text-stone-500 mb-2 md:mb-4 uppercase flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-1.5 md:gap-2">
-            <span>{noteData?.createdAt ? new Date(noteData.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-            <span className="text-[16px] leading-none mb-0.5">&middot;</span>
-            <span>{type === 'edit' ? 'EDITED RECENTLY' : 'NEW NOTE'}</span>
+        <div className="text-[11px] md:text-[13px] font-medium tracking-widest md:tracking-[0.15em] text-stone-500 mb-1 md:mb-1.5 uppercase flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 md:gap-2 whitespace-nowrap min-w-0 shrink-0 pl-8 md:pl-0">
+            <span className="shrink-0">{noteData?.createdAt ? new Date(noteData.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[16px] leading-none mb-0.5 shrink-0">&middot;</span>
+            <span className="shrink-0">{type === 'edit' ? 'EDITED' : 'NEW NOTE'}</span>
           </div>
           {(() => {
             const folderObj = folderId ? folders.find(f => f._id === folderId) : null;
@@ -533,18 +548,18 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                   e.stopPropagation();
                   setShowMovePicker(true);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1 bg-[#ebe0d3] hover:bg-[#e4d7c8] text-stone-600 rounded-full transition-all duration-200 text-xs md:text-sm font-sans tracking-normal normal-case border border-[#e0d2bf] shadow-sm cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1 md:py-1.5 bg-[#ebe0d3] hover:bg-[#e4d7c8] text-stone-600 rounded-full transition-all duration-200 text-xs md:text-sm font-sans tracking-normal normal-case border border-[#e0d2bf] shadow-sm cursor-pointer shrink-0"
                 title="Change note folder"
               >
                 {folderObj ? (
                   <>
                     <MdOutlineFolder style={{ color: folderObj.color }} size={16} />
-                    <span className="text-[#333] font-medium truncate max-w-[120px]">{folderObj.name}</span>
+                    <span className="text-[#333] font-medium truncate max-w-[100px] md:max-w-[120px]">{folderObj.name}</span>
                   </>
                 ) : (
                   <>
                     <MdOutlineFolder className="text-stone-400" size={16} />
-                    <span className="text-stone-500 font-normal">Add to Folder</span>
+                    <span className="text-stone-500 font-normal">Folder</span>
                   </>
                 )}
               </button>
@@ -555,7 +570,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         {/* title area */}
         <input
           type='text'
-          className='w-full bg-transparent outline-none font-medium text-2xl md:text-4xl text-[#333] placeholder-stone-400 mb-2 md:mb-4 caret-[#333] cursor-text shrink-0 leading-tight'
+          className='w-full bg-transparent outline-none font-medium text-[32px] md:text-[40px] text-[#333] placeholder-stone-400 mb-2 md:mb-3 caret-[#333] cursor-text shrink-0 leading-tight tracking-tight'
           style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
           placeholder='Untitled Note'
           value={title}
@@ -566,32 +581,84 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         />
 
         {/* tags and tag input at the top - single horizontal scrollable row with sticky pinned add button when overflowing */}
-        <div className="relative flex items-center mb-3 md:mb-6 shrink-0 font-sans">
+        <div className="relative flex items-center mb-4 md:mb-6 shrink-0 font-sans">
           <div
             ref={tagScrollContainerRef}
             onScroll={checkTagOverflow}
             className="flex items-center gap-1.5 md:gap-2 overflow-x-auto scrollbar-none py-1 -my-1 w-full"
           >
             {tags.map((tag, index) => {
-              const isSelected = selectedTag === tag;
+              const isEditing = editingTagIndex === index;
+              if (isEditing) {
+                return (
+                  <span
+                    key={index}
+                    onMouseDown={(e) => {
+                      if (e.target.closest('button')) return;
+                      if (e.target.tagName !== 'INPUT') {
+                        e.preventDefault();
+                      }
+                    }}
+                    className="inline-flex items-center px-2.5 py-0.5 bg-[#f2dfd2] text-[#d55343] text-[13px] md:text-[15px] font-normal tracking-wide rounded-full shrink-0 whitespace-nowrap transition-all duration-150"
+                  >
+                    <span>#</span>
+                    <input
+                      type="text"
+                      autoFocus
+                      onFocus={(e) => e.target.select()}
+                      className="bg-transparent text-[13px] md:text-[15px] font-normal tracking-wide outline-none text-[#d55343] caret-[#e85d56] cursor-text shrink-0 p-0 m-0"
+                      size={Math.max(editingTagValue.length, 1)}
+                      style={{ fieldSizing: 'content', minWidth: '1ch' }}
+                      value={editingTagValue}
+                      onChange={(e) => setEditingTagValue(e.target.value)}
+                      onBlur={() => handleSaveEditedTag(index)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSaveEditedTag(index);
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          setEditingTagIndex(null);
+                          setEditingTagValue("");
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="overflow-hidden transition-all duration-150 ease-out flex items-center justify-center rounded-full hover:bg-black/5 w-3.5 opacity-70 ml-1 text-[#e85d56]/70 hover:text-[#e85d56]"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingTagIndex(null);
+                        setEditingTagValue("");
+                        handleRemoveTag(tag);
+                      }}
+                      title="Remove tag"
+                    >
+                      <MdClose className="text-xs" />
+                    </button>
+                  </span>
+                );
+              }
+
               return (
                 <span
                   key={index}
-                  onClick={() => setSelectedTag((prev) => (prev === tag ? null : tag))}
-                  className="inline-flex items-center px-2.5 py-0.5 bg-[#f2dfd2] text-[#d55343] text-[13px] md:text-[15px] font-normal tracking-wide rounded-full cursor-pointer shrink-0 whitespace-nowrap group/removetag transition-all duration-150"
+                  onClick={() => {
+                    setEditingTagIndex(index);
+                    setEditingTagValue(tag);
+                  }}
+                  className="inline-flex items-center px-2.5 py-0.5 bg-[#f2dfd2] text-[#d55343] text-[13px] md:text-[15px] font-normal tracking-wide rounded-full cursor-pointer shrink-0 whitespace-nowrap group/removetag transition-all duration-150 hover:bg-[#ebd5c6]"
+                  title="Click to edit tag"
                 >
                   <span>#</span>{tag}
                   <button
                     type="button"
-                    className={`overflow-hidden transition-all duration-150 ease-out flex items-center justify-center rounded-full hover:bg-black/5 ${
-                      isSelected
-                        ? 'w-3.5 opacity-100 scale-100 ml-1 text-[#e85d56]'
-                        : 'w-0 opacity-0 scale-75 ml-0 md:group-hover/removetag:w-3.5 md:group-hover/removetag:opacity-100 md:group-hover/removetag:scale-100 md:group-hover/removetag:ml-1 text-[#e85d56]/70 hover:text-[#e85d56]'
-                    }`}
+                    className="overflow-hidden transition-all duration-150 ease-out flex items-center justify-center rounded-full hover:bg-black/5 w-0 opacity-0 group-hover/removetag:w-3.5 group-hover/removetag:opacity-100 group-hover/removetag:ml-1 text-[#e85d56]/70 hover:text-[#e85d56]"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleRemoveTag(tag);
-                      if (selectedTag === tag) setSelectedTag(null);
                     }}
                     title="Remove tag"
                   >
@@ -647,7 +714,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           {error && (<p className='text-xs text-red-500 mb-2 shrink-0'>{error}</p>)}
 
           {isChecklist ? (
-            <div className="flex-grow pr-2">
+            <div className="flex-grow">
 
               {checklist.length === 0 && (
                 <button className='w-full text-sm bg-black/5 text-[#333] p-3 rounded-xl cursor-pointer hover:bg-black/10 transition-all ease-in-out text-left' onClick={addChecklistItem}>
@@ -698,7 +765,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           ) : (
             /* ── CodeMirror live-preview markdown editor ── */
              <div 
-               className="flex-grow pr-2 text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75]"
+               className="flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75]"
                onPaste={(event) => {
                  const pastedText = event.clipboardData?.getData('text') || '';
                  const urls = pastedText.match(/(https?:\/\/[^\s]+)/g) || [];
@@ -772,11 +839,11 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       </div>
 
       {/* slim line separator */}
-      <div className="px-4 md:px-14 shrink-0">
+      <div className="px-5 md:px-7 shrink-0">
         <div className="h-[1px] w-full bg-black/5" />
       </div>
 
-      <div className="bg-[#eaddce] px-4 md:px-5 py-3 flex items-center justify-between gap-1 md:gap-2 shrink-0">
+      <div className="bg-[#eaddce] px-4 md:px-5 py-1.5 md:py-2 flex items-center justify-between gap-1 md:gap-2 shrink-0">
 
         {/* tools */}
         <div className="flex items-center gap-1">
