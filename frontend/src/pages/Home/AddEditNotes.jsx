@@ -17,6 +17,9 @@ import { keymap } from '@codemirror/view';
 import { editorRegistry } from '../../utils/editorRegistry';
 import { useTabsStore } from '../../store/useTabsStore';
 
+// State fields persisted in editor snapshots (used for both toJSON and fromJSON)
+const SNAPSHOT_FIELDS = { history: historyField };
+
 const EDITOR_EXTENSIONS = [
   markdown(),
   quillTheme,
@@ -108,7 +111,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     if (snapshot) {
       return {
         json: snapshot,
-        fields: { history: historyField },
+        fields: SNAPSHOT_FIELDS,
       };
     }
     return undefined;
@@ -345,7 +348,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       const isStillOpen = useTabsStore.getState().openTabs.some((t) => t._id === tabId);
       if (isStillOpen) {
         if (cmViewRef.current) {
-          editorRegistry.saveEditorSnapshot(tabId, cmViewRef.current);
+          editorRegistry.saveEditorSnapshot(tabId, cmViewRef.current, SNAPSHOT_FIELDS);
         }
         if (onUpdateTabState && latestDraftRef.current) {
           onUpdateTabState(latestDraftRef.current);
@@ -788,7 +791,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                 }}
                 onUpdate={(viewUpdate) => {
                   if (viewUpdate.docChanged || viewUpdate.selectionSet) {
-                    editorRegistry.saveEditorSnapshot(currentNoteId, viewUpdate.view);
+                    editorRegistry.saveEditorSnapshot(currentNoteId, viewUpdate.view, SNAPSHOT_FIELDS);
                   }
                 }}
                 extensions={EDITOR_EXTENSIONS}
