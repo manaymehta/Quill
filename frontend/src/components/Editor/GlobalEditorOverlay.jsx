@@ -1,9 +1,18 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, lazy, Suspense } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { FiMenu } from 'react-icons/fi';
-import AddEditNotes from '../../pages/Home/AddEditNotes';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
+
+// The editor pulls in CodeMirror (~600 kB minified), so it lives in its own chunk.
+// It is warmed on idle after the layout mounts so the first note open is instant.
+const loadAddEditNotes = () => import('../../pages/Home/AddEditNotes');
+const AddEditNotes = lazy(loadAddEditNotes);
+
+// Blank card matching the editor's shell, shown only if the chunk hasn't arrived yet
+const EditorFallback = () => (
+  <div className="h-full w-full bg-[#f4eadc] rounded-[24px] shadow-sm border border-[#e8dcc8]" />
+);
 
 const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, onToggleMockPanel, onSummaryReceived }) => {
   const closeTab = useTabsStore((state) => state.closeTab);
@@ -59,6 +68,16 @@ const GlobalEditorOverlay = () => {
     setIsMockPanelOpen(false);
     setPanelContent('');
   }, [activeTabId]);
+
+  useEffect(() => {
+    const warm = () => { loadAddEditNotes().catch(() => {}); };
+    if ('requestIdleCallback' in window) {
+      const id = window.requestIdleCallback(warm, { timeout: 3000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = setTimeout(warm, 1500);
+    return () => clearTimeout(id);
+  }, []);
 
   const handleNoteSaved = useCallback((tabId) => {
     closeTab(tabId, true);
@@ -175,14 +194,16 @@ const GlobalEditorOverlay = () => {
           >
             {/* Main Editor */}
             <div className="w-full h-full max-w-3xl md:max-w-[810px] shrink-0">
-              <TabEditorSlot
-                key={activeTab._id}
-                tab={activeTab}
-                isActive={true}
-                onNoteSaved={handleNoteSaved}
-                onToggleMockPanel={handleToggleMockPanel}
-                onSummaryReceived={handleSummaryReceived}
-              />
+              <Suspense fallback={<EditorFallback />}>
+                <TabEditorSlot
+                  key={activeTab._id}
+                  tab={activeTab}
+                  isActive={true}
+                  onNoteSaved={handleNoteSaved}
+                  onToggleMockPanel={handleToggleMockPanel}
+                  onSummaryReceived={handleSummaryReceived}
+                />
+              </Suspense>
             </div>
 
             {/* Mock Side Panel (Becomes Bottom Sheet on Mobile) */}
