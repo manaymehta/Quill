@@ -126,7 +126,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
                                         onChange={(e) => setNameVal(e.target.value)}
                                         onBlur={handleBlurOrSubmit}
                                         onKeyDown={handleKeyDown}
-                                        className="bg-[#202124] text-white text-sm outline-none border border-[#e85d56] px-1 py-0.5 rounded w-full"
+                                        className="bg-(--page-bg) text-white text-sm outline-none border border-[#e85d56] px-1 py-0.5 rounded w-full"
                                         onClick={(e) => e.stopPropagation()}
                                     />
                                 ) : (

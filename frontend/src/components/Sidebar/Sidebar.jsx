@@ -46,7 +46,7 @@ const Sidebar = forwardRef((props, ref) => {
     <div
       ref={ref}
       className={`
-        fixed top-0 left-0 h-full h-dvh bg-[#202124] 
+        fixed top-0 left-0 h-full h-dvh bg-(--page-bg) 
         transform transition-all z-[80]
         sm:translate-x-0 overflow-y-auto overflow-x-hidden scrollbar-thin
         ${isSidebarOpen 

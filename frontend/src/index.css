@@ -3,13 +3,18 @@
 @import "tailwindcss";
 
 @layer base {
+  :root {
+    --page-bg: #202124;
+    --dock-fill: #2a2a2a; /* TabDock glass surfaces (dock, toast, tab sheet) */
+  }
+
   html {
     font-family: "Poppins", "sans-serif";
     scrollbar-gutter: stable;
   }
 
   body {
-    background-color: #202124;
+    background-color: var(--page-bg);
     overflow-y: scroll;
     scrollbar-gutter: stable;
   }
@@ -57,6 +62,43 @@
   .animate-slide-up {
     animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
+
+  /* TabDock glass: translucent fill + backdrop blur, shared by the dock, toast capsule and tab sheet */
+  .dock-glass {
+    background-color: color-mix(in srgb, var(--dock-fill) 85%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  /* TabDock inactive pill label: tail fades out (via --tab-pill-fade, set on hover) to make
+     room for the close button. A mask instead of a painted gradient, so nothing has to
+     colour-match the translucent dock. */
+  .tab-pill-label {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--tab-pill-fade)), transparent calc(100% - var(--tab-pill-fade) + 16px));
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--tab-pill-fade)), transparent calc(100% - var(--tab-pill-fade) + 16px));
+    transition: --tab-pill-fade 150ms ease-out;
+  }
+}
+
+/* TabDock resizing (home ↔ editor): re-blurring a region that changes size every frame is the
+   dock's most expensive paint, so the blur is dropped for the ~0.2s of motion. The fill turns
+   opaque in the colour the 85% glass already reads as over the page, so nothing behind shows
+   through. data-dock-moving is set from the compaction spring in TabDock.jsx. Unlayered so it
+   overrides the .dock-glass component and hover utilities.
+   blur(0px), not none: any backdrop-filter keeps the dock on its own compositor layer, while
+   `none` drops it and re-promotes it when motion ends — that layer switch re-snaps the contents
+   to the pixel grid and changes text anti-aliasing, a visible shift/morph on the last frame. */
+.dock-root[data-dock-moving] .dock-glass {
+  -webkit-backdrop-filter: blur(0px);
+  backdrop-filter: blur(0px);
+  background-color: color-mix(in srgb, var(--dock-fill) 85%, var(--page-bg));
+}
+
+/* Registered so the fade length can transition (unregistered custom properties snap) */
+@property --tab-pill-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
 }
 
 @keyframes slide-up {
@@ -90,7 +132,7 @@
 
 /* Elegant Scrollbar for the editor */
 .editor-scrollbar {
-  scrollbar-gutter: stable both-edges;
+  overflow-y: overlay;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }

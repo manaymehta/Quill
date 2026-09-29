@@ -52,7 +52,7 @@ const MoveToPicker = ({ isOpen, onClose, currentFolderId, onMove }) => {
                         exit={{ scale: 0.88 }}
                         transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
                         style={{ position: 'relative', zIndex: 1 }}
-                        className="w-full max-w-sm bg-[#202124] rounded-2xl shadow-2xl border border-[#3c4043] overflow-hidden flex flex-col max-h-[80vh]"
+                        className="w-full max-w-sm bg-(--page-bg) rounded-2xl shadow-2xl border border-[#3c4043] overflow-hidden flex flex-col max-h-[80vh]"
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Header */}

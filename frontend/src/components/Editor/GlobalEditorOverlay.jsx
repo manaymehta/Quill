@@ -4,6 +4,8 @@ import { FiMenu } from 'react-icons/fi';
 import AddEditNotes from '../../pages/Home/AddEditNotes';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { DOCK_METRICS, DOCK_MOBILE_QUERY, getEditorClearance } from '../TabDock/dockMetrics';
 
 const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, onToggleMockPanel, onSummaryReceived }) => {
   const closeTab = useTabsStore((state) => state.closeTab);
@@ -46,6 +48,9 @@ const GlobalEditorOverlay = () => {
   const closeTab = useTabsStore((state) => state.closeTab);
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
+
+  const isDockMobile = useMediaQuery(DOCK_MOBILE_QUERY);
+  const dockClearance = getEditorClearance(isDockMobile ? DOCK_METRICS.mobile : DOCK_METRICS.desktop);
 
   const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
   const [panelContent, setPanelContent] = useState('');
@@ -106,11 +111,11 @@ const GlobalEditorOverlay = () => {
             onClick={() => openTab(tab)}
             style={{
               top: window.innerWidth < 768 ? '1rem' : '2rem',
-              bottom: window.innerWidth < 768 ? '54px' : '52px',
+              bottom: dockClearance,
               width: window.innerWidth < 768 ? '90vw' : '350px',
               ...(offset < 0
-                ? { right: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 411px)', transformOrigin: 'right center' }
-                : { left: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 411px)', transformOrigin: 'left center' }),
+                ? { right: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 401px)', transformOrigin: 'right center' }
+                : { left: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 401px)', transformOrigin: 'left center' }),
               transform: window.innerWidth < 768 ? 'scale(0.85)' : 'scale(0.65)',
             }}
           >
@@ -167,14 +172,17 @@ const GlobalEditorOverlay = () => {
 
       {/* Active editor — centered (only active tab is mounted in the DOM) */}
       {activeTab && isEditorOpen && (
-        <div className="fixed inset-0 flex justify-center px-2 md:px-4 pt-2 md:pt-4 pb-[54px] md:pb-[52px] z-20 animate-scale-up pointer-events-none">
+        <div
+          className="fixed inset-0 flex justify-center px-2 md:px-4 pt-2 md:pt-4 z-20 animate-scale-up pointer-events-none"
+          style={{ paddingBottom: dockClearance }}
+        >
           <div
             className={`flex flex-col md:flex-row gap-4 h-full pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full ${
-              isMockPanelOpen ? 'md:max-w-[1190px] max-w-3xl md:max-w-[810px]' : 'max-w-3xl md:max-w-[810px]'
+              isMockPanelOpen ? 'md:max-w-[1170px] max-w-3xl md:max-w-[790px]' : 'max-w-3xl md:max-w-[790px]'
             }`}
           >
             {/* Main Editor */}
-            <div className="w-full h-full max-w-3xl md:max-w-[810px] shrink-0">
+            <div className="w-full h-full max-w-3xl md:max-w-[790px] shrink-0">
               <TabEditorSlot
                 key={activeTab._id}
                 tab={activeTab}

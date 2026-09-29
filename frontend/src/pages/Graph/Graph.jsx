@@ -605,7 +605,7 @@ const Graph = () => {
   return (
     <div
       ref={containerRef}
-      className={'bg-[#202124b5]'}
+      className={'bg-(--page-bg)/71'}
       style={{ width: '100%', height: dimensions.height, marginTop: navbarMargin, overflow: 'hidden', position: 'relative', cursor: activeHoveredNode ? 'pointer' : 'default' }}
     >
       <ForceGraph2D
@@ -745,7 +745,7 @@ const Graph = () => {
               animate={{ opacity: 1, scale: 1, x: 0 }}
               exit={{ opacity: 0, scale: 0.85, x: 10 }}
               transition={{ type: 'spring', damping: 30, stiffness: 750, mass: 0.3 }}
-              className="h-10 rounded-full flex items-center border shadow-lg backdrop-blur-md overflow-hidden bg-[#202124]/90 border-[#e85d56]/60 text-white pl-3.5 pr-2 gap-2 text-sm font-medium whitespace-nowrap"
+              className="h-10 rounded-full flex items-center border shadow-lg backdrop-blur-md overflow-hidden bg-(--page-bg)/90 border-[#e85d56]/60 text-white pl-3.5 pr-2 gap-2 text-sm font-medium whitespace-nowrap"
             >
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#e85d56] shrink-0" />
@@ -774,10 +774,10 @@ const Graph = () => {
             transition={{ type: 'spring', damping: 30, stiffness: 750, mass: 0.3 }}
             className={`h-10 rounded-full flex items-center border shadow-lg backdrop-blur-md overflow-hidden ${
               activeSelectedTag
-                ? 'bg-[#202124]/90 border-[#e85d56]/60 text-white'
+                ? 'bg-(--page-bg)/90 border-[#e85d56]/60 text-white'
                 : isDropdownOpen
                 ? 'bg-[#e85d56] border-[#e85d56] text-white w-10 justify-center'
-                : 'bg-[#202124]/80 hover:bg-[#2c2d30] border-white/15 text-stone-300 hover:text-white w-10 justify-center'
+                : 'bg-(--page-bg)/80 hover:bg-[#2c2d30] border-white/15 text-stone-300 hover:text-white w-10 justify-center'
             }`}
           >
             <AnimatePresence mode="popLayout" initial={false}>
@@ -834,7 +834,7 @@ const Graph = () => {
                 exit={{ opacity: 0, scale: 0.92, y: -6 }}
                 transition={{ type: 'spring', damping: 28, stiffness: 500, mass: 0.45 }}
                 style={{ transformOrigin: 'top right' }}
-                className="absolute top-12 right-0 min-w-[160px] max-w-[240px] w-max max-h-[calc(100vh-140px)] md:max-h-[calc(100vh-150px)] bg-[#202124]/95 backdrop-blur-xl border border-white/15 rounded-2xl p-1.5 shadow-2xl z-30 flex flex-col"
+                className="absolute top-12 right-0 min-w-[160px] max-w-[240px] w-max max-h-[calc(100vh-140px)] md:max-h-[calc(100vh-150px)] bg-(--page-bg)/95 backdrop-blur-xl border border-white/15 rounded-2xl p-1.5 shadow-2xl z-30 flex flex-col"
               >
                 {/* Archive Option Toggle */}
                 <button

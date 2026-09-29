@@ -42,6 +42,10 @@ const EDITOR_BASIC_SETUP = {
   searchKeymap: false,
 };
 
+const isMobileOrTouch = () =>
+  typeof window !== 'undefined' &&
+  (window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768);
+
 const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChecklistItemChange, removeChecklistItem }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
@@ -290,9 +294,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     setLinkPreviews(prev => prev.filter(p => p.url !== urlToRemove));
   }, []);
 
-  // Auto-focus the CodeMirror editor when this tab becomes the active tab
+  // Auto-focus the CodeMirror editor when this tab becomes the active tab (desktop only)
   useEffect(() => {
-    if (isActive && !isChecklist && cmViewRef.current) {
+    if (isActive && !isChecklist && cmViewRef.current && !isMobileOrTouch()) {
       // Small delay lets the display:none → display:block paint happen first
       const t = setTimeout(() => cmViewRef.current?.focus(), 50);
       return () => clearTimeout(t);
@@ -765,7 +769,16 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           ) : (
             /* ── CodeMirror live-preview markdown editor ── */
              <div 
-               className="flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75]"
+               className="flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] cursor-text"
+               onClick={(e) => {
+                 if (e.target === e.currentTarget && cmViewRef.current) {
+                   const view = cmViewRef.current;
+                   view.focus();
+                   view.dispatch({
+                     selection: { anchor: view.state.doc.length },
+                   });
+                 }
+               }}
                onPaste={(event) => {
                  const pastedText = event.clipboardData?.getData('text') || '';
                  const urls = pastedText.match(/(https?:\/\/[^\s]+)/g) || [];
@@ -782,7 +795,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                 }}
                 onCreateEditor={(view) => {
                   cmViewRef.current = view;
-                  if (isActive && !isChecklist) {
+                  if (isActive && !isChecklist && !isMobileOrTouch()) {
                     view.focus();
                   }
                 }}
