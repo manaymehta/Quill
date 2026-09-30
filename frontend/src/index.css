@@ -132,7 +132,12 @@
 
 /* Elegant Scrollbar for the editor */
 .editor-scrollbar {
-  overflow-y: overlay;
+  /* `overflow-y: overlay` was non-standard (Chrome treats it as auto, Firefox ignores it), so the
+     scrollbar took 11px when it appeared and the text area shrank, re-wrapping lines. Reserving the
+     scrollbar's space on the right only keeps the text width constant; `both-edges` also reserved it
+     on the left, pushing the text 11px right in every note. */
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }

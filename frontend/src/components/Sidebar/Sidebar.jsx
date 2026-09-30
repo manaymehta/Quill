@@ -8,6 +8,7 @@ import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useCreateFolderMutation } from '../../hooks/useFolderMutations';
 import FolderTree from './FolderTree';
+import { MOBILE_QUERY } from '../../constants/breakpoints';
 
 const Sidebar = forwardRef((props, ref) => {
   const navigate = useNavigate();
@@ -79,7 +80,7 @@ const Sidebar = forwardRef((props, ref) => {
                 } else {
                   navigate(item.path);
                 }
-                if (window.matchMedia('(max-width: 639px)').matches && isSidebarOpen) {
+                if (window.matchMedia(MOBILE_QUERY).matches && isSidebarOpen) {
                   useUIStore.getState().toggleSidebar();
                 }
               }}
@@ -108,7 +109,7 @@ const Sidebar = forwardRef((props, ref) => {
                 } else {
                   navigate(targetPath);
                 }
-                if (window.matchMedia('(max-width: 639px)').matches && isSidebarOpen) {
+                if (window.matchMedia(MOBILE_QUERY).matches && isSidebarOpen) {
                   useUIStore.getState().toggleSidebar();
                 } else {
                   if (!isSidebarOpen) {

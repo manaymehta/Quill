@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import { buildFolderHierarchy } from '../../utils/folderHierarchy';
+import { MOBILE_QUERY } from '../../constants/breakpoints';
 import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdEdit, MdDelete, MdPalette, MdFolder, MdFolderOpen } from 'react-icons/md';
 
 const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'];
@@ -99,7 +100,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
                     } else {
                         navigate(targetPath);
                     }
-                    if (window.matchMedia('(max-width: 639px)').matches && isSidebarOpen) {
+                    if (window.matchMedia(MOBILE_QUERY).matches && isSidebarOpen) {
                         useUIStore.getState().toggleSidebar();
                     }
                 }}

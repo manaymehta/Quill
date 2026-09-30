@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { MdEdit, MdDelete, MdPalette, MdFolder, MdOutlineFolder, MdRestore, MdDeleteForever, MdMoreVert } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useTabsStore } from '../../store/useTabsStore';
+import { MOBILE_QUERY } from '../../constants/breakpoints';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -368,7 +369,7 @@ const FolderCard = ({
                             style={(() => {
                                 const menuWidth = 165;
                                 const menuHeight = isTrash ? 85 : 130;
-                                const bottomMargin = window.innerWidth < 640 ? 76 : 16;
+                                const bottomMargin = window.matchMedia(MOBILE_QUERY).matches ? 76 : 16;
                                 let finalX = coords.x;
                                 if (finalX + menuWidth > window.innerWidth - 8) {
                                     finalX = Math.max(8, window.innerWidth - menuWidth - 8);

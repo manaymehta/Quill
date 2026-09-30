@@ -5,6 +5,7 @@ import AddEditNotes from '../../pages/Home/AddEditNotes';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
 import { DOCK_METRICS, DOCK_MOBILE_QUERY, getEditorClearance } from '../TabDock/dockMetrics';
 
 const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, onToggleMockPanel, onSummaryReceived }) => {
@@ -50,6 +51,9 @@ const GlobalEditorOverlay = () => {
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
 
   const isDockMobile = useMediaQuery(DOCK_MOBILE_QUERY);
+  // Reactive (re-renders when the breakpoint is crossed); reading window.innerWidth during render
+  // left the ghost cards / summary panel in the old layout after a resize until something else re-rendered.
+  const isBelowTablet = useMediaQuery(BELOW_TABLET_QUERY);
   const dockClearance = getEditorClearance(isDockMobile ? DOCK_METRICS.mobile : DOCK_METRICS.desktop);
 
   const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
@@ -89,7 +93,7 @@ const GlobalEditorOverlay = () => {
         <div className="fixed top-2.5 md:top-4 left-3 z-[90] flex items-center">
           <button
             onClick={toggleSidebar}
-            className="sidebar-toggle-btn w-10 h-10 rounded-full bg-[#202124]/85 hover:bg-[#202124] backdrop-blur-md text-[#dd5e57] hover:text-white border border-white/10 shadow-lg cursor-pointer transition-all duration-150 flex items-center justify-center"
+            className="sidebar-toggle-btn w-10 h-10 rounded-full bg-(--page-bg)/85 hover:bg-(--page-bg) backdrop-blur-md text-[#dd5e57] hover:text-white border border-white/10 shadow-lg cursor-pointer transition-all duration-150 flex items-center justify-center"
             title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
           >
             <FiMenu className="text-2xl" />
@@ -110,13 +114,13 @@ const GlobalEditorOverlay = () => {
             className="fixed z-10 animate-ghost-in cursor-pointer group"
             onClick={() => openTab(tab)}
             style={{
-              top: window.innerWidth < 768 ? '1rem' : '2rem',
+              top: isBelowTablet ? '1rem' : '2rem',
               bottom: dockClearance,
-              width: window.innerWidth < 768 ? '90vw' : '350px',
+              width: isBelowTablet ? '90vw' : '350px',
               ...(offset < 0
-                ? { right: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 401px)', transformOrigin: 'right center' }
-                : { left: window.innerWidth < 768 ? 'calc(50% + 15vw)' : 'calc(50% + 401px)', transformOrigin: 'left center' }),
-              transform: window.innerWidth < 768 ? 'scale(0.85)' : 'scale(0.65)',
+                ? { right: isBelowTablet ? 'calc(50% + 15vw)' : 'calc(50% + 401px)', transformOrigin: 'right center' }
+                : { left: isBelowTablet ? 'calc(50% + 15vw)' : 'calc(50% + 401px)', transformOrigin: 'left center' }),
+              transform: isBelowTablet ? 'scale(0.85)' : 'scale(0.65)',
             }}
           >
             <div className="h-full bg-[#f4eadc] opacity-15 md:opacity-30 group-hover:opacity-100 transition-all duration-150 ease-out rounded-[32px] border border-[#e8dcc8] overflow-hidden p-6 md:p-10 shadow-sm group-hover:shadow-2xl group-active:scale-[0.98]">
@@ -208,18 +212,18 @@ const GlobalEditorOverlay = () => {
 
                   <Motion.div
                     initial={{
-                      y: window.innerWidth < 768 ? '100%' : 0,
-                      scale: window.innerWidth < 768 ? 1 : 0.95,
-                      opacity: window.innerWidth < 768 ? 1 : 0,
+                      y: isBelowTablet ? '100%' : 0,
+                      scale: isBelowTablet ? 1 : 0.95,
+                      opacity: isBelowTablet ? 1 : 0,
                     }}
                     animate={{ y: 0, scale: 1, opacity: 1 }}
                     exit={{
-                      y: window.innerWidth < 768 ? '100%' : 0,
-                      scale: window.innerWidth < 768 ? 1 : 0.95,
-                      opacity: window.innerWidth < 768 ? 1 : 0,
+                      y: isBelowTablet ? '100%' : 0,
+                      scale: isBelowTablet ? 1 : 0.95,
+                      opacity: isBelowTablet ? 1 : 0,
                     }}
                     transition={{ type: 'tween', ease: 'easeOut', duration: 0.25 }}
-                    drag={window.innerWidth < 768 ? 'y' : false}
+                    drag={isBelowTablet ? 'y' : false}
                     dragConstraints={{ top: 0, bottom: 0 }}
                     dragElastic={0.2}
                     onDragEnd={(e, info) => {

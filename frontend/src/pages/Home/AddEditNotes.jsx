@@ -16,6 +16,7 @@ import { historyField, redo } from '@codemirror/commands';
 import { keymap } from '@codemirror/view';
 import { editorRegistry } from '../../utils/editorRegistry';
 import { useTabsStore } from '../../store/useTabsStore';
+import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
 
 const EDITOR_EXTENSIONS = [
   markdown(),
@@ -44,7 +45,7 @@ const EDITOR_BASIC_SETUP = {
 
 const isMobileOrTouch = () =>
   typeof window !== 'undefined' &&
-  (window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768);
+  (window.matchMedia('(pointer: coarse)').matches || window.matchMedia(BELOW_TABLET_QUERY).matches);
 
 const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChecklistItemChange, removeChecklistItem }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });

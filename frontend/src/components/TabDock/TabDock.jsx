@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useCo
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MdAdd, MdHome, MdClose, MdDeleteOutline, MdErrorOutline, MdOutlineArchive } from 'react-icons/md';
 import { LuCheck, LuUndo2 } from 'react-icons/lu';
-import { motion, animate, AnimatePresence, PresenceContext, useIsPresent, usePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { motion, animate, frame, AnimatePresence, PresenceContext, useIsPresent, usePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useToastStore } from '../../store/useToastStore';
@@ -34,10 +34,8 @@ const renderToastIcon = (type) => {
 // both directions): longest hold between steps 4 → 2 frames (height: 1), visible end 250 → 150ms,
 // no rounded size ever passes its target. Bounce ≥ 0.25 starts to overshoot visibly.
 const DOCK_SPRING = { type: 'spring', visualDuration: 0.2, bounce: 0.2 };
-// Pill horizontal padding, [home, editor], and border width (Tailwind `border`)
-const PILL_PADDING_LEFT  = [16, 14];
-const PILL_PADDING_RIGHT = [12, 10];
-const PILL_BORDER_PX     = 1;
+// Pill border width (Tailwind `border`)
+const PILL_BORDER_PX = 1;
 
 // Tab strip: edge fade width, and the spring for programmatic scrolling (bringing the active pill
 // into view, resetting to the start on Home)
@@ -131,6 +129,15 @@ const DOCK_ROW_GAP_PX = 4; // between items in the dock row
 // whole device pixels that shows as a small horizontal twitch. Widths land flat.
 const PILL_SPRING = { type: 'spring', visualDuration: 0.22, bounce: 0 };
 const PILL_FADE   = { duration: 0.12, ease: EASE_OUT };
+
+// Long-press notes list (phone): a closing row collapses its height in place and fades. The
+// negative top margin cancels its gap as it collapses (a top margin pulls it onto the row above, so
+// the collapsed row adds nothing to the list's scroll height — the same trap as the dock pills).
+const LIST_ROW_GAP_PX = 4;
+const LIST_ROW_EXIT = {
+  height: 0, marginTop: -LIST_ROW_GAP_PX, opacity: 0,
+  transition: { default: PILL_SPRING, opacity: PILL_FADE },
+};
 
 // Opens from width 0 to its content's natural width when entering, and closes back to 0 when
 // leaving (AnimatePresence waits for it). Settled, it is plain `width: auto`.
@@ -267,6 +274,7 @@ const MOMENTUM_STOP         = 0.02;  // px/ms; below this the glide ends
 const WHEEL_LINE_PX         = 16;    // Firefox line-mode wheel delta → px
 const WHEEL_NOTCH_MIN       = 40;    // |delta| at or above this is a notched mouse wheel (eased)
 const WHEEL_CHAIN_MS        = 250;   // wheel events closer than this chain onto one smooth scroll
+const LONG_PRESS_RELEASE_GUARD_MS = 300; // after lifting from a long press, ignore a stray release click
 
 // Shutter menu animation strictly mirroring NoteCard.jsx
 const shutterMenuVariants = {
@@ -357,14 +365,18 @@ const TabDock = () => {
   const circleSize    = useCenteredDockPx(progress, metrics.height, metrics.circle);
   const sepHeight     = useCenteredDockPx(progress, metrics.height, metrics.separator);
   const pillHeight    = useCenteredDockPx(progress, metrics.height, metrics.pill);
-  const pillPL        = useDockPx(progress, PILL_PADDING_LEFT);
-  const pillPR        = useDockPx(progress, PILL_PADDING_RIGHT);
+  const pillPL        = useDockPx(progress, metrics.pillPaddingLeft);
+  const pillPR        = useDockPx(progress, metrics.pillPaddingRight);
   const pillMaxW      = useDockPx(progress, metrics.pillMaxWidth);
   // Title budget inside a pill: the pill's max width minus its padding and 1px borders (the close
   // slot is extra, see the title span).
   const pillTextMaxW  = useTransform(() => pillMaxW.get() - pillPL.get() - pillPR.get() - 2 * PILL_BORDER_PX);
   const undoSize      = useCenteredDockPx(progress, metrics.height, metrics.undo);
-  const toastGap      = useDockPx(progress, [8, 6]);
+  const toastGap      = useDockPx(progress, metrics.toastGap);
+  // Toast text padding follows the compaction too (it used to switch classes instantly, a 1–2px jump)
+  const toastPL       = useDockPx(progress, metrics.toastPaddingLeft);
+  const toastPR       = useDockPx(progress, metrics.toastPaddingRight);
+  const toastPRUndo   = useDockPx(progress, metrics.toastPaddingRightUndo);
   const paddingBottom = useDockPx(progress, metrics.paddingBottom);
 
   // Marks the dock as resizing so CSS can swap the glass for an opaque fill during the motion (see
@@ -394,16 +406,48 @@ const TabDock = () => {
 
   // Called by the present ToastContent whenever its natural size changes (mount, or while showing,
   // e.g. the dock compacting changes its padding and undo button size).
+  // Springs only for a NEW message (the morph). The same message resizing — every frame while the
+  // dock compacts — is followed instantly: re-aiming the spring each frame restarts it each frame,
+  // so the capsule lagged behind its own content.
+  // (offsetWidth, not getBoundingClientRect: the toast scales while popping in, which would skew it.)
+  const lastToastNodeRef = useRef(null);
+  const lastToastWidthRef = useRef(0);
   const handleToastContentResize = useCallback((node) => {
     const capsule = node.parentElement;
     const width = node.offsetWidth + (capsule.offsetWidth - capsule.clientWidth); // + capsule borders
-    if (toastWidth.get() === 0) {
+    const isNewMessage = node !== lastToastNodeRef.current;
+    // A ResizeObserver also fires once right after observing, repeating the mount measurement;
+    // treating that as a resize would cut the morph short.
+    if (!isNewMessage && width === lastToastWidthRef.current) return;
+    lastToastNodeRef.current = node;
+    lastToastWidthRef.current = width;
+    if (toastWidth.get() === 0 || !isNewMessage) {
       toastWidthTarget.jump(width);
       toastWidth.jump(width);
     } else {
       toastWidthTarget.set(width);
     }
   }, [toastWidth, toastWidthTarget]);
+
+  // While the dock resizes, the toast's padding / undo button change every frame. Going through the
+  // ResizeObserver above, the capsule followed one frame late (content drawn at its new width, the
+  // capsule a frame later): up to 5px of mismatch, clipping the content's edges. Instead, re-measure
+  // in Framer's postRender step — right after this frame's padding styles are applied — and write the
+  // capsule width directly, so both are drawn together. Skipped during a morph (the spring owns it).
+  useEffect(() => {
+    const syncToastWidth = () => {
+      const node = lastToastNodeRef.current;
+      if (!node?.isConnected || toastWidth.isAnimating()) return;
+      const capsule = node.parentElement;
+      const width = node.offsetWidth + (capsule.offsetWidth - capsule.clientWidth);
+      if (width === lastToastWidthRef.current) return;
+      lastToastWidthRef.current = width;
+      toastWidthTarget.jump(width);
+      toastWidth.jump(width);
+      capsule.style.width = `${width}px`;
+    };
+    return progress.on('change', () => frame.postRender(syncToastWidth));
+  }, [progress, toastWidth, toastWidthTarget]);
 
   const resetToastWidth = useCallback(() => {
     toastWidthTarget.jump(0);
@@ -478,10 +522,15 @@ const TabDock = () => {
   };
   useEffect(() => stopMomentum, [stopMomentum]);
 
-  // Mobile touch-and-hold (long-press) detection
+  // Mobile touch-and-hold (long-press) detection.
+  // Lifting the finger after a long press must not activate what's under it. That release click is
+  // prevented at its source (preventDefault on touchend stops browsers generating the click) rather
+  // than "swallowing the next click": some browsers (Android Chrome after a long press) send no
+  // release click at all, so a swallow flag stayed set and ate the user's FIRST real tap in the list.
   const longPressTimerRef = useRef(null);
   const touchStartPosRef = useRef({ x: 0, y: 0 });
-  const isLongPressActiveRef = useRef(false);
+  const isHoldingAfterLongPressRef = useRef(false); // long press fired, finger still down
+  const ignoreClicksUntilRef = useRef(0);           // safety net for a stray release click
   const [isHoldMenuOpen, setIsHoldMenuOpen] = useState(false);
 
   const handleTouchStart = (e) => {
@@ -489,7 +538,7 @@ const TabDock = () => {
     if (!isMobile || openTabs.length <= 1) return;
     if (e.target.closest('button')) return;
 
-    isLongPressActiveRef.current = false;
+    isHoldingAfterLongPressRef.current = false;
 
     const touch = e.touches[0];
     if (!touch) return;
@@ -501,7 +550,7 @@ const TabDock = () => {
 
     longPressTimerRef.current = setTimeout(() => {
       longPressTimerRef.current = null;
-      isLongPressActiveRef.current = true;
+      isHoldingAfterLongPressRef.current = true;
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         try {
           navigator.vibrate(25);
@@ -529,10 +578,16 @@ const TabDock = () => {
     }
   };
 
-  const handleTouchEnd = () => {
+  // Also used for touchcancel (e.g. the browser took over the gesture).
+  const handleTouchEnd = (e) => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
+    }
+    if (isHoldingAfterLongPressRef.current) {
+      isHoldingAfterLongPressRef.current = false;
+      if (e.cancelable) e.preventDefault(); // no synthetic release click
+      ignoreClicksUntilRef.current = performance.now() + LONG_PRESS_RELEASE_GUARD_MS;
     }
   };
 
@@ -547,17 +602,18 @@ const TabDock = () => {
 
   const showHoldMenu = isHoldMenuOpen && isMobile && openTabs.length > 1;
 
-  // Single capture-phase listener at root: swallows release click & dismisses on outside click
+  // Single capture-phase listener at root: dismisses the list on an outside click
   useEffect(() => {
     if (!showHoldMenu) return;
 
     const handleOutsideClick = (e) => {
-      // 1. If this is the immediate synthetic release click from the long-press gesture:
-      if (isLongPressActiveRef.current) {
-        isLongPressActiveRef.current = false;
+      // 1. Still holding after the long press, or a stray release click just after lifting: ignore
+      //    it and keep the list open. (Android can fire contextmenu during a long hold, which would
+      //    otherwise count as an outside click and close the list straight away.)
+      if (isHoldingAfterLongPressRef.current || performance.now() < ignoreClicksUntilRef.current) {
         e.stopPropagation();
         e.preventDefault();
-        return; // Swallows release click at root. Never reaches pills. Menu stays open.
+        return;
       }
 
       // 2. If click is inside the popup sheet:
@@ -584,14 +640,6 @@ const TabDock = () => {
     };
   }, [showHoldMenu]);
 
-  const handleTabsContainerClick = (e) => {
-    if (showHoldMenu) {
-      e.stopPropagation();
-      e.preventDefault();
-      setIsHoldMenuOpen(false);
-    }
-  };
-
   // Edge fades scale with the distance to each end (0 → STRIP_FADE_PX), so they grow and shrink
   // with the scroll instead of switching on/off in one frame at a threshold (visible as a pop,
   // e.g. the right fade vanishing just as a scroll lands). Written straight to the element's style,
@@ -614,23 +662,15 @@ const TabDock = () => {
   const isFoldersView = queryParams.get('view') === 'folders';
   const isHomeActive  = location.pathname === '/dashboard' && !isFoldersView && !isEditorActive;
 
-  const handleHomeClick = (e) => {
-    if (showHoldMenu) {
-      e?.stopPropagation?.();
-      setIsHoldMenuOpen(false);
-      return;
-    }
+  // While the long-press list is open, the document-level capture listener above intercepts every
+  // click outside it (closing the list), so click handlers here never run in that state. Only
+  // handleTabClick needs its own check: it's also reached from the keyboard (Enter/Space on a pill),
+  // which doesn't go through that click listener.
+  const handleHomeClick = () => {
     setActiveTab('home');
     navigate('/dashboard');
   };
-  const handleNewNote   = (e) => {
-    if (showHoldMenu) {
-      e?.stopPropagation?.();
-      setIsHoldMenuOpen(false);
-      return;
-    }
-    createDraftTab(activeFolderId);
-  };
+  const handleNewNote   = () => createDraftTab(activeFolderId);
   const handleTabClick  = (tabId, e) => {
     if (showHoldMenu) {
       e?.stopPropagation?.();
@@ -696,22 +736,24 @@ const TabDock = () => {
     ensurePillVisible(activeTabId);
   }, [activeTabId, openTabs.length, stopMomentum, animateStripScroll, ensurePillVisible]);
 
-  // Keep edge fade updated on resize, active tab change, or tab count changes
+  // Keep the edge fades in step with the strip's size AND its content's size. Once the strip is at
+  // its max width it stops resizing, while its content can still grow or shrink without a scroll
+  // (a pill growing in, a close slot opening, a title being typed) — watching only the strip left
+  // the fade stale, e.g. stuck at 2px for ~250ms and then popping to 16px when a pill settled.
+  // Each pill wrapper is observed too; re-subscribed when the number of tabs changes (not on every
+  // tab-list update — the list is recreated on each title keystroke, and resizes of existing
+  // wrappers are already observed).
   useEffect(() => {
     const el = tabsContainerRef.current;
     if (!el) return;
     checkScrollFade();
-
     const rafId = requestAnimationFrame(checkScrollFade);
-
-    let ro;
-    if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(checkScrollFade);
-      ro.observe(el);
-    }
+    const ro = new ResizeObserver(checkScrollFade);
+    ro.observe(el);
+    for (const wrapper of el.children) ro.observe(wrapper);
     return () => {
       cancelAnimationFrame(rafId);
-      if (ro) ro.disconnect();
+      ro.disconnect();
     };
   }, [openTabs.length, activeTabId, checkScrollFade]);
 
@@ -821,12 +863,8 @@ const TabDock = () => {
                   initial={TOAST_CONTENT_HIDDEN}
                   animate={TOAST_CONTENT_SHOWN}
                   exit={TOAST_CONTENT_EXIT}
-                  className={`
-                    absolute left-1/2 inset-y-0 w-max max-w-[min(90vw,400px)]
-                    flex items-center justify-between whitespace-nowrap
-                    ${isEditorActive ? 'px-3.5' : 'px-4'}
-                    ${toast.onUndo ? (isEditorActive ? 'pr-2' : 'pr-2.5') : ''}
-                  `}
+                  style={{ paddingLeft: toastPL, paddingRight: toast.onUndo ? toastPRUndo : toastPR }}
+                  className="absolute left-1/2 inset-y-0 w-max max-w-[min(90vw,400px)] flex items-center justify-between whitespace-nowrap"
                 >
                   <div className="flex items-center gap-2 min-w-0 pr-1">
                     {renderToastIcon(toast.type)}
@@ -865,20 +903,25 @@ const TabDock = () => {
             className="relative z-50 pointer-events-auto shrink-0 flex flex-col w-[min(200px,calc(100vw-2.5rem))] overflow-hidden dock-glass border border-white/10 shadow-2xl rounded-[24px] text-stone-100 select-none no-card-click mb-2 p-2"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Notes List */}
-            <div className="overflow-y-auto flex flex-col gap-1 max-h-[min(220px,38vh)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-y overscroll-contain">
-              <AnimatePresence mode="popLayout">
+            {/* Notes List. A closing row collapses its own height in place (see LIST_ROW_EXIT) rather
+                than being pulled out of the list (popLayout): pulling it out shrank the list's scroll
+                height by a whole row at once, so when scrolled to the bottom the browser clamped the
+                scroll and every row jumped ~42px in one frame before sliding back. */}
+            <div
+              className="overflow-y-auto flex flex-col max-h-[min(220px,38vh)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden touch-pan-y overscroll-contain"
+              style={{ gap: LIST_ROW_GAP_PX }}
+            >
+              <AnimatePresence>
                 {openTabs.map((tab) => {
                   const isActive = activeTabId === tab._id;
                   return (
                     <motion.div
                       key={tab._id}
-                      layout="position"
                       variants={shutterItemVariants}
-                      exit={{ opacity: 0, scale: 0.85 }}
+                      exit={LIST_ROW_EXIT}
                       onClick={() => handleSelectTabFromMenu(tab._id)}
                       className={`
-                        shrink-0 flex items-center justify-between pl-3.5 pr-2 h-[38px] rounded-full cursor-pointer transition-colors duration-150 select-none
+                        shrink-0 flex items-center justify-between pl-3.5 pr-2 h-[38px] overflow-hidden rounded-full cursor-pointer transition-colors duration-150 select-none
                         ${isActive
                           ? 'bg-[#f4eadc] text-[#222] shadow-sm font-semibold'
                           : 'bg-white/5 hover:bg-white/10 text-stone-200 font-medium'
@@ -965,7 +1008,6 @@ const TabDock = () => {
                   ref={tabsContainerRef}
                   role="tablist"
                   aria-label="Open notes"
-                  onClick={handleTabsContainerClick}
                   onMouseDown={handleMouseDown}
                   onScroll={checkScrollFade}
                   onTouchStart={handleTouchStart}
@@ -1066,7 +1108,8 @@ const TabDock = () => {
                             tabIndex={-1}
                             aria-label="Close tab"
                             onClick={(e) => { e.stopPropagation(); handleCloseTab(tab._id); }}
-                            className="relative flex items-center justify-center rounded-full shrink-0 w-3.5 h-3.5 text-stone-300 hover:text-red-300 hover:bg-white/20 transition-colors after:absolute after:-inset-2"
+                            style={{ width: CLOSE_BUTTON_PX, height: CLOSE_BUTTON_PX }}
+                            className="relative flex items-center justify-center rounded-full shrink-0 text-stone-300 hover:text-red-300 hover:bg-white/20 transition-colors after:absolute after:-inset-2"
                             title="Close tab"
                           >
                             <MdClose className="text-xs cursor-pointer shrink-0" />

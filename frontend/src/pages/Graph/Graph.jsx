@@ -11,6 +11,7 @@ import { useToastStore } from '../../store/useToastStore';
 import { useDeleteNoteMutation, useArchiveNoteMutation } from '../../hooks/useNoteMutations';
 import { forceX, forceY, forceCollide } from 'd3-force';
 import { motion, AnimatePresence } from 'framer-motion';
+import { MOBILE_QUERY } from '../../constants/breakpoints';
 import { 
   MdLocalOffer, MdClose, MdCheck, MdOutlineArchive, 
   MdOutlineUnarchive, MdEdit, MdDelete 
@@ -129,7 +130,7 @@ const Graph = () => {
 
   const [dimensions, setDimensions] = useState(() => {
     if (typeof window === 'undefined') return { width: 800, height: 600 };
-    const isMobile = window.innerWidth < 640;
+    const isMobile = window.matchMedia(MOBILE_QUERY).matches;
     const sidebarWidth = !isMobile ? (isSidebarOpen ? 220 : 64) : 0;
     return {
       width: window.innerWidth - sidebarWidth,
@@ -140,7 +141,7 @@ const Graph = () => {
   // Track the actual visible container size efficiently
   useEffect(() => {
     const handleResize = () => {
-      const isMobile = window.innerWidth < 640;
+      const isMobile = window.matchMedia(MOBILE_QUERY).matches;
       const sidebarWidth = !isMobile ? (isSidebarOpen ? 220 : 64) : 0;
       setDimensions({
         width: window.innerWidth - sidebarWidth,

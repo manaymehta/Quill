@@ -14,6 +14,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useTabsStore } from '../../store/useTabsStore';
+import { MOBILE_QUERY } from '../../constants/breakpoints';
 import MoveToPicker from './MoveToPicker';
 
 const animateLayoutChanges = (args) => {
@@ -238,7 +239,7 @@ const InnerNoteCard = memo(({
                 style={(() => {
                   const menuWidth = 175;
                   const menuHeight = isTrash ? 85 : 210;
-                  const bottomMargin = window.innerWidth < 640 ? 76 : 8;
+                  const bottomMargin = window.matchMedia(MOBILE_QUERY).matches ? 76 : 8;
                   let finalX = coords.x;
                   if (finalX + menuWidth > window.innerWidth - 8) {
                     finalX = Math.max(8, window.innerWidth - menuWidth - 8);
