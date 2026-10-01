@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, Suspense } from "react";
 import Sidebar from "../Sidebar/Sidebar";
 import Navbar from "../Navbar/Navbar";
 import { Outlet, useLocation } from "react-router-dom";
@@ -69,7 +69,10 @@ const MainLayout = () => {
 
             {/* Main Outlet content (hidden when editor is active) */}
             <div className={`transition-[padding] ${isSidebarOpen ? "pl-0 sm:pl-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "pl-0 sm:pl-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]"} pt-[60px] md:pt-[72px] ${isEditorActive ? "hidden" : ""}`}>
-                <Outlet />
+                {/* Boundary for lazily loaded routes (e.g. Graph) so the shell stays mounted */}
+                <Suspense fallback={null}>
+                    <Outlet />
+                </Suspense>
             </div>
 
             {/* Global Note Editor Overlay (z-20) */}
