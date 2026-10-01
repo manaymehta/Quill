@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home/Home';
 import SignUp from './pages/SignUp/SignUp';
@@ -8,9 +8,11 @@ import Pinned from './pages/Pinned/Pinned';
 import Archive from './pages/Archive/Archive';
 import Trash from './pages/Trash/Trash';
 import { useAuthStore } from './store/useAuthStore';
-import Graph from './pages/Graph/Graph';
 import LandingPage from './pages/LandingPage/LandingPage';
 import FolderView from './pages/FolderView/FolderView';
+
+// Heavy route (react-force-graph + d3) split into its own chunk; Suspense boundary lives in MainLayout
+const Graph = lazy(() => import('./pages/Graph/Graph'));
 
 const App = () => {
   const { isLoggedIn, isInitialized, initializeAuth } = useAuthStore();
