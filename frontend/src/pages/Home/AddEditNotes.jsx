@@ -523,12 +523,59 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     }
   };
 
+  const [showAgentDiff, setShowAgentDiff] = useState(false);
+
   const activeChecklistItem = activeChecklistId ? checklist.find(i => i.id === activeChecklistId) : null;
 
   const checklistItems = useMemo(() => checklist.map(item => item.id), [checklist]);
 
+  // Cheap derived check; avoid useMemo (React Compiler rejects manual deps here).
+  const agentDiffHasChanges = Array.isArray(noteData?.agentDiff) && noteData.agentDiff.some((part) => part.added || part.removed);
+
   return (
     <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] rounded-[24px] shadow-sm border border-[#e8dcc8] overflow-hidden relative'>
+
+      {/* agent-staged draft banner */}
+      {noteData?.agentStaged && (
+        <div className="shrink-0 flex flex-col gap-2 px-5 md:px-7 pt-4 pb-3 bg-amber-50/80 border-b border-amber-200/70 font-sans">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs md:text-sm text-[#7a4a12] font-medium">
+              Drafted by the Notes Agent — unsaved. Review, then save or discard.
+            </p>
+            {agentDiffHasChanges && (
+              <button
+                onClick={() => setShowAgentDiff((v) => !v)}
+                className="text-[11px] font-semibold text-[#7a4a12] border border-amber-300 rounded-full px-3 py-1 hover:bg-amber-100 transition-colors cursor-pointer shrink-0"
+              >
+                {showAgentDiff ? 'Hide changes' : 'View changes'}
+              </button>
+            )}
+          </div>
+          {showAgentDiff && agentDiffHasChanges && (
+            <div className="max-h-56 overflow-y-auto editor-scrollbar rounded-xl border border-amber-200 bg-white/70 p-3 text-xs md:text-sm leading-relaxed whitespace-pre-wrap font-mono">
+              {noteData.agentOriginalTitle !== undefined && noteData.agentOriginalTitle !== (noteData.title || '') && (
+                <div className="mb-2 text-stone-500">
+                  Title: <span className="line-through text-red-700 bg-red-100">{noteData.agentOriginalTitle || '(untitled)'}</span>{' '}
+                  → <span className="text-emerald-700 bg-emerald-100">{noteData.title || '(untitled)'}</span>
+                </div>
+              )}
+              {noteData.agentDiff.map((part, idx) => {
+                if (!part.added && !part.removed) return (
+                  <span key={idx} className="text-stone-400">{part.value}</span>
+                );
+                return (
+                  <span
+                    key={idx}
+                    className={part.added ? 'bg-emerald-100 text-emerald-900' : 'bg-red-100 text-red-900 line-through'}
+                  >
+                    {part.value}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* editor content area */}
       <div className='flex-grow flex flex-col pt-5 md:pt-6 px-5 md:px-7 pb-2 overflow-y-auto editor-scrollbar'>

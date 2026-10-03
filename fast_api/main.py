@@ -14,10 +14,18 @@ from qdrant_client.models import (
     Filter, FieldCondition, MatchValue,
     FilterSelector, PointIdsList, PayloadSchemaType
 )
-from fastapi import FastAPI, HTTPException, Response, Depends
+from fastapi import FastAPI, HTTPException, Header, Response, Depends
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+
+from agent import (
+    run_agent_turn,
+    AgentChatRequest,
+    AgentChatResponse,
+    Citation,
+    ToolContext,
+)
 
 load_dotenv()
 
@@ -586,6 +594,53 @@ async def semantic_search(request: SemanticSearchRequest, _: None = Depends(veri
     except Exception as e:
         print(f"Semantic search error: {e}")
         raise HTTPException(status_code=500, detail="Semantic search failed.")
+
+
+# Agent Chat (Phase A — harness skeleton, read-only tools)
+# The loop owns orchestration; tools execute against Express using the user's
+# own forwarded JWT (Authorization header), so the agent can never exceed the
+# caller's permissions and never sees MongoDB directly.
+@app.post("/agent/chat", response_model=AgentChatResponse)
+async def agent_chat(
+    request: AgentChatRequest,
+    authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
+    _: None = Depends(verify_api_key),
+):
+    if gemini_client is None:
+        raise HTTPException(status_code=503, detail="Agent service not available.")
+    if not request.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+    if not authorization or not authorization.strip():
+        raise HTTPException(status_code=400, detail="User authorization header is required.")
+
+    express_base_url = (os.getenv("EXPRESS_INTERNAL_URL") or "").rstrip("/")
+    tool_context = ToolContext(
+        user_id=x_user_id or "",
+        auth_header=authorization.strip(),
+        express_base_url=express_base_url,
+    )
+
+    start_time = time.perf_counter()
+    try:
+        result = await run_agent_turn(
+            gemini_client=gemini_client,
+            message=request.message.strip(),
+            history=request.history,
+            working_set=[
+                Citation(noteId=note_id, title="") for note_id in request.workingSet
+            ],
+            tool_context=tool_context,
+        )
+        duration = time.perf_counter() - start_time
+        print(
+            f"Agent chat turn completed in {duration:.2f}s "
+            f"(tools used: {len(result.toolsUsed)}, user: {x_user_id or 'unknown'})"
+        )
+        return result
+    except Exception as e:
+        print(f"Agent chat error: {e}")
+        raise HTTPException(status_code=500, detail="Agent chat failed.")
 
 
 if __name__ == "__main__":

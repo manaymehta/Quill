@@ -19,6 +19,7 @@ const allowedOrigins = configuredOrigins.length > 0
 const authRoutes = require("./routes/auth.routes");
 const noteRoutes = require("./routes/note.routes");
 const folderRoutes = require("./routes/folder.routes");
+const agentRoutes = require("./routes/agent.routes");
 
 app.set("trust proxy", 1);
 app.use((req, res, next) => {
@@ -57,6 +58,7 @@ app.get("/ready", (req, res) => {
 app.use("/v1", authRoutes);
 app.use("/v1", noteRoutes);
 app.use("/v1", folderRoutes);
+app.use("/v1", agentRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: true, message: "Route not found" });
