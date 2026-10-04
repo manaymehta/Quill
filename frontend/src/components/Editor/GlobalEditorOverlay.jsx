@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, memo, lazy, Suspense } from 'react';
-import { motion as Motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { FiMenu } from 'react-icons/fi';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
 import { DOCK_METRICS, DOCK_MOBILE_QUERY, getEditorClearance } from '../TabDock/dockMetrics';
+import { EDITOR_CARD_STYLE, EDITOR_RADIUS_PX } from './editorChrome';
 
 // The editor pulls in CodeMirror (~600 kB minified), so it lives in its own chunk.
 // It is warmed on idle after the layout mounts so the first note open is instant.
@@ -14,8 +15,15 @@ const AddEditNotes = lazy(loadAddEditNotes);
 
 // Blank card matching the editor's shell, shown only if the chunk hasn't arrived yet
 const EditorFallback = () => (
-  <div className="h-full w-full bg-[#f4eadc] rounded-[24px] shadow-sm border border-[#e8dcc8]" />
+  <div className="h-full w-full bg-[#f4eadc]" style={EDITOR_CARD_STYLE} />
 );
+
+// Card mode: the gap around the card, and its max width (phone = below the tablet breakpoint)
+const EDITOR_GAP_PX   = { phone: 8, desktop: 16 };
+const EDITOR_MAX_W_PX = { phone: 768, desktop: 790 };
+const EDITOR_ROW_MAX_WITH_PANEL_PX = 1170; // card + side panel (desktop)
+// Card ↔ full screen. A large surface: a touch of bounce so it lands rather than crawls in.
+const FULLSCREEN_SPRING = { type: 'spring', visualDuration: 0.32, bounce: 0.12 };
 
 const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, onToggleMockPanel, onSummaryReceived }) => {
   const closeTab = useTabsStore((state) => state.closeTab);
@@ -58,12 +66,31 @@ const GlobalEditorOverlay = () => {
   const closeTab = useTabsStore((state) => state.closeTab);
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
+  const isFullscreen = useUIStore((state) => state.isEditorFullscreen);
 
   const isDockMobile = useMediaQuery(DOCK_MOBILE_QUERY);
   // Reactive (re-renders when the breakpoint is crossed); reading window.innerWidth during render
   // left the ghost cards / summary panel in the old layout after a resize until something else re-rendered.
   const isBelowTablet = useMediaQuery(BELOW_TABLET_QUERY);
   const dockClearance = getEditorClearance(isDockMobile ? DOCK_METRICS.mobile : DOCK_METRICS.desktop);
+  const editorGap  = isBelowTablet ? EDITOR_GAP_PX.phone : EDITOR_GAP_PX.desktop;
+  const editorMaxW = isBelowTablet ? EDITOR_MAX_W_PX.phone : EDITOR_MAX_W_PX.desktop;
+
+  // Card ↔ full-screen progress. Starts at the remembered mode, so opening an editor that's already
+  // full screen doesn't animate. Gaps are rounded to whole pixels (sub-pixel edges make the text
+  // re-snap to the pixel grid each frame — the dock's jitter lesson); corners and fades needn't be.
+  // The target follows the store directly (not a React effect, which runs only after the re-render
+  // has painted), so the motion starts on the next frame after the click.
+  const fsTarget = useMotionValue(isFullscreen ? 1 : 0);
+  const fs       = useSpring(fsTarget, FULLSCREEN_SPRING);
+  useEffect(() => useUIStore.subscribe((state, prev) => {
+    if (state.isEditorFullscreen !== prev.isEditorFullscreen) fsTarget.set(state.isEditorFullscreen ? 1 : 0);
+  }), [fsTarget]);
+  const fsClamped = useTransform(fs, (v) => Math.min(1, Math.max(0, v)));
+  const gapNow    = useTransform(fs, (v) => `${Math.max(0, Math.round(editorGap * (1 - v)))}px`);
+  const bottomNow = useTransform(fs, (v) => `${Math.max(0, Math.round(dockClearance * (1 - v)))}px`);
+  const radiusNow = useTransform(fs, (v) => `${Math.max(0, EDITOR_RADIUS_PX * (1 - v))}px`);
+  const chromeNow = useTransform(fsClamped, (v) => 1 - v);
 
   const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
   const [panelContent, setPanelContent] = useState('');
@@ -120,12 +147,13 @@ const GlobalEditorOverlay = () => {
         </div>
       )}
 
+
       {/* Ghost cards — tucked behind active card edges, scaled down for depth */}
       {openTabs.map((tab, index) => {
         const offset = isEditorOpen ? index - activeIndex : Infinity;
         const isAdjacent = Math.abs(offset) === 1;
 
-        if (!isAdjacent || !isEditorOpen || isMockPanelOpen) return null;
+        if (!isAdjacent || !isEditorOpen || isMockPanelOpen || isFullscreen) return null;
 
         return (
           <div
@@ -193,19 +221,48 @@ const GlobalEditorOverlay = () => {
         );
       })}
 
-      {/* Active editor — centered (only active tab is mounted in the DOM) */}
+      {/* Active editor — centered (only active tab is mounted in the DOM).
+          Card ↔ full screen is one spring (--fs: 0 = card, 1 = full screen) that every size here
+          is interpolated along: the gap around the card, the space above the dock, the widths, and
+          the card's corners/border/shadow (editorChrome.js). The card-mode width is defined once,
+          as --editor-card-w; the editor's text column (.editor-column in index.css) is always that
+          card's inner width, centred — so the text never changes width or re-wraps.
+          The outer layer is a size container with no padding, so 100cqw is the window width. */}
       {activeTab && isEditorOpen && (
-        <div
-          className="fixed inset-0 flex justify-center px-2 md:px-4 pt-2 md:pt-4 z-20 animate-scale-up pointer-events-none"
-          style={{ paddingBottom: dockClearance }}
+        <Motion.div
+          className="fixed inset-0 z-20 animate-scale-up pointer-events-none @container"
+          style={{
+            '--editor-gap': `${editorGap}px`,
+            '--editor-max-w': `${editorMaxW}px`,
+            '--editor-card-w': 'min(var(--editor-max-w), 100cqw - 2 * var(--editor-gap))',
+            '--fs': fsClamped,
+            '--editor-gap-now': gapNow,
+            '--editor-bottom-now': bottomNow,
+            '--editor-radius': radiusNow,
+            '--editor-chrome': chromeNow,
+          }}
         >
+          {/* Grows from 100% to 100vw: the page reserves a scrollbar gutter (scrollbar-gutter: stable
+              on html) that fixed layers are laid out inside of, so filling only the layer would leave
+              a strip of page down the right edge on desktop. Phones have overlay scrollbars. */}
           <div
-            className={`flex flex-col md:flex-row gap-4 h-full pointer-events-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full ${
-              isMockPanelOpen ? 'md:max-w-[1170px] max-w-3xl md:max-w-[790px]' : 'max-w-3xl md:max-w-[790px]'
-            }`}
+            className="flex justify-center h-full"
+            style={{
+              width: 'calc(100% + (100vw - 100%) * var(--fs))',
+              padding: 'var(--editor-gap-now) var(--editor-gap-now) var(--editor-bottom-now)',
+            }}
+          >
+          {/* Row (editor + panel). Its card-mode max width widens when the panel opens; that's a CSS
+              transition on --editor-row-max (index.css), separate from the full-screen spring. */}
+          <div
+            className="editor-row flex flex-col md:flex-row gap-4 h-full pointer-events-auto w-full"
+            style={{ '--editor-row-max': isMockPanelOpen && !isBelowTablet ? `${EDITOR_ROW_MAX_WITH_PANEL_PX}px` : 'var(--editor-max-w)' }}
           >
             {/* Main Editor */}
-            <div className="w-full h-full max-w-3xl md:max-w-[790px] shrink-0">
+            <div
+              className="h-full w-full min-w-0"
+              style={{ maxWidth: 'calc(var(--editor-max-w) + (100vw - var(--editor-max-w)) * var(--fs))' }}
+            >
               <Suspense fallback={<EditorFallback />}>
                 <TabEditorSlot
                   key={activeTab._id}
@@ -285,7 +342,8 @@ const GlobalEditorOverlay = () => {
               )}
             </AnimatePresence>
           </div>
-        </div>
+          </div>
+        </Motion.div>
       )}
     </>
   );

@@ -12,7 +12,11 @@ import { MOBILE_QUERY } from '../../constants/breakpoints';
 
 const Sidebar = forwardRef((props, ref) => {
   const navigate = useNavigate();
-  const { isSidebarOpen } = useUIStore();
+  const { isSidebarOpen, isEditorFullscreen } = useUIStore();
+  const isEditorActive = useTabsStore((s) => s.activeTabId !== 'home');
+  // Full-screen editor: no icon rail on wide screens either; the sidebar only slides in from the
+  // editor's menu button, as on phones.
+  const hideRail = isEditorFullscreen && isEditorActive;
   const location = useLocation();
 
   const { data: folders = [] } = useFoldersQuery();
@@ -49,10 +53,10 @@ const Sidebar = forwardRef((props, ref) => {
       className={`
         fixed top-0 left-0 h-full h-dvh bg-(--page-bg) 
         transform transition-all z-[80]
-        sm:translate-x-0 overflow-y-auto overflow-x-hidden scrollbar-thin
-        ${isSidebarOpen 
-          ? 'translate-x-0 w-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]' 
-          : '-translate-x-full w-55 sm:w-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]'}
+        overflow-y-auto overflow-x-hidden scrollbar-thin
+        ${isSidebarOpen
+          ? 'translate-x-0 w-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]'
+          : `-translate-x-full w-55 duration-200 ease-[cubic-bezier(0.2,0,0,1)] ${hideRail ? '' : 'sm:translate-x-0 sm:w-16'}`}
       `}
     >
       <div className="py-4">

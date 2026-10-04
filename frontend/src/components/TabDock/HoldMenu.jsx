@@ -4,6 +4,7 @@ import { motion, animate, AnimatePresence, usePresence } from 'framer-motion';
 import { DOCK_METRICS } from './dockMetrics';
 import { EASE_IN, EASE_OUT, PILL_FADE, PILL_SPRING } from './dockMotion';
 import { useEdgeFade } from './useEdgeFade';
+import FadeTitle from './FadeTitle';
 
 // Long-press notes list (phone): lists every open note, since the dock's strip can't show them all
 // on a narrow screen.
@@ -205,9 +206,10 @@ const HoldMenu = ({ openTabs, activeTabId, onSelect, onClose }) => (
                 }
               `}
             >
-              <span className="truncate flex-1 min-w-0 text-xs tracking-wide">
+              {/* Long titles fade out at their end, like the dock's pills */}
+              <FadeTitle className="flex-1 min-w-0 text-xs tracking-wide">
                 {tab.title || 'Untitled Note'}
-              </span>
+              </FadeTitle>
               <button
                 type="button"
                 onClick={(e) => {

@@ -1,16 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MdAdd, MdHome, MdClose } from 'react-icons/md';
 import { motion, animate, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
+import { useUIStore } from '../../store/useUIStore';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { DOCK_METRICS, DOCK_MOBILE_QUERY } from './dockMetrics';
 import { PILL_FADE, PILL_SPRING, useCenteredDockPx, useDockPx } from './dockMotion';
 import SpringWidth from './SpringWidth';
+import FadeTitle from './FadeTitle';
 import DockToast from './DockToast';
 import HoldMenu from './HoldMenu';
 import { useEdgeFade } from './useEdgeFade';
+import { useOutsidePress } from './useOutsidePress';
 
 // Home ↔ editor compaction. All dock sizes are rounded to whole pixels, so how the spring *ends*
 // decides whether it looks clean: an overdamped spring crawls through its last pixels, the final 1px
@@ -19,6 +22,26 @@ import { useEdgeFade } from './useEdgeFade';
 // (simulated on the real metrics; bounce ≥ 0.25 starts to overshoot visibly).
 const DOCK_SPRING = { type: 'spring', visualDuration: 0.2, bounce: 0.2 };
 const PILL_BORDER_PX = 1; // Tailwind `border`
+
+// Full-screen dot (see the dot progress in TabDock). Sizes use the progress clamped to 0–1, so they
+// land exactly on whole pixels and stop; the spring's bounce is carried by a scale instead, which
+// moves smoothly at any fraction (bouncing the rounded sizes stepped 1px at a time — a jitter).
+// Past the dot (progress > 1) the dot dips smaller and springs back; past the dock (< 0) the dock
+// swells slightly and settles — the same kind of pop as the toast's.
+const DOT_SPRING = { type: 'spring', visualDuration: 0.26, bounce: 0.3, restDelta: 0.0005 };
+const DOT_POP_SCALE  = 1.6; // scale dip per unit of overshoot past the dot (≈7% at this bounce)
+const DOCK_POP_SCALE = 0.6; // scale swell per unit of overshoot past the dock (≈3%)
+// Treated as fully back to the dock: the spring's last small wobble can come to rest just above 0,
+// which left the dock at a fixed width with its contents still ignoring taps
+const DOT_AT_DOCK = 0.002;
+const DOT_ROW_FADE_END = 0.4;     // closing: the dock's contents are gone by 40% of the way to the dot
+// Opening: they're back by 25% of the way out. They start stacked under the + (same-size circles, the
+// + on top), so they visibly slide out from behind it; with the closing timing they stayed invisible
+// until 60% of the way out, so they appeared far from the dot, as if the dock filled in from the left.
+const DOT_ROW_FADE_IN_END = 0.25;
+const DOT_ICON_FADE_END = 0.6;   // the + button's icon is gone by 60% of the way (leaving its circle)
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 // Tab strip: edge fade width, and the spring for programmatic scrolling (bringing the active pill
 // into view, resetting to the start on Home)
@@ -44,8 +67,49 @@ const SEPARATOR_SLOT_EXPANDED = {
 // Active pill's in-flow close button: its slot (gap + button) springs open/closed on activation.
 const CLOSE_BUTTON_PX = 14;
 const CLOSE_SLOT_GAP_PX = 6;
-const CLOSE_SLOT_OPEN   = { width: CLOSE_BUTTON_PX + CLOSE_SLOT_GAP_PX, opacity: 1, transition: { default: PILL_SPRING, opacity: PILL_FADE } };
-const CLOSE_SLOT_CLOSED = { width: 0, opacity: 0, transition: { default: PILL_SPRING, opacity: PILL_FADE } };
+const CLOSE_SLOT_OPEN_PX = CLOSE_BUTTON_PX + CLOSE_SLOT_GAP_PX;
+
+// The active pill's close slot. Normally it springs open/closed on its own (PILL_SPRING) as the
+// pill becomes active/inactive. But when that happens together with the dock resizing (home ↔
+// editor: tapping a pill at home, or going home), it follows the resize progress instead. On its own
+// spring it opened slower than the pill's title cap shrank (the dock's spring), so the pill got
+// narrower than its final size, then wider again — and, the dock being centred, the pill slid right
+// and back (simulated: 2.6px on desktop; 8 reversals on a phone). Following the progress, the slot's
+// width is whatever makes the pill's TOTAL width one smoothly rounded value, so every edge moves
+// one way only. `natural` is the title's full width (its scrollWidth).
+const compactionSlotPx = (v, metrics, natural) => {
+  const plRaw = lerp(...metrics.pillPaddingLeft, v);
+  const prRaw = lerp(...metrics.pillPaddingRight, v);
+  const capRaw = lerp(...metrics.pillMaxWidth, v);
+  // The pill's other parts, as rendered (rounded like useDockPx)
+  const pl = Math.round(plRaw), pr = Math.round(prRaw), cap = Math.round(capRaw);
+  const borders = 2 * PILL_BORDER_PX;
+  const textW = Math.min(natural, cap - pl - pr - borders);
+  const truncated = natural > capRaw - plRaw - prRaw - borders;
+  const totalRaw = (truncated ? capRaw : plRaw + prRaw + borders + natural) + CLOSE_SLOT_OPEN_PX * v;
+  return Math.max(0, Math.round(totalRaw) - (pl + textW + pr + borders));
+};
+
+const CloseSlot = ({ isActive, followsCompaction, progress, metrics, className, children, ...rest }) => {
+  const ref = useRef(null);
+  const width = useMotionValue(isActive ? CLOSE_SLOT_OPEN_PX : 0);
+  const opacity = useMotionValue(isActive ? 1 : 0);
+  useEffect(() => {
+    if (followsCompaction) {
+      const natural = ref.current?.previousElementSibling?.scrollWidth ?? 0; // the title span
+      const update = (v) => {
+        width.set(compactionSlotPx(v, metrics, natural));
+        opacity.set(clamp01(v * 2));
+      };
+      update(progress.get());
+      return progress.on('change', update);
+    }
+    const w = animate(width, isActive ? CLOSE_SLOT_OPEN_PX : 0, PILL_SPRING);
+    const o = animate(opacity, isActive ? 1 : 0, PILL_FADE);
+    return () => { w.stop(); o.stop(); };
+  }, [followsCompaction, isActive, progress, metrics, width, opacity]);
+  return <motion.span ref={ref} style={{ width, opacity }} className={className} {...rest}>{children}</motion.span>;
+};
 
 // Tab strip scrolling feel
 const MOMENTUM_SAMPLE_MS    = 80;    // drag window used to measure release velocity
@@ -68,6 +132,22 @@ const TabDock = () => {
   const activeFolderId = useFoldersStore((s) => s.activeFolderId);
 
   const isEditorActive = activeTabId !== 'home';
+
+  // The pill whose activation coincides with the dock resizing (see CloseSlot): the one tapped at
+  // home, or the one that was active when going home. Worked out while rendering from the previous
+  // active tab (React's pattern for reacting to a changed value), and cleared once the resize settles.
+  const [prevActiveTabId, setPrevActiveTabId] = useState(activeTabId);
+  const [compactionPillId, setCompactionPillId] = useState(null);
+  // Full-screen editor: whether the dock has been expanded from its dot (see the dot below)
+  const [isDockExpanded, setIsDockExpanded] = useState(false);
+  if (prevActiveTabId !== activeTabId) {
+    setPrevActiveTabId(activeTabId);
+    const wasEditor = prevActiveTabId !== 'home';
+    // Switching notes within the editor is no resize: those slots use their own spring
+    setCompactionPillId(wasEditor === isEditorActive ? null : (isEditorActive ? activeTabId : prevActiveTabId));
+    // Leaving the editor: the next note opens with the dock as a dot again
+    if (!isEditorActive) setIsDockExpanded(false);
+  }
 
   const isMobile = useMediaQuery(DOCK_MOBILE_QUERY);
   const metrics  = isMobile ? DOCK_METRICS.mobile : DOCK_METRICS.desktop;
@@ -94,6 +174,126 @@ const TabDock = () => {
   const pillTextMaxW  = useTransform(() => pillMaxW.get() - pillPL.get() - pillPR.get() - 2 * PILL_BORDER_PX);
   const paddingBottom = useDockPx(progress, metrics.paddingBottom);
 
+  // Full-screen editor: the dock shrinks into a dot — the compact dock reduced to one button: its
+  // own height, rounding and bottom position (so only the width changes), with a coral circle the
+  // size of its + button inside, at the same inset. The editor's toolbar is sized around it
+  // (fullscreenToolbarHeight in editorChrome.js), so it sits centred in the toolbar. A second
+  // progress (0 = dock, 1 = dot) drives it, on top of the compaction above.
+  const isEditorFullscreen = useUIStore((s) => s.isEditorFullscreen);
+  // Tapping the dot expands the dock back to normal, and it stays expanded until a tap outside it
+  // (picking a note or + in it doesn't shrink it). Leaving or re-entering full screen, or leaving
+  // the editor, starts from the dot again.
+  useEffect(() => useUIStore.subscribe((state, prev) => {
+    if (state.isEditorFullscreen !== prev.isEditorFullscreen) setIsDockExpanded(false);
+  }), []);
+  const isDotted = isEditorFullscreen && isEditorActive && !isDockExpanded;
+  const expandDock = () => setIsDockExpanded(true);
+  const dotTarget = useMotionValue(isDotted ? 1 : 0);
+  const dot       = useSpring(dotTarget, DOT_SPRING);
+  // Layout effect: the target is set before this render paints, so the motion starts next frame
+  useLayoutEffect(() => {
+    dotTarget.set(isDotted ? 1 : 0);
+  }, [isDotted, dotTarget]);
+  const dot01 = useTransform(dot, clamp01);
+  // The page reserves a scrollbar gutter on desktop (see GlobalEditorOverlay); the full-screen editor
+  // spans it, so the dot does too, to sit at the editor's true centre. Whole pixels, so the dock's
+  // centre doesn't drift through fractions as it shrinks.
+  // (The gutter's width: html's layout box excludes it, while clientWidth does not.)
+  const rootRight = useTransform(dot01, (v) =>
+    -Math.round((window.innerWidth - document.documentElement.getBoundingClientRect().width) * v));
+  // The dot's centre IS the dock's + button: as the dock shrinks, the row slides so the + travels to
+  // the middle (see the width effect below), everything else fades out early, and the + loses its
+  // icon — one shape changing, instead of the + being clipped away and a second circle fading in.
+  // Its downward shadow levels out too: offset, it darkened the ring below the circle and made the
+  // dot look off-centre. Set as CSS variables on the glass, read by the elements below.
+  const othersOpacity   = useTransform(() => {
+    const v = dot.get();
+    return dotTarget.get() === 1
+      ? clamp01(1 - v / DOT_ROW_FADE_END)          // closing into the dot
+      : clamp01((1 - v) / DOT_ROW_FADE_IN_END);    // opening out of it
+  });
+  const plusIconOpacity = useTransform(dot, (v) => clamp01(1 - v / DOT_ICON_FADE_END));
+  const rowPointer  = useTransform(dot, (v) => (v > DOT_AT_DOCK ? 'none' : 'auto'));
+  const dotMarkRadius = useTransform(circleSize, (px) => `${px / 2}px`); // the + button's radius
+  const glassScale  = useTransform(dot, (v) => (v > 1 ? 1 - (v - 1) * DOT_POP_SCALE : v < 0 ? 1 - v * DOCK_POP_SCALE : 1));
+
+  // Width: the dock is normally `auto` (sized by its contents). While it morphs, its contents are
+  // held at their natural width (so nothing inside squashes or re-flows — they're clipped by the
+  // glass) and the glass width goes from that natural width to the dot's, unrounded so it moves
+  // smoothly (whole-pixel steps showed as stair-steps in the slow end of the spring).
+  // The buttons gather into the dot and spread out of it: each one slides by its distance from the
+  // + button (which becomes the dot's centre) times the progress, so as the dot they're all stacked
+  // on the + and, opening, Home and the pills travel out from it to their places. (Sliding the row
+  // as a whole kept their spacing, so opening they swept in from the left edge instead.) The row
+  // also slides so the + sits exactly centred.
+  // All measured every frame, with the slides taken off first: the contents can change mid-morph —
+  // Discard on the last note closes its pill while the dock both grows back and resizes to the home
+  // state — and a measurement taken once at the start went stale. Back at 0 it's all `auto` again.
+  const dockGlassRef = useRef(null);
+  const dockRowRef = useRef(null);
+  const dockPlusRef = useRef(null);
+  // Once the morph reaches its end, later wobbles of the spring back across that end are ignored:
+  // the scale carries the bounce on the far side, but swinging back it would nudge the width (a
+  // half-pixel dip after the dock had settled).
+  const arrivedRef = useRef(false);
+  useLayoutEffect(() => {
+    arrivedRef.current = false; // direction changed
+  }, [isDotted]);
+  useEffect(() => {
+    const render = (v) => {
+      const glass = dockGlassRef.current;
+      const row = dockRowRef.current;
+      if (!glass || !row) return;
+      const toDot = dotTarget.get() === 1;
+      if (toDot ? v >= 1 : v <= DOT_AT_DOCK) arrivedRef.current = true;
+      // Landed as the dot: its coral centre is painted by the glass itself (exactly concentric, see
+      // .dock-glass[data-dot-mark] in index.css) in place of the + button, which did the travelling.
+      // Same size and colour, so the handover doesn't show; reversed as soon as it starts opening.
+      const markPainted = toDot && arrivedRef.current;
+      glass.toggleAttribute('data-dot-mark', markPainted);
+      if (dockPlusRef.current) dockPlusRef.current.style.visibility = markPainted ? 'hidden' : '';
+      const plusEl = dockPlusRef.current;
+      if (!toDot && arrivedRef.current) {
+        glass.style.width = '';
+        row.style.width = '';
+        row.style.maxWidth = '';
+        row.style.flexShrink = '';
+        row.style.transform = '';
+        for (const child of row.children) child.style.transform = '';
+        return;
+      }
+      // Natural layout, slides off. max-width too: the row's max-w-full would cap it at the
+      // (dot-sized) glass.
+      row.style.width = 'max-content';
+      row.style.maxWidth = 'none';
+      row.style.flexShrink = '0';
+      row.style.transform = '';
+      for (const child of row.children) child.style.transform = '';
+      const scale = glassScale.get(); // measure unscaled
+      const rowRect = row.getBoundingClientRect();
+      const centreInRow = (el) => {
+        const r = el.getBoundingClientRect();
+        return (r.left + r.width / 2 - rowRect.left) / scale;
+      };
+      const rowWidth = rowRect.width / scale;
+      const plusX = centreInRow(plusEl);
+      const cs = getComputedStyle(glass);
+      const naturalWidth = rowWidth
+        + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
+        + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+
+      const p = toDot && arrivedRef.current ? 1 : clamp01(v);
+      const dotPx = dockHeight.get(); // the dot is as wide as the dock is tall
+      glass.style.width = `${lerp(naturalWidth, dotPx, p)}px`;
+      for (const child of row.children) {
+        if (child !== plusEl) child.style.transform = `translateX(${(plusX - centreInRow(child)) * p}px)`;
+      }
+      row.style.transform = `translateX(${(rowWidth / 2 - plusX) * p}px)`;
+    };
+    render(dot.get());
+    return dot.on('change', render);
+  }, [dot, dotTarget, dockHeight, glassScale]);
+
   // Marks the dock as resizing so CSS can swap the glass for an opaque fill while it moves (see
   // .dock-root[data-dock-moving] in index.css): until the largest travel has under half a pixel left,
   // where the last rounded step lands, so the blur returns exactly as the dock visibly stops.
@@ -109,6 +309,7 @@ const TabDock = () => {
       if (next === moving) return;
       moving = next;
       dockRootRef.current?.toggleAttribute('data-dock-moving', next);
+      if (!next) setCompactionPillId(null); // resize done: the slot is back on its own spring
     });
   }, [progress, settleEpsilon]);
 
@@ -257,7 +458,26 @@ const TabDock = () => {
 
   const showHoldMenu = isHoldMenuOpen && isMobile && openTabs.length > 1;
 
-  // Single capture-phase listener at root: dismisses the list on an outside click
+  // Expanded from the dot: a tap outside the dock shrinks it back, and only does that (see
+  // useOutsidePress: it can't focus the editor, open the keyboard or press anything under it).
+  // While the long-press list is open, the list's own outside-tap handling (below) applies instead.
+  const isDockOverEditor = isEditorFullscreen && isEditorActive && isDockExpanded;
+  useOutsidePress(isDockOverEditor && !showHoldMenu, {
+    isInside: (target) => dockRootRef.current?.contains(target),
+    onPress: () => setIsDockExpanded(false),
+  });
+
+  // A tap outside the list closes it and only that: stopped at the start of the touch, so tapping
+  // the editor's text to close the list doesn't also focus it and open the keyboard (see
+  // useOutsidePress). The finger still down from the long press that opened it doesn't count.
+  useOutsidePress(showHoldMenu, {
+    isInside: (target) => Boolean(target.closest?.('.no-card-click')),
+    onPress: () => setIsHoldMenuOpen(false),
+    ignore: () => isHoldingAfterLongPressRef.current,
+  });
+
+  // Single capture-phase listener at root: dismisses the list on an outside click (and swallows the
+  // stray release click / contextmenu of the long press that opened it)
   useEffect(() => {
     if (!showHoldMenu) return;
 
@@ -303,7 +523,14 @@ const TabDock = () => {
     setActiveTab('home');
     navigate('/dashboard');
   };
-  const handleNewNote   = () => createDraftTab(activeFolderId);
+  // Opening a note from the dock (+, a pill, the long-press list) keeps the dock expanded in the
+  // full-screen editor — you're using it — until a tap outside it. A note opened from its card on the
+  // page opens with the dock as a dot. (Outside full screen this has no effect, and turning full
+  // screen on starts from the dot again.)
+  const handleNewNote   = () => {
+    setIsDockExpanded(true);
+    createDraftTab(activeFolderId);
+  };
   const handleTabClick  = (tabId, e) => {
     if (showHoldMenu) {
       e?.stopPropagation?.();
@@ -311,6 +538,7 @@ const TabDock = () => {
       setIsHoldMenuOpen(false);
       return;
     }
+    setIsDockExpanded(true);
     setActiveTab(tabId);
   };
   const handleCloseTab  = (tabId) => closeTab(tabId);
@@ -339,6 +567,7 @@ const TabDock = () => {
 
   const handleSelectTabFromMenu = (tabId) => {
     setIsHoldMenuOpen(false);
+    setIsDockExpanded(true);
     setActiveTab(tabId);
   };
 
@@ -451,7 +680,8 @@ const TabDock = () => {
   return (
     <motion.div
       ref={dockRootRef}
-      style={{ paddingBottom }}
+      data-over-editor={isEditorFullscreen && isEditorActive ? '' : undefined}
+      style={{ paddingBottom, right: rootRight }}
       className="dock-root fixed bottom-0 left-0 right-0 z-50 flex flex-col justify-end items-center pointer-events-none px-3 sm:px-4"
     >
       <DockToast progress={progress} metrics={metrics} height={dockHeight} radius={dockRadius} />
@@ -470,14 +700,34 @@ const TabDock = () => {
 
       {/* Dock */}
       <motion.div
-        style={{ height: dockHeight, borderRadius: dockRadius }}
-        className="dock-glass relative z-40 pointer-events-auto flex items-center justify-center overflow-hidden border border-white/10 shadow-2xl px-2.5 sm:px-2 max-w-[calc(100vw-1.5rem)] sm:max-w-none"
+        ref={dockGlassRef}
+        style={{
+          height: dockHeight, borderRadius: dockRadius, scale: glassScale,
+          '--dock-others': othersOpacity, '--dock-plus-icon': plusIconOpacity, '--dock-dot': dot01,
+          '--dot-mark-r': dotMarkRadius,
+        }}
+        // As the dot it's a button that expands the dock (its contents ignore pointers meanwhile)
+        role={isDotted ? 'button' : undefined}
+        tabIndex={isDotted ? 0 : undefined}
+        aria-label={isDotted ? `Show dock — ${openTabs.length} open ${openTabs.length === 1 ? 'note' : 'notes'}` : undefined}
+        onClick={isDotted ? expandDock : undefined}
+        onKeyDown={isDotted ? (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expandDock(); }
+        } : undefined}
+        className={`group/dot dock-glass relative z-40 pointer-events-auto flex items-center justify-center overflow-hidden border border-white/10 shadow-2xl px-2.5 sm:px-2 max-w-[calc(100vw-1.5rem)] sm:max-w-none outline-none focus-visible:outline-2 focus-visible:outline-[#f4eadc]/70 ${isDotted ? 'cursor-pointer' : ''}`}
       >
-          <div className="flex items-center justify-center h-full min-w-0 max-w-full" style={{ gap: DOCK_ROW_GAP_PX }}>
+          <motion.div
+            ref={dockRowRef}
+            className="flex items-center justify-center h-full min-w-0 max-w-full"
+            style={{ gap: DOCK_ROW_GAP_PX, pointerEvents: rowPointer }}
+            // As the dot, nothing inside is reachable (the + stays visible, so keyboard focus could
+            // otherwise land on it and create a note)
+            inert={isDotted}
+          >
 
             {/* Home */}
             <motion.button
-              style={{ width: circleSize, height: circleSize }}
+              style={{ width: circleSize, height: circleSize, opacity: 'var(--dock-others, 1)' }}
               onClick={handleHomeClick}
               title="Home"
               className={`
@@ -500,7 +750,8 @@ const TabDock = () => {
                 gap={0}
                 animateEnter={false}
                 style={{ marginLeft: -DOCK_ROW_GAP_PX }}
-                className="h-full min-w-0 shrink sm:shrink-0"
+                // filter, not opacity: SpringWidth animates its own opacity (entering/leaving)
+                className="h-full min-w-0 shrink sm:shrink-0 [filter:opacity(var(--dock-others,1))]"
                 contentClassName="flex items-center h-full"
                 contentStyle={{ gap: DOCK_ROW_GAP_PX }}
               >
@@ -523,6 +774,10 @@ const TabDock = () => {
                   onTouchMove={handleTouchMove}
                   onTouchEnd={handleTouchEnd}
                   onTouchCancel={handleTouchEnd}
+                  // Phones: holding a finger also triggers the browser's own long-press (its context
+                  // menu, with a haptic buzz of its own) at about the moment our hold opens the list —
+                  // felt as a double vibration. Cancelling it here, from the start, leaves only ours.
+                  onContextMenu={isMobile ? (e) => e.preventDefault() : undefined}
                   className="relative flex items-center overflow-x-auto shrink sm:shrink-0 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] max-w-[calc(100vw-10rem)] sm:max-w-[50vw] md:max-w-[60vw] lg:max-w-[700px] min-w-0 h-full select-none md:cursor-grab md:active:cursor-grabbing [touch-action:pan-x] [-webkit-touch-callout:none]"
                   // mask-image (edge fades) is written directly by checkScrollFade
                   style={{ gap: PILL_GAP_PX }}
@@ -568,24 +823,22 @@ const TabDock = () => {
                       `}
                     >
                       {/* The width cap sits on the title, not the pill, so the close slot adds its width
-                          beside the title instead of taking it from it (a long title would re-truncate
-                          every frame while the slot opens: the "…" crawls). */}
-                      <motion.span
+                          beside the title instead of taking it from it. */}
+                      <FadeTitle
                         style={{ maxWidth: pillTextMaxW }}
-                        className={`
-                          truncate font-medium leading-none text-xs whitespace-nowrap select-none pointer-events-none
-                          ${isActive ? '' : 'tab-pill-label group-hover/tabpill:[--tab-pill-fade:24px]'}
-                        `}
+                        className={`font-medium leading-none text-xs select-none pointer-events-none ${isActive ? '' : 'group-hover/tabpill:[--tab-pill-fade:24px]'}`}
                       >
                         {tab.title || 'Untitled Note'}
-                      </motion.span>
+                      </FadeTitle>
 
-                      {/* Active: in-flow cross. Its slot springs open/closed as the pill becomes
-                          active/inactive, so the pill resizes smoothly instead of snapping.
+                      {/* Active: in-flow cross. Its slot opens/closes as the pill becomes active/inactive
+                          (see CloseSlot), so the pill resizes smoothly instead of snapping.
                           The after: pseudo-element widens the hit area without changing the look. */}
-                      <motion.span
-                        initial={false}
-                        animate={isActive ? CLOSE_SLOT_OPEN : CLOSE_SLOT_CLOSED}
+                      <CloseSlot
+                        isActive={isActive}
+                        followsCompaction={tab._id === compactionPillId}
+                        progress={progress}
+                        metrics={metrics}
                         className="shrink-0 self-stretch flex items-center justify-end overflow-hidden"
                         aria-hidden={!isActive}
                       >
@@ -600,7 +853,7 @@ const TabDock = () => {
                         >
                           <MdClose className="text-xs cursor-pointer shrink-0" />
                         </button>
-                      </motion.span>
+                      </CloseSlot>
 
                       {!isActive && (
                         /* Inactive: cross fades in on hover while the label's tail fades out (mask, so no
@@ -631,21 +884,27 @@ const TabDock = () => {
 
           {/* Right separator */}
           <motion.div
-            style={{ height: sepHeight }}
+            style={{ height: sepHeight, opacity: 'var(--dock-others, 1)' }}
             className="shrink-0 w-[1px] bg-white/15 mx-0.5"
           />
 
-          {/* Add note */}
+          {/* Add note. Also the dot's centre in full screen: there its icon fades (--dock-plus-icon),
+              its shadow levels out (--dock-dot) and it lightens with the dot's hover. */}
           <motion.button
-            style={{ width: circleSize, height: circleSize }}
+            ref={dockPlusRef}
+            style={{
+              width: circleSize, height: circleSize,
+              // Tailwind's shadow-md, its downward offset easing to 0 as the dot forms
+              boxShadow: '0 calc(4px * (1 - var(--dock-dot, 0))) 6px -1px rgb(0 0 0 / 0.1), 0 calc(2px * (1 - var(--dock-dot, 0))) 4px -2px rgb(0 0 0 / 0.1)',
+            }}
             onClick={handleNewNote}
             title="New Note"
-            className="shrink-0 cursor-pointer group relative flex items-center justify-center rounded-full bg-[#dd5e57] text-white hover:bg-[#fb6d65] shadow-md transition-colors duration-200"
+            className="shrink-0 cursor-pointer group relative flex items-center justify-center rounded-full bg-[#dd5e57] text-white hover:bg-[#fb6d65] group-hover/dot:bg-[#fb6d65] transition-colors duration-200"
           >
-            <MdAdd className="text-[22px] shrink-0 transition-transform duration-200 origin-center group-hover:rotate-90" />
+            <MdAdd style={{ opacity: 'var(--dock-plus-icon, 1)' }} className="text-[22px] shrink-0 transition-transform duration-200 origin-center group-hover:rotate-90" />
           </motion.button>
 
-        </div>
+        </motion.div>
       </motion.div>
     </motion.div>
   );

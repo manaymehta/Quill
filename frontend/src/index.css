@@ -6,6 +6,7 @@
   :root {
     --page-bg: #202124;
     --dock-fill: #2a2a2a; /* TabDock glass surfaces (dock, toast, tab sheet) */
+    --editor-bg: #f4eadc; /* the cream note editor */
   }
 
   html {
@@ -70,13 +71,18 @@
     backdrop-filter: blur(12px);
   }
 
-  /* TabDock inactive pill label: tail fades out (via --tab-pill-fade, set on hover) to make
-     room for the close button. A mask instead of a painted gradient, so nothing has to
-     colour-match the translucent dock. */
+  /* TabDock pill title: its tail fades out over 16px, ending --tab-pill-fade before the right edge.
+     At 0 the fade sits just past the edge (invisible); a title too long for its pill gets 16px
+     (data-overflow, set by PillTitle) so it fades out at the edge instead of ending in "…"; an
+     inactive pill's hover raises it to 24px, making room for its close button. A mask instead of a
+     painted gradient, so nothing has to colour-match the translucent dock. */
   .tab-pill-label {
     -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--tab-pill-fade)), transparent calc(100% - var(--tab-pill-fade) + 16px));
     mask-image: linear-gradient(to right, #000 calc(100% - var(--tab-pill-fade)), transparent calc(100% - var(--tab-pill-fade) + 16px));
     transition: --tab-pill-fade 150ms ease-out;
+  }
+  .tab-pill-label[data-overflow] {
+    --tab-pill-fade: 16px;
   }
 }
 
@@ -92,6 +98,27 @@
   -webkit-backdrop-filter: blur(0px);
   backdrop-filter: blur(0px);
   background-color: color-mix(in srgb, var(--dock-fill) 85%, var(--page-bg));
+}
+/* …and over the full-screen editor, the colour the glass reads as over cream instead (otherwise the
+   dock is dark while it moves and jumps lighter as the blur returns). data-over-editor is set by
+   TabDock while the full-screen editor is open. */
+.dock-root[data-dock-moving][data-over-editor] .dock-glass {
+  background-color: color-mix(in srgb, var(--dock-fill) 85%, var(--editor-bg));
+}
+
+/* The full-screen dock's dot, at rest: its coral centre painted as part of the glass's own
+   background, centred on the box the browser actually drew. As separate boxes, the dot and the +
+   button inside it are each snapped to whole device pixels, independently; at fractional screen
+   scales (e.g. 1.25: a 55px ring around a 40px circle) one side of the ring came out a device pixel
+   thicker, varying with the dock's position. A gradient centred on the glass can't be off-centre.
+   Set by TabDock once the dot has landed (the + button does the travelling and hides then).
+   --dot-mark-r: the + button's radius. 1px soft edge, as antialiasing. */
+.dock-glass[data-dot-mark] {
+  background-image: radial-gradient(circle, var(--dot-mark-color) calc(var(--dot-mark-r) - 0.5px), transparent calc(var(--dot-mark-r) + 0.5px));
+  --dot-mark-color: #dd5e57;
+}
+.dock-glass[data-dot-mark]:hover {
+  --dot-mark-color: #fb6d65;
 }
 
 /* Registered so the fade length can transition (unregistered custom properties snap) */
@@ -157,6 +184,35 @@
 
 .editor-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: rgba(0, 0, 0, 0.25);
+}
+
+/* Editor text column: identical width in the card and in full screen. --editor-card-w is the card's
+   width in card mode (set by GlobalEditorOverlay); the column is that card's inner width (minus its
+   1px borders), centred. In card mode the extra inset works out to 0; in full screen, where the
+   editor is wider, it grows to keep the text exactly where it was — so nothing re-wraps.
+   --column-pad is the element's own padding on top of that.
+   --scrollbar-gutter-w: in a scrolling column, the width of its reserved scrollbar gutter
+   (.editor-scrollbar keeps it even when nothing scrolls), measured by the editor. It's taken back
+   out of the right padding, so the visible margins are equal on both sides and the scrollbar sits
+   inside the right margin, instead of the right side getting the padding plus the gutter. */
+.editor-column {
+  --column-inset: max(0px, (100% - var(--editor-card-w, calc(100% + 2px)) + 2px) / 2);
+  padding-left: calc(var(--column-inset) + var(--column-pad, 0px));
+  padding-right: max(0px, calc(var(--column-inset) + var(--column-pad, 0px) - var(--scrollbar-gutter-w, 0px)));
+}
+
+/* Editor row (editor + side panel), see GlobalEditorOverlay. Its max width is the card-mode width
+   (widening when the panel opens, eased by this transition) interpolated toward the full window by
+   --fs, the full-screen spring. Only the card-mode part transitions: a transition on max-width itself
+   would restart every frame of the spring and lag behind it. */
+@property --editor-row-max {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+.editor-row {
+  max-width: calc(var(--editor-row-max) + (100vw - var(--editor-row-max)) * var(--fs, 0));
+  transition: --editor-row-max 500ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Force dark cursor and selection targeting the light cream editor */
