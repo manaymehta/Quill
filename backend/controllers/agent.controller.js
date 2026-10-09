@@ -1,13 +1,23 @@
-const axios = require("axios");
-const mongoose = require("mongoose");
-const Note = require("../models/note.model");
+const { setTimeout, clearTimeout, setInterval, clearInterval } = require("node:timers");
+const { TextDecoder } = require("node:util");
 const AgentConversation = require("../models/agent-conversation.model");
 
 const MAX_STORED_TURNS = AgentConversation.MAX_STORED_TURNS;
 
-// The agent turn can legally take longer than an ordinary request: up to 4
-// model round-trips may happen inside one call.
-const AGENT_CHAT_TIMEOUT_MS = 120_000;
+// Time limits (architecture plan §2.1, D27): FastAPI ends every turn by 60 s,
+// so this outer limit only fires when FastAPI itself is stuck or asleep.
+const AGENT_CHAT_TIMEOUT_MS = 70_000;
+// No reply headers from FastAPI by then usually means Render is waking it.
+const AGENT_WAKE_NOTICE_MS = 3_000;
+// Comment lines on the open stream so proxies never see it as idle.
+const AGENT_KEEPALIVE_MS = 10_000;
+// A cold FastAPI on Render's free plan can take 50+ s to answer /health.
+const AGENT_WAKE_TIMEOUT_MS = 90_000;
+
+const AGENT_TIMEOUT_MESSAGE = "The assistant took too long — try again.";
+const AGENT_UNREACHABLE_MESSAGE = "The assistant is unreachable right now. Try again shortly.";
+const AGENT_STEP_LABEL_MAX = 120;
+const AGENT_ERROR_MESSAGE_MAX = 300;
 
 const MAX_HISTORY_TURNS = 50;
 const MAX_WORKING_SET = 50;
@@ -15,15 +25,6 @@ const MAX_MESSAGE_CHARS = 2000;
 const MAX_HISTORY_MESSAGE_CHARS = 20_000;
 
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
-
-// Mirrors the pattern used in note.controller.js for FastAPI calls.
-const getAgentServiceConfig = (timeout) => {
-    const key = process.env.FASTAPI_INTERNAL_KEY;
-    return {
-        timeout,
-        ...(key ? { headers: { "x-api-key": key } } : {}),
-    };
-};
 
 const sanitizeHistory = (raw) => {
     if (raw === undefined || raw === null) return [];
@@ -45,14 +46,27 @@ const sanitizeHistory = (raw) => {
     return sanitized;
 };
 
+// Working set entries travel as { noteId, title } so the model can resolve
+// "the second one" by name, not just by ID.
+const WORKING_SET_TITLE_MAX = 500;
+
 const sanitizeWorkingSet = (raw) => {
     if (raw === undefined || raw === null) return [];
     if (!Array.isArray(raw)) return null;
     if (raw.length > MAX_WORKING_SET) return null;
-    for (const id of raw) {
-        if (typeof id !== "string" || !OBJECT_ID_RE.test(id)) return null;
+
+    const sanitized = [];
+    for (const entry of raw) {
+        if (!entry || typeof entry !== "object") return null;
+        const { noteId, title } = entry;
+        if (typeof noteId !== "string" || !OBJECT_ID_RE.test(noteId)) return null;
+        if (title !== undefined && title !== null
+            && (typeof title !== "string" || title.length > WORKING_SET_TITLE_MAX)) {
+            return null;
+        }
+        sanitized.push({ noteId, title: title || "" });
     }
-    return raw;
+    return sanitized;
 };
 
 const DRAFT_TITLE_MAX = 500;
@@ -79,7 +93,42 @@ const isValidDraft = (draft) => {
                 && (item.completed === undefined || typeof item.completed === "boolean"))) return false;
     }
     if (draft.folderId !== undefined && draft.folderId !== null && (typeof draft.folderId !== "string" || !OBJECT_ID_RE.test(draft.folderId))) return false;
+    if (draft.basedOnUnsaved !== undefined && typeof draft.basedOnUnsaved !== "boolean") return false;
     return true;
+};
+
+// Notes open in the user's editor with unsaved changes (architecture plan
+// D21): the agent reads and edits these versions instead of the saved ones.
+const MAX_UNSAVED_NOTES = 12;
+const UNSAVED_TAGS_MAX = 50;
+const UNSAVED_TAG_CHARS_MAX = 100;
+const UNSAVED_CHECKLIST_TEXT_MAX = 2000;
+
+const sanitizeUnsavedNotes = (raw) => {
+    if (raw === undefined || raw === null) return [];
+    if (!Array.isArray(raw) || raw.length > MAX_UNSAVED_NOTES) return null;
+
+    const sanitized = [];
+    for (const note of raw) {
+        if (!note || typeof note !== "object") return null;
+        const { noteId, title = "", content = "", tags = [], isChecklist = false, checklist = [] } = note;
+        if (typeof noteId !== "string" || !OBJECT_ID_RE.test(noteId)) return null;
+        if (typeof title !== "string" || title.length > DRAFT_TITLE_MAX) return null;
+        if (typeof content !== "string" || content.length > DRAFT_CONTENT_MAX) return null;
+        if (!Array.isArray(tags) || tags.length > UNSAVED_TAGS_MAX
+            || !tags.every((t) => typeof t === "string" && t.length <= UNSAVED_TAG_CHARS_MAX)) return null;
+        if (typeof isChecklist !== "boolean") return null;
+        if (!Array.isArray(checklist) || checklist.length > DRAFT_CHECKLIST_ITEMS_MAX) return null;
+        const items = [];
+        for (const item of checklist) {
+            if (!item || typeof item !== "object" || typeof item.text !== "string"
+                || item.text.length > UNSAVED_CHECKLIST_TEXT_MAX
+                || (item.completed !== undefined && typeof item.completed !== "boolean")) return null;
+            items.push({ text: item.text, completed: Boolean(item.completed) });
+        }
+        sanitized.push({ noteId, title, content, tags, isChecklist, checklist: items });
+    }
+    return sanitized;
 };
 
 const validateAgentResponse = (data) => {
@@ -111,7 +160,7 @@ const validateAgentResponse = (data) => {
 };
 
 const chatWithAgent = async (req, res) => {
-    const { message, history, workingSet } = req.body || {};
+    const { message, history, workingSet, unsavedNotes } = req.body || {};
 
     if (typeof message !== "string" || !message.trim() || message.length > MAX_MESSAGE_CHARS) {
         return res.status(400).json({ error: true, message: "message must be a non-empty string (max 2000 chars)" });
@@ -124,7 +173,12 @@ const chatWithAgent = async (req, res) => {
 
     const sanitizedWorkingSet = sanitizeWorkingSet(workingSet);
     if (sanitizedWorkingSet === null) {
-        return res.status(400).json({ error: true, message: "workingSet must be an array of note IDs" });
+        return res.status(400).json({ error: true, message: "workingSet must be an array of { noteId, title } entries" });
+    }
+
+    const sanitizedUnsavedNotes = sanitizeUnsavedNotes(unsavedNotes);
+    if (sanitizedUnsavedNotes === null) {
+        return res.status(400).json({ error: true, message: "unsavedNotes must be an array of open notes within the size limits" });
     }
 
     const FASTAPI_URL = process.env.FASTAPI_SUMMARIZE_URL;
@@ -133,53 +187,191 @@ const chatWithAgent = async (req, res) => {
         return res.status(500).json({ error: true, message: "AI service is not configured" });
     }
 
+    // From here on the reply is a Server-Sent Events stream (architecture plan
+    // §2.1, step 1a): `step` events while the turn works, then exactly one
+    // `final` or `error` event. Errors above stay plain JSON responses.
+    res.status(200).set({
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders();
+    res.write(": connected\n\n");
+
+    const upstream = new AbortController();
+    let abortReason = null;
+    let streamDone = false;
+    const keepAlive = setInterval(() => {
+        if (!res.writableEnded) res.write(": keep-alive\n\n");
+    }, AGENT_KEEPALIVE_MS);
+    const wakeNotice = setTimeout(() => {
+        writeEvent(res, "step", { label: "Waking up the assistant…" });
+    }, AGENT_WAKE_NOTICE_MS);
+    const turnTimeout = setTimeout(() => {
+        abortReason = "timeout";
+        upstream.abort();
+    }, AGENT_CHAT_TIMEOUT_MS);
+    // The browser closed the stream (Stop, navigation, network loss): cancel
+    // FastAPI's turn too, so it stops calling the model.
+    res.on("close", () => {
+        if (streamDone) return;
+        abortReason = abortReason || "client";
+        upstream.abort();
+    });
+
     // Forward the user's own credentials so tool calls inside the agent run
     // with exactly this user's permissions through the normal routes.
-    const authHeader = req.headers["authorization"];
-    const config = getAgentServiceConfig(AGENT_CHAT_TIMEOUT_MS);
-    config.headers = {
-        ...(config.headers || {}),
-        Authorization: authHeader,
+    const internalKey = process.env.FASTAPI_INTERNAL_KEY;
+    const headers = {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        Authorization: req.headers["authorization"],
         "x-user-id": String(req.user._id),
+        ...(internalKey ? { "x-api-key": internalKey } : {}),
     };
 
     try {
-        const response = await axios.post(`${FASTAPI_URL}/agent/chat`, {
-            message: message.trim(),
-            history: sanitizedHistory,
-            workingSet: sanitizedWorkingSet,
-        }, config);
+        const response = await fetch(`${FASTAPI_URL}/agent/chat`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+                message: message.trim(),
+                history: sanitizedHistory,
+                workingSet: sanitizedWorkingSet,
+                unsavedNotes: sanitizedUnsavedNotes,
+            }),
+            signal: upstream.signal,
+        });
+        clearTimeout(wakeNotice);
 
-        const validated = validateAgentResponse(response.data);
-        if (!validated) {
-            console.error(`[${req.id}] Agent service returned an invalid response shape`);
-            return res.status(502).json({ error: true, message: "AI service returned an invalid response" });
+        if (!response.ok) {
+            const detail = await response.text().catch(() => "");
+            console.error(`[${req.id}] Agent service error ${response.status}:`, detail.slice(0, 300));
+            writeEvent(res, "error", {
+                message: response.status === 503 ? AGENT_UNREACHABLE_MESSAGE : "AI service request failed",
+            });
+            return;
         }
 
-        // Convenience persistence: chat state is recoverable after refresh.
-        // Awaited so a refresh right after this reply can't lose the turn; the
-        // added latency is one small write vs a multi-second model call. A
-        // persistence failure must never eat a successful answer.
-        try {
-            await persistAgentTurn(req.user._id, message.trim(), validated);
-        } catch (persistError) {
-            console.error(`[${req.id}] Agent conversation persistence failed:`, persistError.message);
+        let ended = false;
+        for await (const { event, data } of readSseEvents(response.body)) {
+            let payload;
+            try {
+                payload = JSON.parse(data);
+            } catch {
+                continue;
+            }
+
+            if (event === "step") {
+                if (typeof payload?.label === "string" && payload.label.trim()) {
+                    writeEvent(res, "step", { label: payload.label.slice(0, AGENT_STEP_LABEL_MAX) });
+                }
+                continue;
+            }
+
+            if (event === "final") {
+                ended = true;
+                const validated = validateAgentResponse(payload);
+                if (!validated) {
+                    console.error(`[${req.id}] Agent service returned an invalid response shape`);
+                    writeEvent(res, "error", { message: "AI service returned an invalid response" });
+                    break;
+                }
+                // Convenience persistence: chat state is recoverable after
+                // refresh. Awaited so a refresh right after this reply can't
+                // lose the turn. A persistence failure must never eat a
+                // successful answer.
+                try {
+                    await persistAgentTurn(req.user._id, message.trim(), validated);
+                } catch (persistError) {
+                    console.error(`[${req.id}] Agent conversation persistence failed:`, persistError.message);
+                }
+                writeEvent(res, "final", { error: false, ...validated });
+                break;
+            }
+
+            if (event === "error") {
+                ended = true;
+                const retryAfter = Number(payload?.retryAfterSeconds);
+                writeEvent(res, "error", {
+                    message: typeof payload?.message === "string" && payload.message.trim()
+                        ? payload.message.slice(0, AGENT_ERROR_MESSAGE_MAX)
+                        : "AI service request failed",
+                    ...(Number.isFinite(retryAfter) && retryAfter > 0 ? { retryAfterSeconds: Math.ceil(retryAfter) } : {}),
+                });
+                break;
+            }
         }
 
-        return res.json({ error: false, ...validated });
+        if (!ended) {
+            console.error(`[${req.id}] Agent stream ended without a final event`);
+            writeEvent(res, "error", { message: "The assistant stopped unexpectedly. Try again." });
+        }
     } catch (error) {
-        if (error.code === "ECONNABORTED") {
-            console.error(`[${req.id}] Agent chat timed out`);
-            return res.status(504).json({ error: true, message: "The assistant took too long to respond" });
+        if (abortReason === "client") {
+            console.log(`[${req.id}] Agent chat stopped by the client`);
+        } else if (abortReason === "timeout") {
+            console.error(`[${req.id}] Agent chat timed out after ${AGENT_CHAT_TIMEOUT_MS / 1000}s`);
+            writeEvent(res, "error", { message: AGENT_TIMEOUT_MESSAGE });
+        } else {
+            console.error(`[${req.id}] Agent chat request failed:`, error.message);
+            writeEvent(res, "error", { message: AGENT_UNREACHABLE_MESSAGE });
         }
-        if (error.response) {
-            console.error(`[${req.id}] Agent service error ${error.response.status}:`, error.response.data);
-            const status = [400, 401, 403, 503].includes(error.response.status) ? error.response.status : 502;
-            return res.status(status).json({ error: true, message: "AI service request failed" });
-        }
-        console.error(`[${req.id}] Agent chat request failed:`, error.message);
-        return res.status(502).json({ error: true, message: "AI service is unreachable" });
+    } finally {
+        streamDone = true;
+        clearInterval(keepAlive);
+        clearTimeout(wakeNotice);
+        clearTimeout(turnTimeout);
+        if (!res.writableEnded) res.end();
     }
+};
+
+const writeEvent = (res, event, data) => {
+    if (res.writableEnded || res.destroyed) return;
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+};
+
+// Minimal Server-Sent Events reader for FastAPI's stream: yields
+// { event, data } per blank-line-separated block; comment lines (keep-alives)
+// are skipped.
+async function* readSseEvents(body) {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for await (const chunk of body) {
+        buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n/g, "\n");
+        let boundary;
+        while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+            const block = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            let event = "message";
+            const dataLines = [];
+            for (const line of block.split("\n")) {
+                if (line.startsWith(":")) continue;
+                if (line.startsWith("event:")) event = line.slice(6).trim();
+                else if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
+            }
+            if (dataLines.length > 0) yield { event, data: dataLines.join("\n") };
+        }
+    }
+}
+
+// Early wake-up (architecture plan §2.1 step 0): the chat panel calls this
+// when it opens, so sleeping Render services start waking while the user is
+// still typing. Replies at once; the FastAPI ping runs in the background, one
+// at a time.
+let agentWakeInFlight = null;
+
+const wakeAgent = (req, res) => {
+    const FASTAPI_URL = process.env.FASTAPI_SUMMARIZE_URL;
+    if (FASTAPI_URL && !agentWakeInFlight) {
+        agentWakeInFlight = fetch(`${FASTAPI_URL}/health`, { signal: AbortSignal.timeout(AGENT_WAKE_TIMEOUT_MS) })
+            .catch((error) => console.warn(`[${req.id}] Agent wake-up ping failed:`, error.message))
+            .finally(() => {
+                agentWakeInFlight = null;
+            });
+    }
+    return res.status(202).json({ error: false, message: "Waking the assistant" });
 };
 
 // Append the user turn + assistant turn to the user's single conversation doc,
@@ -235,67 +427,4 @@ const clearAgentConversation = async (req, res) => {
     }
 };
 
-// The agent's metadata-filtered note listing (Phase A fix: "list my archived
-// notes" and friends). Semantic search cannot express status/folder/tag/date
-// filters — this endpoint exists so the model never has to pretend it did.
-const listAgentNotes = async (req, res) => {
-    const userId = req.user._id;
-    const { archived, tag, folderId, untitled, limit } = req.query;
-
-    const query = { userId, isDeleted: { $ne: true } };
-
-    if (archived === "true") query.isArchived = true;
-    if (untitled === "true") query.$or = [{ title: "" }, { title: { $exists: false } }];
-
-    if (typeof tag === "string" && tag.trim()) {
-        if (tag.trim().length > 64) {
-            return res.status(400).json({ error: true, message: "Invalid tag" });
-        }
-        const escaped = tag.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        query.tags = { $regex: new RegExp(`^${escaped}$`, "i") };
-    }
-
-    if (folderId === "none") {
-        query.folderId = null;
-    } else if (typeof folderId === "string" && folderId.trim()) {
-        if (!mongoose.Types.ObjectId.isValid(folderId.trim())) {
-            return res.status(400).json({ error: true, message: "Invalid folderId" });
-        }
-        query.folderId = folderId.trim();
-    }
-
-    let cap = 30;
-    if (limit !== undefined) {
-        const parsed = parseInt(limit, 10);
-        if (!Number.isInteger(parsed) || parsed < 1 || parsed > 50) {
-            return res.status(400).json({ error: true, message: "limit must be between 1 and 50" });
-        }
-        cap = parsed;
-    }
-
-    try {
-        const notes = await Note.find(query)
-            .select("_id title content tags folderId isArchived updatedAt")
-            .sort({ updatedAt: -1 })
-            .limit(cap)
-            .lean();
-
-        return res.json({
-            error: false,
-            notes: notes.map((n) => ({
-                _id: n._id,
-                title: n.title || "",
-                tags: n.tags || [],
-                folderId: n.folderId ?? null,
-                isArchived: Boolean(n.isArchived),
-                updatedAt: n.updatedAt,
-                excerpt: (n.content || "").slice(0, 200),
-            })),
-        });
-    } catch (error) {
-        console.error(`[${req.id}] Agent list-notes failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
-};
-
-module.exports = { chatWithAgent, getAgentConversation, clearAgentConversation, listAgentNotes };
+module.exports = { chatWithAgent, wakeAgent, getAgentConversation, clearAgentConversation };

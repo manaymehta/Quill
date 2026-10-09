@@ -14,7 +14,11 @@ export default [
                 process: "readonly",
                 module: "readonly",
                 require: "readonly",
-                __dirname: "readonly"
+                __dirname: "readonly",
+                // Web-standard globals built into Node 18+ (no module to import them from).
+                fetch: "readonly",
+                AbortController: "readonly",
+                AbortSignal: "readonly"
             }
         },
         rules: {

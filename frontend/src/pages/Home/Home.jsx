@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import AiSearchPanel from '../../components/Cards/AiSearchPanel';
-import AgentChatPanel from '../../components/Cards/AgentChatPanel';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { useSearchStore } from '../../store/useSearchStore';
@@ -89,7 +88,6 @@ const Home = () => {
   const handleEdit = useCallback((note) => openTab(note), [openTab]);
 
   const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
-  const isAgentMode = searchMode === 'agent';
 
   const folderHierarchy = useMemo(() => buildFolderHierarchy(folders), [folders]);
   const topLevelFolders = folderHierarchy.rootFolders;
@@ -114,12 +112,6 @@ const Home = () => {
                 isAddingFolder={isAddingFolder}
                 setIsAddingFolder={setIsAddingFolder}
               />
-            </div>
-          </div>
-        ) : isAgentMode ? (
-          <div className="flex justify-center">
-            <div className="w-full max-w-2xl">
-              <AgentChatPanel />
             </div>
           </div>
         ) : isAIMode ? (

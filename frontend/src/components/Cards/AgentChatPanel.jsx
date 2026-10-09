@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { RiSparkling2Fill } from 'react-icons/ri';
 import { IoMdClose, IoMdSend } from 'react-icons/io';
+import { IoStop } from 'react-icons/io5';
 import ReactMarkdown from 'react-markdown';
 import axiosInstance from '../../utils/axiosInstance';
 import { useAgentStore } from '../../store/useAgentStore';
@@ -15,11 +16,108 @@ const markdownComponents = {
     a: ({node, ...props}) => <a className="text-[#e85d56] hover:underline" data-type={node?.type} {...props} />,
 };
 
+// One pill per note. The server de-duplicates now, but conversations saved
+// before that can still hold repeats (and pills are keyed by note ID).
+const uniqueCitations = (citations) => {
+    const seen = new Set();
+    return citations.filter((c) => !seen.has(c.noteId) && seen.add(c.noteId));
+};
+
+// Red/green line diff, same look as the editor's agent banner.
+const DiffView = ({ parts }) => (
+    <div className="max-h-48 overflow-y-auto editor-scrollbar rounded-lg border border-amber-200 bg-white/70 p-2 text-[11px] leading-relaxed whitespace-pre-wrap font-mono">
+        {parts.map((part, idx) => (
+            <span
+                key={idx}
+                className={part.added
+                    ? 'bg-emerald-100 text-emerald-900'
+                    : part.removed ? 'bg-red-100 text-red-900 line-through' : 'text-stone-400'}
+            >
+                {part.value}
+            </span>
+        ))}
+    </div>
+);
+
+const pillButton = 'text-[11px] font-semibold rounded-full px-3 py-1 border transition-colors cursor-pointer disabled:opacity-50';
+
+// An agent edit to a note with unsaved changes: nothing changes in the tab
+// until the user picks Apply / Apply & save / Skip (architecture plan D21).
+const PendingEditCard = ({ edit, onAction }) => {
+    const [showDiff, setShowDiff] = useState(false);
+    const title = edit.title || 'Untitled note';
+    const working = edit.status === 'working';
+
+    return (
+        <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3 flex flex-col gap-2 text-[#7a4a12]">
+            <p className="text-xs font-semibold">✎ Edit to “{title}”</p>
+
+            {(edit.status === 'pending' || working) && (
+                <>
+                    <p className="text-[11px] font-medium">
+                        {edit.basedOnUnsaved
+                            ? 'Made on your unsaved version of this note. Nothing changes until you choose.'
+                            : 'This note has unsaved changes now. Nothing changes until you choose.'}
+                    </p>
+                    {edit.titleChange && (
+                        <p className="text-[11px]">
+                            Title: <span className="line-through text-red-700">{edit.titleChange.from || '(untitled)'}</span>{' → '}
+                            <span className="text-emerald-700">{edit.titleChange.to || '(untitled)'}</span>
+                        </p>
+                    )}
+                    {edit.otherChanges.length > 0 && (
+                        <p className="text-[11px]">Also changes: {edit.otherChanges.map((k) => (k === 'isChecklist' ? 'checklist mode' : k)).join(', ')}</p>
+                    )}
+                    {edit.diff && (
+                        <button onClick={() => setShowDiff((v) => !v)} className="self-start text-[11px] font-semibold underline cursor-pointer">
+                            {showDiff ? 'Hide changes' : 'Show changes'}
+                        </button>
+                    )}
+                    {showDiff && edit.diff && <DiffView parts={edit.diff} />}
+                    <div className="flex flex-wrap gap-1.5">
+                        <button disabled={working} onClick={() => onAction('apply')} className={`${pillButton} bg-[#dd5e57] text-white border-[#dd5e57] hover:bg-[#fb6d65]`}>Apply</button>
+                        <button disabled={working} onClick={() => onAction('applySave')} className={`${pillButton} border-amber-400 hover:bg-amber-100`}>Apply &amp; save</button>
+                        <button disabled={working} onClick={() => onAction('skip')} className={`${pillButton} border-stone-300 text-stone-600 hover:bg-stone-100`}>Skip</button>
+                    </div>
+                </>
+            )}
+
+            {edit.status === 'conflict' && (
+                <>
+                    <p className="text-[11px] font-medium">
+                        This note changed since the assistant read it. Applying replaces those changes with the assistant’s version.
+                    </p>
+                    {edit.showConflictDiff && edit.conflictDiff && <DiffView parts={edit.conflictDiff} />}
+                    <div className="flex flex-wrap gap-1.5">
+                        <button onClick={() => onAction('toggleConflictDiff')} className={`${pillButton} border-amber-400 hover:bg-amber-100`}>
+                            {edit.showConflictDiff ? 'Hide changes' : 'View changes'}
+                        </button>
+                        <button onClick={() => onAction('applyAnyway')} className={`${pillButton} bg-[#dd5e57] text-white border-[#dd5e57] hover:bg-[#fb6d65]`}>Apply anyway</button>
+                        <button onClick={() => onAction('skip')} className={`${pillButton} border-stone-300 text-stone-600 hover:bg-stone-100`}>Skip</button>
+                    </div>
+                </>
+            )}
+
+            {edit.status === 'applied' && (
+                <p className="text-[11px] font-medium">
+                    {edit.saved ? 'Applied and saving…' : 'Applied — open in your dock, unsaved. “Revert agent edit” there puts back what you had.'}
+                </p>
+            )}
+            {edit.status === 'skipped' && <p className="text-[11px] font-medium">Skipped — your note is unchanged.</p>}
+            {edit.status === 'failed' && <p className="text-[11px] font-medium text-red-700">{edit.reason || 'Could not apply this edit.'}</p>}
+        </div>
+    );
+};
+
 const AgentChatPanel = () => {
     const messages = useAgentStore((state) => state.messages);
     const isBusy = useAgentStore((state) => state.isBusy);
+    const steps = useAgentStore((state) => state.steps);
     const sendMessage = useAgentStore((state) => state.sendMessage);
+    const stop = useAgentStore((state) => state.stop);
+    const wake = useAgentStore((state) => state.wake);
     const resetConversation = useAgentStore((state) => state.resetConversation);
+    const resolvePendingEdit = useAgentStore((state) => state.resolvePendingEdit);
     const hydrate = useAgentStore((state) => state.hydrate);
     const [draft, setDraft] = useState('');
     const scrollAnchorRef = useRef(null);
@@ -45,14 +143,17 @@ const AgentChatPanel = () => {
         }
     };
 
-    // Restore any persisted conversation the first time the panel mounts.
+    // Restore any persisted conversation the first time the panel mounts, and
+    // start waking the (possibly sleeping) assistant services while the user
+    // types.
     useEffect(() => {
         hydrate();
-    }, [hydrate]);
+        wake();
+    }, [hydrate, wake]);
 
     useEffect(() => {
         scrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }, [messages.length, isBusy]);
+    }, [messages.length, isBusy, steps.length]);
 
     const handleSend = () => {
         const text = draft.trim();
@@ -92,8 +193,9 @@ const AgentChatPanel = () => {
             <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-4 flex flex-col gap-3">
                 {messages.length === 0 && !isBusy && (
                     <p className="text-[#494949] text-sm font-medium leading-relaxed border-l-[3px] border-[#e85d56]/50 pl-4">
-                        Ask anything about your notes. This preview can search and discuss them;
-                        it can't change anything yet.
+                        Ask anything about your notes. I can search and summarize them, list your
+                        tags and folders, and draft new notes or edits for you to review — nothing
+                        is saved until you save it.
                     </p>
                 )}
 
@@ -113,6 +215,17 @@ const AgentChatPanel = () => {
                                 <ReactMarkdown components={markdownComponents}>
                                     {message.text}
                                 </ReactMarkdown>
+                                {message.pendingEdits?.length > 0 && (
+                                    <div className="mt-2 flex flex-col gap-2">
+                                        {message.pendingEdits.map((edit, idx) => (
+                                            <PendingEditCard
+                                                key={`${edit.noteId}-${idx}`}
+                                                edit={edit}
+                                                onAction={(action) => resolvePendingEdit(message.id, idx, action)}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
                                 {message.drafts?.length > 0 && (
                                     <div className="mt-2 pt-2 border-t border-black/5 flex flex-wrap gap-1.5">
                                         {message.drafts.map((staged, idx) => (
@@ -127,7 +240,7 @@ const AgentChatPanel = () => {
                                 )}
                                 {message.citations?.length > 0 && (
                                     <div className="mt-2 pt-2 border-t border-black/5 flex flex-wrap gap-1.5">
-                                        {message.citations.map((citation) => (
+                                        {uniqueCitations(message.citations).map((citation) => (
                                             <button
                                                 key={citation.noteId}
                                                 onClick={() => handleOpenCitation(citation.noteId)}
@@ -152,14 +265,27 @@ const AgentChatPanel = () => {
                 ))}
 
                 {isBusy && (
-                    <div className="self-start flex gap-1.5 px-4 py-3">
-                        {[0, 1, 2].map(i => (
+                    <div className="self-start flex flex-col gap-1 px-4 py-3">
+                        {/* Progress lines from the server; the last one is the current step. */}
+                        {steps.map((label, idx) => (
                             <span
-                                key={i}
-                                className="w-2 h-2 rounded-full bg-[#e85d56] animate-bounce"
-                                style={{ animationDelay: `${i * 0.15}s` }}
-                            />
+                                key={`${idx}-${label}`}
+                                className={`text-xs font-medium ${
+                                    idx === steps.length - 1 ? 'text-[#494949]' : 'text-stone-400'
+                                }`}
+                            >
+                                {label}
+                            </span>
                         ))}
+                        <div className="flex gap-1.5 pt-1">
+                            {[0, 1, 2].map(i => (
+                                <span
+                                    key={i}
+                                    className="w-2 h-2 rounded-full bg-[#e85d56] animate-bounce"
+                                    style={{ animationDelay: `${i * 0.15}s` }}
+                                />
+                            ))}
+                        </div>
                     </div>
                 )}
 
@@ -177,14 +303,24 @@ const AgentChatPanel = () => {
                         placeholder="Ask about your notes…"
                         className="flex-1 bg-transparent outline-none text-sm text-[#494949] font-medium resize-none py-2 max-h-32"
                     />
-                    <button
-                        onClick={handleSend}
-                        disabled={isBusy || !draft.trim()}
-                        title="Send"
-                        className="shrink-0 p-2 rounded-full bg-[#dd5e57] text-white hover:bg-[#fb6d65] disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                    >
-                        <IoMdSend className="text-base" />
-                    </button>
+                    {isBusy ? (
+                        <button
+                            onClick={stop}
+                            title="Stop"
+                            className="shrink-0 p-2 rounded-full bg-stone-600 text-white hover:bg-stone-500 transition-colors cursor-pointer"
+                        >
+                            <IoStop className="text-base" />
+                        </button>
+                    ) : (
+                        <button
+                            onClick={handleSend}
+                            disabled={!draft.trim()}
+                            title="Send"
+                            className="shrink-0 p-2 rounded-full bg-[#dd5e57] text-white hover:bg-[#fb6d65] disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                            <IoMdSend className="text-base" />
+                        </button>
+                    )}
                 </div>
                 <p className="text-[10px] text-stone-400 font-medium mt-2">
                     Enter to send · Shift+Enter for a new line · restores after refresh, auto-clears in 3 days

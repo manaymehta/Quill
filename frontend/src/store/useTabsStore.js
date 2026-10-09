@@ -116,6 +116,33 @@ export const useTabsStore = create((set, get) => ({
     });
   },
 
+  // Change a tab's contents from outside the editor (agent edits, revert).
+  // The editor copies a tab's fields only when it mounts, so bumping
+  // externalRev (the editor slot's key) remounts it with the new contents;
+  // dropping the CodeMirror snapshot stops the old document coming back.
+  applyExternalUpdate: (id, patch) => {
+    const tab = get().openTabs.find((t) => t._id === id);
+    if (!tab) return false;
+    editorRegistry.deleteEditorSnapshot(id);
+    get().updateTabState(id, { ...patch, externalRev: (tab.externalRev || 0) + 1 });
+    return true;
+  },
+
+  // "Revert agent edit": restore exactly what the tab held before the agent's
+  // edit was applied (unsaved text included) and drop the agent markers.
+  revertAgentEdit: (id) => {
+    const tab = get().openTabs.find((t) => t._id === id);
+    if (!tab?.agentRevert) return false;
+    return get().applyExternalUpdate(id, {
+      ...tab.agentRevert,
+      agentStaged: false,
+      agentDiff: null,
+      agentRevert: null,
+      agentOriginalContent: undefined,
+      agentOriginalTitle: undefined,
+    });
+  },
+
   // Close all tabs and clean up registry — call on logout
   resetTabs: () => {
     get().openTabs.forEach((t) => editorRegistry.cleanupTab(t._id));

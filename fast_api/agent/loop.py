@@ -9,12 +9,20 @@ Contract (from agent-architecture-plan.md §3, halt rules):
 import asyncio
 import os
 import re
-from typing import Any
+import time
+from typing import Any, Awaitable, Callable
 
 from google import genai
 from google.genai import types
 
 from .memory import merge_working_set, trim_history
+from .output_checks import check_for_leaks
+from .model_calls import (
+    MIN_CALL_SECONDS,
+    CallDeadlineExceeded,
+    QuotaExceeded,
+    generate_with_retries,
+)
 from .prompts import SYSTEM_INSTRUCTION, build_contents
 from .schemas import (
     AgentChatResponse,
@@ -29,8 +37,21 @@ from .tools import TOOLS, ToolContext, ToolValidationError, validate_args
 
 MAX_ITERATIONS = 4
 MAX_DRAFTS_PER_TURN = 5
-# Mirrors main.py's GEMINI_MODEL (gemini-3.1-flash-lite). Kept env-overridable.
-AGENT_MODEL = os.getenv("AGENT_MODEL", "gemini-3.1-flash-lite")
+# Mirrors main.py's GEMINI_MODEL (gemini-3.5-flash-lite). Kept env-overridable.
+AGENT_MODEL = os.getenv("AGENT_MODEL", "gemini-3.5-flash-lite")
+
+# Time limits (architecture plan §2.1, D27): the whole turn ends by 60 s. The
+# tool-calling phase stops early enough to leave room for the forced final
+# reply, so the user always gets an answer instead of a bare error.
+TURN_CEILING_SECONDS = 60.0
+FINAL_RESERVE_SECONDS = 12.0
+
+StepCallback = Callable[[str], Awaitable[None]]
+
+TIME_LIMIT_MESSAGE = (
+    "That took longer than it should, so I stopped. Nothing was changed in "
+    "your notes. Try again, or ask something narrower."
+)
 
 FALLBACK_MESSAGE = (
     "I hit a problem while working on that and had to stop partway. "
@@ -100,6 +121,83 @@ def _merge_drafts(existing: list[AgentDraft], incoming: list[AgentDraft]) -> lis
     return merged[:MAX_DRAFTS_PER_TURN]
 
 
+_STEP_TEXT_MAX = 40
+
+
+def _clip(text: str) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= _STEP_TEXT_MAX else text[: _STEP_TEXT_MAX - 1] + "…"
+
+
+def _step_label(name: str, args: dict[str, Any], titles: dict[str, str]) -> str:
+    """Plain-language progress line for one tool call, made by code (never
+    the model) from the tool name and its arguments."""
+    def title_of(note_id: Any) -> str:
+        return titles.get(str(note_id or "").strip(), "")
+
+    if name == "search_notes":
+        query = str(args.get("query", "")).strip()
+        return f"Searching your notes for “{_clip(query)}”" if query else "Searching your notes"
+    if name == "get_note":
+        title = title_of(args.get("noteId"))
+        return f"Reading “{_clip(title)}”" if title else "Reading a note"
+    if name == "list_tags":
+        return "Listing your tags"
+    if name == "list_folders":
+        return "Looking at your folders"
+    if name == "summarize_notes":
+        count = len(args.get("noteIds") or [])
+        return f"Summarizing {count} note{'s' if count != 1 else ''}" if count else "Summarizing notes"
+    if name == "list_notes":
+        if args.get("archived"):
+            return "Listing your archived notes"
+        if args.get("tag"):
+            return f"Listing notes tagged #{_clip(args['tag'])}"
+        if args.get("untitled"):
+            return "Listing your untitled notes"
+        return "Listing your notes"
+    if name == "draft_note":
+        title = str(args.get("title", "")).strip()
+        return f"Drafting “{_clip(title)}”" if title else "Drafting a new note"
+    if name == "stage_note_edit":
+        title = title_of(args.get("noteId"))
+        return f"Preparing an edit to “{_clip(title)}”" if title else "Preparing an edit"
+    return "Working…"
+
+
+async def _emit(on_step: StepCallback | None, label: str) -> None:
+    # Progress lines are a courtesy: a broken listener must never break the turn.
+    if on_step is None:
+        return
+    try:
+        await on_step(label)
+    except Exception as exc:
+        print(f"Agent step callback failed: {exc}")
+
+
+def _dedupe_citations(citations: list[Citation]) -> list[Citation]:
+    """One citation per note, in first-cited order (reading then editing a
+    note cites it twice). Keeps a non-empty title if any copy has one."""
+    by_id: dict[str, Citation] = {}
+    for citation in citations:
+        current = by_id.get(citation.noteId)
+        if current is None or (not current.title and citation.title):
+            by_id[citation.noteId] = citation
+    return list(by_id.values())
+
+
+def _time_limit_result(name: str) -> ToolResult:
+    return ToolResult(
+        ok=False,
+        error=ToolError(
+            code="time_limit",
+            message="Ran out of time for this step; answer with what you have.",
+            recoverable=False,
+        ),
+        summary=f"{name} -> stopped at the time limit",
+    )
+
+
 async def run_agent_turn(
     *,
     gemini_client: genai.Client,
@@ -107,7 +205,14 @@ async def run_agent_turn(
     history: list[HistoryTurn],
     working_set: list[Citation],
     tool_context: ToolContext,
+    on_step: StepCallback | None = None,
 ) -> AgentChatResponse:
+    """One chat turn. Raises QuotaExceeded when the API key's quota is used up
+    for longer than the turn can wait — the caller tells the user how long."""
+    start = time.monotonic()
+    deadline = start + TURN_CEILING_SECONDS
+    tools_deadline = deadline - FINAL_RESERVE_SECONDS
+
     history = trim_history(history)
     contents = build_contents(message, history, working_set)
 
@@ -126,26 +231,48 @@ async def run_agent_turn(
     drafts: list[AgentDraft] = []
     # (tool name, args snapshot) → retry count, to break self-fix loops.
     retry_count: dict[str, int] = {}
+    # noteId → title, for readable step labels ("Reading “Docker setup”").
+    titles = {c.noteId: c.title for c in working_set if c.title}
+    time_limit_hit = False
+
+    def response_with(message_text: str) -> AgentChatResponse:
+        # Every reply leaves through here, so the leak check covers them all.
+        safe_message, safe_drafts, blocked = check_for_leaks(message_text, drafts)
+        if blocked:
+            print(f"Agent reply blocked by the instructions-leak check (user: {tool_context.user_id or 'unknown'})")
+        return AgentChatResponse(
+            message=safe_message,
+            citations=_dedupe_citations(citations),
+            workingSet=merge_working_set(working_set, citations),
+            toolsUsed=tools_used,
+            drafts=safe_drafts,
+        )
 
     for iteration in range(MAX_ITERATIONS):
+        if tools_deadline - time.monotonic() < MIN_CALL_SECONDS:
+            time_limit_hit = True
+            break
+
+        await _emit(on_step, "Thinking…" if iteration == 0 else "Reviewing what I found…")
         try:
-            response = await asyncio.to_thread(
-                gemini_client.models.generate_content,
+            response = await generate_with_retries(
+                gemini_client,
+                deadline=tools_deadline,
                 model=AGENT_MODEL,
                 contents=contents,
                 config=tools_config,
             )
+        except QuotaExceeded:
+            raise
+        except CallDeadlineExceeded:
+            print(f"Agent model call hit the time limit (iteration {iteration})")
+            time_limit_hit = True
+            break
         except Exception as exc:
             print(f"Agent model call failed (iteration {iteration}): {exc}")
             # Even on failure, keep evidence of tools that already ran so the
             # UI/logs can show partial progress.
-            return AgentChatResponse(
-                message=FALLBACK_MESSAGE,
-                citations=citations,
-                workingSet=merge_working_set(working_set, citations),
-                toolsUsed=tools_used,
-                drafts=drafts,
-            )
+            return response_with(FALLBACK_MESSAGE)
 
         candidate = response.candidates[0] if response.candidates else None
         content = candidate.content if candidate else None
@@ -157,13 +284,7 @@ async def run_agent_turn(
         # No tool requests → this is the final answer turn.
         if not function_calls:
             final_text = "\n".join(text_parts).strip() or FALLBACK_MESSAGE
-            return AgentChatResponse(
-                message=_sanitize_message(final_text),
-                citations=citations,
-                workingSet=merge_working_set(working_set, citations),
-                toolsUsed=tools_used,
-                drafts=drafts,
-            )
+            return response_with(_sanitize_message(final_text))
 
         # Echo the model's function-call turn back UNMODIFIED. Rebuilding the
         # parts would drop each call's thought_signature, which Gemini 3.x
@@ -175,7 +296,9 @@ async def run_agent_turn(
         hard_stop = False
 
         for fc in function_calls:
-            key = f"{fc.name}:{sorted((fc.args or {}).items())}"
+            raw_args = fc.args or {}
+            key = f"{fc.name}:{sorted(raw_args.items())}"
+            remaining = tools_deadline - time.monotonic()
             if retry_count.get(key, 0) >= 2:
                 # Same call failed twice already — stop rather than spin.
                 result = ToolResult(
@@ -187,15 +310,29 @@ async def run_agent_turn(
                     ),
                     summary=f"{fc.name} -> aborted after repeats",
                 )
+            elif remaining <= 0:
+                # Every call still needs a response part, or Gemini rejects
+                # the replayed turn; out of time means "skipped".
+                result = _time_limit_result(fc.name)
             else:
-                result = await _execute_tool_call(tool_context, fc.name, fc.args or {})
+                await _emit(on_step, _step_label(fc.name, raw_args, titles))
+                try:
+                    result = await asyncio.wait_for(
+                        _execute_tool_call(tool_context, fc.name, raw_args),
+                        timeout=remaining,
+                    )
+                except TimeoutError:
+                    result = _time_limit_result(fc.name)
                 if not result.ok:
                     retry_count[key] = retry_count.get(key, 0) + 1
 
+            if result.error and result.error.code == "time_limit":
+                time_limit_hit = True
             tools_used.append(
                 ToolCallRecord(tool=fc.name, ok=result.ok, summary=result.summary or fc.name)
             )
             citations.extend(result.citations)
+            titles.update({c.noteId: c.title for c in result.citations if c.title})
             drafts = _merge_drafts(drafts, result.drafts)
             executed_this_round.append(result)
 
@@ -223,23 +360,24 @@ async def run_agent_turn(
         if hard_stop:
             break
 
-    # Out of iterations (or hard stop): one final answer pass WITHOUT tools.
+    # Out of iterations, hard stop, or time limit: one final answer pass
+    # WITHOUT tools, written from whatever the turn gathered.
+    await _emit(on_step, "Writing the reply…")
+    message_text = ""
     try:
-        final = await asyncio.to_thread(
-            gemini_client.models.generate_content,
+        final = await generate_with_retries(
+            gemini_client,
+            deadline=deadline,
             model=AGENT_MODEL,
             contents=contents,
             config=finalize_config,
         )
         message_text = (final.text or "").strip() if final else ""
+    except QuotaExceeded:
+        raise
     except Exception as exc:
-        print(f"Agent finalization call failed: {exc}")
-        message_text = ""
+        print(f"Agent finalization call failed: {exc!r}")
 
-    return AgentChatResponse(
-        message=_sanitize_message(message_text) if message_text else FALLBACK_MESSAGE,
-        citations=citations,
-        workingSet=merge_working_set(working_set, citations),
-        toolsUsed=tools_used,
-        drafts=drafts,
-    )
+    if message_text:
+        return response_with(_sanitize_message(message_text))
+    return response_with(TIME_LIMIT_MESSAGE if time_limit_hit else FALLBACK_MESSAGE)

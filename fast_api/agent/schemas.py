@@ -12,6 +12,7 @@ MAX_AGENT_MESSAGE_CHARS = 2000
 MAX_HISTORY_TURNS = 50
 MAX_HISTORY_MESSAGE_CHARS = 20_000
 MAX_WORKING_SET = 50
+MAX_WORKING_SET_TITLE_CHARS = 500
 
 
 class HistoryTurn(BaseModel):
@@ -19,24 +20,56 @@ class HistoryTurn(BaseModel):
     text: str = Field(max_length=MAX_HISTORY_MESSAGE_CHARS)
 
 
-class AgentChatRequest(BaseModel):
-    message: str = Field(max_length=MAX_AGENT_MESSAGE_CHARS)
-    history: list[HistoryTurn] = Field(default_factory=list, max_length=MAX_HISTORY_TURNS)
-    workingSet: list[str] = Field(default_factory=list, max_length=MAX_WORKING_SET)
-
-    @field_validator("workingSet")
-    @classmethod
-    def validate_working_set_ids(cls, values: list[str]) -> list[str]:
-        for value in values:
-            # MongoDB ObjectIds are 24-char hex. Anything else is a bug or abuse.
-            if not isinstance(value, str) or len(value) != 24:
-                raise ValueError("workingSet entries must be note IDs")
-        return values
-
-
 class Citation(BaseModel):
     noteId: str
     title: str = ""
+
+
+MAX_UNSAVED_NOTES = 12
+MAX_UNSAVED_CONTENT_CHARS = 20_000
+MAX_UNSAVED_TAGS = 50
+MAX_UNSAVED_CHECKLIST_ITEMS = 100
+
+
+class UnsavedChecklistItem(BaseModel):
+    text: str = Field(default="", max_length=2000)
+    completed: bool = False
+
+
+class UnsavedNote(BaseModel):
+    """A note open in the user's editor with changes they haven't saved.
+
+    Tools that read this note return this version instead of the saved one
+    (architecture plan D21), so edits are made on what the user sees.
+    """
+    noteId: str = Field(min_length=24, max_length=24)
+    title: str = Field(default="", max_length=MAX_WORKING_SET_TITLE_CHARS)
+    content: str = Field(default="", max_length=MAX_UNSAVED_CONTENT_CHARS)
+    tags: list[str] = Field(default_factory=list, max_length=MAX_UNSAVED_TAGS)
+    isChecklist: bool = False
+    checklist: list[UnsavedChecklistItem] = Field(
+        default_factory=list, max_length=MAX_UNSAVED_CHECKLIST_ITEMS
+    )
+
+
+class AgentChatRequest(BaseModel):
+    message: str = Field(max_length=MAX_AGENT_MESSAGE_CHARS)
+    history: list[HistoryTurn] = Field(default_factory=list, max_length=MAX_HISTORY_TURNS)
+    # { noteId, title } pairs in display order, so "the second one" can be
+    # resolved by name, not just by ID.
+    workingSet: list[Citation] = Field(default_factory=list, max_length=MAX_WORKING_SET)
+    unsavedNotes: list[UnsavedNote] = Field(default_factory=list, max_length=MAX_UNSAVED_NOTES)
+
+    @field_validator("workingSet")
+    @classmethod
+    def validate_working_set(cls, values: list[Citation]) -> list[Citation]:
+        for value in values:
+            # MongoDB ObjectIds are 24-char hex. Anything else is a bug or abuse.
+            if len(value.noteId) != 24:
+                raise ValueError("workingSet entries must carry note IDs")
+            if len(value.title) > MAX_WORKING_SET_TITLE_CHARS:
+                raise ValueError("workingSet titles are too long")
+        return values
 
 
 class ToolCallRecord(BaseModel):
@@ -60,6 +93,9 @@ class AgentDraft(BaseModel):
     isChecklist: bool | None = None
     checklist: list[dict[str, Any]] | None = None
     folderId: str | None = None     # for create; None = unfiled/home
+    # Edit made on the user's unsaved tab text, not the saved note: the
+    # browser asks before applying it (Apply / Apply & save / Skip).
+    basedOnUnsaved: bool = False
 
 
 class AgentChatResponse(BaseModel):

@@ -175,8 +175,10 @@ const GlobalEditorOverlay = () => {
           >
             {/* Main Editor */}
             <div className="w-full h-full max-w-3xl md:max-w-[810px] shrink-0">
+              {/* externalRev in the key: an outside change (agent edit, revert)
+                  remounts the editor so it picks up the new contents. */}
               <TabEditorSlot
-                key={activeTab._id}
+                key={`${activeTab._id}:${activeTab.externalRev || 0}`}
                 tab={activeTab}
                 isActive={true}
                 onNoteSaved={handleNoteSaved}

@@ -10,6 +10,8 @@ import TabDock from "../TabDock/TabDock";
 import GlobalEditorOverlay from "../Editor/GlobalEditorOverlay";
 import { useModalStore } from "../Modals/useModalStore";
 import ParticleBackground from "../Background/ParticleBackground";
+import AgentChatPanel from "../Cards/AgentChatPanel";
+import { useSearchStore } from "../../store/useSearchStore";
 
 const MainLayout = () => {
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
@@ -18,10 +20,19 @@ const MainLayout = () => {
     const setActiveTab = useTabsStore((state) => state.setActiveTab);
     const closeConfirmModal = useModalStore((state) => state.closeConfirmModal);
     const closeFolderDeleteModal = useModalStore((state) => state.closeFolderDeleteModal);
+    const isAgentMode = useSearchStore((state) => state.searchMode === 'agent');
     const location = useLocation();
 
     const isEditorActive = activeTabId !== 'home';
     const sidebarRef = useRef(null);
+
+    // Agent mode shows the chat in place of the page, on every page. Navigating
+    // means "show me that page", so it leaves agent mode; the conversation (and
+    // any turn still running) lives on in useAgentStore.
+    useEffect(() => {
+        const { searchMode, setSearchMode } = useSearchStore.getState();
+        if (searchMode === 'agent') setSearchMode('keyword');
+    }, [location.pathname, location.search]);
 
     // Unify scroll restoration, modal closing, and resetting editor tabs to home across page transitions
     useEffect(() => {
@@ -69,7 +80,15 @@ const MainLayout = () => {
 
             {/* Main Outlet content (hidden when editor is active) */}
             <div className={`transition-[padding] ${isSidebarOpen ? "pl-0 sm:pl-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "pl-0 sm:pl-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]"} pt-[60px] md:pt-[72px] ${isEditorActive ? "hidden" : ""}`}>
-                <Outlet />
+                {isAgentMode ? (
+                    <div className="pb-24 px-2 md:px-4 flex justify-center">
+                        <div className="w-full max-w-2xl">
+                            <AgentChatPanel />
+                        </div>
+                    </div>
+                ) : (
+                    <Outlet />
+                )}
             </div>
 
             {/* Global Note Editor Overlay (z-20) */}

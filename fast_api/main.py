@@ -1,5 +1,6 @@
 import asyncio
 from functools import partial
+import json
 import os
 import re
 import time
@@ -15,6 +16,7 @@ from qdrant_client.models import (
     FilterSelector, PointIdsList, PayloadSchemaType
 )
 from fastapi import FastAPI, HTTPException, Header, Response, Depends
+from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
@@ -22,8 +24,7 @@ from dotenv import load_dotenv
 from agent import (
     run_agent_turn,
     AgentChatRequest,
-    AgentChatResponse,
-    Citation,
+    QuotaExceeded,
     ToolContext,
 )
 
@@ -33,7 +34,7 @@ load_dotenv()
 COLLECTION_NAME = "notes_chunks"
 EMBEDDING_DIM = 768
 EMBEDDING_MODEL = "gemini-embedding-2"
-GEMINI_MODEL = "gemini-3.1-flash-lite"
+GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 # Chunks below this score are too weak to surface in results
 MIN_SCORE_THRESHOLD = 0.58
@@ -596,11 +597,29 @@ async def semantic_search(request: SemanticSearchRequest, _: None = Depends(veri
         raise HTTPException(status_code=500, detail="Semantic search failed.")
 
 
-# Agent Chat (Phase A — harness skeleton, read-only tools)
+# Agent Chat
 # The loop owns orchestration; tools execute against Express using the user's
 # own forwarded JWT (Authorization header), so the agent can never exceed the
 # caller's permissions and never sees MongoDB directly.
-@app.post("/agent/chat", response_model=AgentChatResponse)
+#
+# The reply is a Server-Sent Events stream (architecture plan §2.1, step 1a):
+# `step` events while the turn works, then exactly one `final` or `error`
+# event. A comment line every few seconds keeps proxies from treating the
+# connection as idle. When the client disconnects (Stop), Starlette cancels
+# the stream and the turn task is cancelled with it.
+AGENT_KEEPALIVE_SECONDS = 10.0
+AGENT_FAILED_MESSAGE = "The assistant hit a problem and couldn't answer. Try again."
+AGENT_QUOTA_MESSAGE = (
+    "The assistant is at its request limit right now — try again in about "
+    "{seconds} seconds."
+)
+
+
+def sse_event(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@app.post("/agent/chat")
 async def agent_chat(
     request: AgentChatRequest,
     authorization: str | None = Header(default=None),
@@ -619,28 +638,64 @@ async def agent_chat(
         user_id=x_user_id or "",
         auth_header=authorization.strip(),
         express_base_url=express_base_url,
+        unsaved_notes={note.noteId: note.model_dump() for note in request.unsavedNotes},
     )
+    events: asyncio.Queue[str | None] = asyncio.Queue()
 
-    start_time = time.perf_counter()
-    try:
-        result = await run_agent_turn(
-            gemini_client=gemini_client,
-            message=request.message.strip(),
-            history=request.history,
-            working_set=[
-                Citation(noteId=note_id, title="") for note_id in request.workingSet
-            ],
-            tool_context=tool_context,
-        )
-        duration = time.perf_counter() - start_time
-        print(
-            f"Agent chat turn completed in {duration:.2f}s "
-            f"(tools used: {len(result.toolsUsed)}, user: {x_user_id or 'unknown'})"
-        )
-        return result
-    except Exception as e:
-        print(f"Agent chat error: {e}")
-        raise HTTPException(status_code=500, detail="Agent chat failed.")
+    async def on_step(label: str) -> None:
+        events.put_nowait(sse_event("step", {"label": label}))
+
+    async def run_turn() -> None:
+        start_time = time.perf_counter()
+        try:
+            result = await run_agent_turn(
+                gemini_client=gemini_client,
+                message=request.message.strip(),
+                history=request.history,
+                working_set=request.workingSet,
+                tool_context=tool_context,
+                on_step=on_step,
+            )
+            print(
+                f"Agent chat turn completed in {time.perf_counter() - start_time:.2f}s "
+                f"(tools used: {len(result.toolsUsed)}, user: {x_user_id or 'unknown'})"
+            )
+            events.put_nowait(sse_event("final", result.model_dump()))
+        except QuotaExceeded as exc:
+            print(f"Agent chat turn stopped by the Gemini quota (retry in ~{exc.retry_after_seconds}s)")
+            events.put_nowait(sse_event("error", {
+                "message": AGENT_QUOTA_MESSAGE.format(seconds=exc.retry_after_seconds),
+                "retryAfterSeconds": exc.retry_after_seconds,
+            }))
+        except Exception as e:
+            print(f"Agent chat error: {e!r}")
+            events.put_nowait(sse_event("error", {"message": AGENT_FAILED_MESSAGE}))
+        finally:
+            events.put_nowait(None)
+
+    async def stream():
+        turn = asyncio.create_task(run_turn())
+        try:
+            yield ": connected\n\n"
+            while True:
+                try:
+                    item = await asyncio.wait_for(events.get(), timeout=AGENT_KEEPALIVE_SECONDS)
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+                if item is None:
+                    break
+                yield item
+        finally:
+            if not turn.done():
+                turn.cancel()
+                print(f"Agent chat turn cancelled: client disconnected (user: {x_user_id or 'unknown'})")
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ validation as the app's own UI.
 Adding a tool = add it to TOOLS below. Nothing else should import executors
 directly; the loop resolves everything through this registry.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 import asyncio
@@ -39,6 +39,25 @@ class ToolContext:
     user_id: str
     auth_header: str
     express_base_url: str
+    # noteId → the user's unsaved tab version ({title, content, tags,
+    # isChecklist, checklist}). Tools reading these notes return this version.
+    unsaved_notes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Notes read in full (get_note) during this turn. Rewriting a note's text
+    # requires reading it first, so edits are never made from memory.
+    read_note_ids: set[str] = field(default_factory=set)
+
+
+_UNSAVED_FIELDS = ("title", "content", "tags", "isChecklist", "checklist")
+
+
+def with_unsaved(ctx: ToolContext, note: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """The note as the user currently sees it: their unsaved tab version
+    overlaid on the saved one when the note is open with unsaved changes.
+    Returns (note, is_unsaved)."""
+    unsaved = ctx.unsaved_notes.get(str(note.get("_id", "")))
+    if not unsaved:
+        return note, False
+    return {**note, **{key: unsaved[key] for key in _UNSAVED_FIELDS if key in unsaved}}, True
 
 
 def error_result(
@@ -158,6 +177,7 @@ async def run_search_notes(ctx: ToolContext, args: dict[str, Any]) -> ToolResult
     citations: list[Citation] = []
     notes_for_model: list[dict[str, Any]] = []
     for note in source_notes:
+        note, unsaved = with_unsaved(ctx, note)
         note_id = str(note.get("_id", ""))
         title = str(note.get("title", "") or "")
         citations.append(Citation(noteId=note_id, title=title))
@@ -167,6 +187,7 @@ async def run_search_notes(ctx: ToolContext, args: dict[str, Any]) -> ToolResult
                 "title": title,
                 "excerpt": str(note.get("content", "") or "")[:MAX_EXCERPT_CHARS],
                 "tags": note.get("tags", []),
+                **({"unsavedChanges": True} if unsaved else {}),
             }
         )
 
@@ -213,6 +234,8 @@ async def run_get_note(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "invalid_response", "Backend returned a note payload in an unexpected shape.",
             recoverable=False, summary=f"{summary} -> invalid response",
         )
+    note, unsaved = with_unsaved(ctx, note)
+    ctx.read_note_ids.add(note_id)
 
     title = str(note.get("title", "") or "")
     content = str(note.get("content", "") or "")
@@ -228,9 +251,10 @@ async def run_get_note(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 "tags": note.get("tags", []),
                 "isChecklist": bool(note.get("isChecklist", False)),
                 "checklist": note.get("checklist", []),
+                **({"unsavedChanges": True} if unsaved else {}),
             }
         },
-        summary=f"{summary} -> \"{title[:40]}\"{' (truncated)' if truncated else ''}",
+        summary=f"{summary} -> \"{title[:40]}\"{' (unsaved version)' if unsaved else ''}{' (truncated)' if truncated else ''}",
         citations=[Citation(noteId=str(note.get("_id", note_id)), title=title)],
     )
 
@@ -297,7 +321,7 @@ async def _fetch_and_summarize_one(
         reason = failure.error.message if failure and failure.error else "bad payload"
         return {"noteId": note_id, "error": reason}, None, f"{note_id}: {reason}"
 
-    note = payload["note"]
+    note, _ = with_unsaved(ctx, payload["note"])
     title = str(note.get("title", "") or "")
     text = str(note.get("content", "") or "").strip()
     citation = Citation(noteId=note_id, title=title)
@@ -406,12 +430,14 @@ def _folder_subtree_ids(children: dict[str | None, list[str]], root_id: str) -> 
     return ids
 
 
-def _compact_listing(note: dict[str, Any]) -> dict[str, Any]:
+def _compact_listing(ctx: ToolContext, note: dict[str, Any]) -> dict[str, Any]:
+    note, unsaved = with_unsaved(ctx, note)
     return {
         "noteId": str(note.get("_id", "")),
         "title": str(note.get("title", "") or ""),
         "tags": note.get("tags", []),
         "excerpt": str(note.get("content", "") or "")[:LIST_EXCERPT_CHARS],
+        **({"unsavedChanges": True} if unsaved else {}),
     }
 
 
@@ -447,7 +473,8 @@ async def run_list_notes(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     if failure:
         return failure
 
-    notes = payload.get("notes", [])
+    # Filter on what the user sees: unsaved titles/tags count.
+    notes = [with_unsaved(ctx, n)[0] for n in payload.get("notes", [])]
     if args.get("tag"):
         wanted = str(args["tag"]).strip().lower()
         notes = [n for n in notes if any(str(t).lower() == wanted for t in n.get("tags", []))]
@@ -469,7 +496,7 @@ async def run_list_notes(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     return ToolResult(
         ok=True,
         data={
-            "notes": [_compact_listing(n) for n in notes],
+            "notes": [_compact_listing(ctx, n) for n in notes],
             "totalMatched": total,
             "truncated": total > len(notes),
         },
@@ -626,6 +653,16 @@ async def run_stage_note_edit(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
             "invalid_args", "No changes proposed — provide at least one field to change.",
             recoverable=True, summary=f"{summary} -> no changes",
         )
+    # A text or checklist rewrite replaces the whole body, so it must be built
+    # on the note as it is now (unsaved changes included), not from memory of
+    # an earlier turn — that silently dropped a user's unsaved line in testing.
+    if ("content" in changes or "checklist" in changes) and note_id not in ctx.read_note_ids:
+        return error_result(
+            "read_first",
+            "Read this note with get_note first (in this turn) and build the new "
+            "content from its current text — it may have changed or have unsaved edits.",
+            recoverable=True, summary=f"{summary} -> must read the note first",
+        )
 
     payload, failure = await _call_express(ctx, "GET", f"/v1/get-note/{note_id}", summary)
     if failure:
@@ -633,6 +670,8 @@ async def run_stage_note_edit(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
     note = payload.get("note")
     if not isinstance(note, dict):
         return error_result("invalid_response", "Unexpected note payload.", recoverable=False, summary=f"{summary} -> invalid response")
+    # Edit what the user sees: their unsaved tab version when there is one.
+    note, unsaved = with_unsaved(ctx, note)
 
     title = str(note.get("title", "") or "")
     # Drop no-op changes so the diff the user reviews is honest.
@@ -649,13 +688,91 @@ async def run_stage_note_edit(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
             recoverable=False, summary=f"{summary} -> nothing to change",
         )
 
-    draft = AgentDraft(action="edit", noteId=note_id, **effective)
+    draft = AgentDraft(action="edit", noteId=note_id, basedOnUnsaved=unsaved, **effective)
+    staged_note = (
+        "The note has unsaved changes open in the user's editor, so the edit was "
+        "made on that version and the user will be asked to Apply or Skip it. "
+        "Nothing is saved yet."
+        if unsaved else
+        "Staged in the user's dock for review; nothing is saved yet."
+    )
     return ToolResult(
         ok=True,
-        data={"staged": True, "changedFields": sorted(effective.keys()), "note": "Staged in the user's dock for review; nothing is saved yet."},
-        summary=f"{summary} -> staged ({', '.join(sorted(effective.keys()))})",
+        data={"staged": True, "changedFields": sorted(effective.keys()), "note": staged_note},
+        summary=f"{summary} -> staged ({', '.join(sorted(effective.keys()))}){' on unsaved version' if unsaved else ''}",
         citations=[Citation(noteId=note_id, title=title)],
         drafts=[draft],
+    )
+
+
+# ── list_tags ───────────────────────────────────────────────────────────────
+
+# Enough for any real tag list; the reply says how many were left out if not.
+MAX_TAGS_RETURNED = 200
+
+LIST_TAGS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "includeArchived": {
+            "type": "boolean",
+            "description": "Also count tags on archived notes. Default true.",
+        },
+    },
+}
+
+
+async def run_list_tags(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    """Every tag in use, with note counts.
+
+    Reads /v1/get-graph-notes (every non-trashed note's title + tags, no
+    limit), so the list is complete — list_notes and search only ever see a
+    capped sample. Tags differing only in letter case count as one, shown in
+    their most common spelling.
+    """
+    include_archived = args.get("includeArchived", True) is not False
+    summary = "list_tags()"
+    payload, failure = await _call_express(
+        ctx, "GET", "/v1/get-graph-notes", summary,
+        params={"includeArchived": "true" if include_archived else "false"},
+    )
+    if failure:
+        return failure
+
+    notes = payload.get("notes", [])
+    counts: dict[str, int] = {}
+    spellings: dict[str, dict[str, int]] = {}
+    untagged = 0
+    for note in notes:
+        tags = {str(t).strip() for t in note.get("tags") or [] if str(t).strip()}
+        if not tags:
+            untagged += 1
+        seen: set[str] = set()
+        for tag in tags:
+            key = tag.casefold()
+            spellings.setdefault(key, {}).setdefault(tag, 0)
+            spellings[key][tag] += 1
+            if key not in seen:
+                seen.add(key)
+                counts[key] = counts.get(key, 0) + 1
+
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    tags_out = [
+        {"tag": max(spellings[key].items(), key=lambda kv: kv[1])[0], "notes": count}
+        for key, count in ranked[:MAX_TAGS_RETURNED]
+    ]
+    data: dict[str, Any] = {
+        "tags": tags_out,
+        "totalTags": len(ranked),
+        "notesScanned": len(notes),
+        "notesWithoutTags": untagged,
+        "includesArchived": include_archived,
+    }
+    if len(ranked) > MAX_TAGS_RETURNED:
+        data["omittedTags"] = len(ranked) - MAX_TAGS_RETURNED
+    return ToolResult(
+        ok=True,
+        data=data,
+        summary=f"{summary} -> {len(ranked)} tag{'s' if len(ranked) != 1 else ''} across {len(notes)} notes",
     )
 
 
@@ -724,6 +841,16 @@ TOOLS: dict[str, ToolSpec] = {
         parameters=LIST_NOTES_SCHEMA,
         executor=run_list_notes,
     ),
+    "list_tags": ToolSpec(
+        name="list_tags",
+        description=(
+            "List every tag the user has, with how many notes carry each one. "
+            "Complete (covers all notes, unlike search or list_notes). Use for "
+            "\"what tags do I use\", \"my most used tags\", and similar."
+        ),
+        parameters=LIST_TAGS_SCHEMA,
+        executor=run_list_tags,
+    ),
     "draft_note": ToolSpec(
         name="draft_note",
         description=(
@@ -740,7 +867,9 @@ TOOLS: dict[str, ToolSpec] = {
         description=(
             "Propose edits to an EXISTING note (by ID from an earlier tool "
             "result), staged in the user's dock as an unsaved draft with the "
-            "changes highlighted. Never saves on its own. To move a note to "
+            "changes highlighted. Never saves on its own. To change the "
+            "content or checklist, first read the note with get_note in the "
+            "same turn and build on its current text. To move a note to "
             "another folder, say you cannot — that is not a draft action."
         ),
         parameters=STAGE_NOTE_EDIT_SCHEMA,

@@ -24,25 +24,24 @@ def trim_history(history: list[HistoryTurn]) -> list[HistoryTurn]:
 def merge_working_set(
     existing: list[Citation], newly_cited: list[Citation]
 ) -> list[Citation]:
-    """Merge cited notes into the working set, most-recently-used first.
+    """Merge cited notes into the working set: this turn's notes first, in the
+    order they were cited, then the older entries.
 
-    Order matters: "the second one" is resolved against this list's order, so
-    the newest mentions move to the front rather than the back.
+    Order matters: "the second one" is resolved against this list, so this
+    turn's notes keep the order the results came in (inserting them one by
+    one at the front used to reverse a search's results).
     """
     by_id: dict[str, Citation] = {c.noteId: c for c in existing}
-    # Reinsert existing entries so deduped order is deterministic.
-    ordered = [by_id[c.noteId] for c in existing]
+    fresh: list[Citation] = []
+    seen: set[str] = set()
 
     for citation in newly_cited:
+        if citation.noteId in seen:
+            continue
+        seen.add(citation.noteId)
         current = by_id.get(citation.noteId)
-        if current is not None:
-            ordered.remove(current)
-            # Prefer the fresh title if the old one was blank.
-            by_id[citation.noteId] = (
-                citation if citation.title else current
-            )
-        else:
-            by_id[citation.noteId] = citation
-        ordered.insert(0, by_id[citation.noteId])
+        # Prefer the fresh title unless it is blank.
+        fresh.append(citation if citation.title or current is None else current)
 
-    return ordered[:WORKING_SET_LIMIT]
+    older = [c for c in existing if c.noteId not in seen]
+    return (fresh + older)[:WORKING_SET_LIMIT]
