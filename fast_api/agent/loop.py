@@ -7,6 +7,7 @@ Contract (from agent-architecture-plan.md §3, halt rules):
   reply, never a dead spinner
 """
 import asyncio
+import json
 import os
 import re
 import time
@@ -45,6 +46,9 @@ AGENT_MODEL = os.getenv("AGENT_MODEL", "gemini-3.5-flash-lite")
 # reply, so the user always gets an answer instead of a bare error.
 TURN_CEILING_SECONDS = 60.0
 FINAL_RESERVE_SECONDS = 12.0
+
+# Total input cap per turn (architecture plan §3): ~60k chars ≈ 15k tokens.
+INPUT_CAP_CHARS = 60_000
 
 StepCallback = Callable[[str], Awaitable[None]]
 
@@ -175,14 +179,34 @@ async def _emit(on_step: StepCallback | None, label: str) -> None:
         print(f"Agent step callback failed: {exc}")
 
 
+def _contents_chars(contents: list[types.Content]) -> int:
+    """Rough size of what is sent to the model: text plus tool calls/results."""
+    total = 0
+    for content in contents:
+        for part in content.parts or []:
+            if getattr(part, "text", None):
+                total += len(part.text)
+            if getattr(part, "function_call", None):
+                total += len(json.dumps(part.function_call.args or {}, default=str))
+            if getattr(part, "function_response", None):
+                total += len(json.dumps(part.function_response.response or {}, default=str))
+    return total
+
+
 def _dedupe_citations(citations: list[Citation]) -> list[Citation]:
     """One citation per note, in first-cited order (reading then editing a
-    note cites it twice). Keeps a non-empty title if any copy has one."""
+    note cites it twice). Blank fields (title, snippet, tags) are filled from
+    later copies, so the chat's note card gets the most complete version."""
     by_id: dict[str, Citation] = {}
     for citation in citations:
         current = by_id.get(citation.noteId)
-        if current is None or (not current.title and citation.title):
+        if current is None:
             by_id[citation.noteId] = citation
+            continue
+        fill = {key: getattr(citation, key) for key in ("title", "snippet", "tags")
+                if not getattr(current, key) and getattr(citation, key)}
+        if fill:
+            by_id[citation.noteId] = current.model_copy(update=fill)
     return list(by_id.values())
 
 
@@ -221,7 +245,15 @@ async def run_agent_turn(
         system_instruction=SYSTEM_INSTRUCTION,
         temperature=0.4,
     )
+    # The forced final pass must produce text. Leaving the tools out is not
+    # enough: with tool calls in the history the model can still answer with
+    # a function call (seen Oct 2026 → empty text → the fallback message), so
+    # the tools stay declared but calling them is switched off.
     finalize_config = types.GenerateContentConfig(
+        tools=[types.Tool(function_declarations=_function_declarations())],
+        tool_config=types.ToolConfig(
+            function_calling_config=types.FunctionCallingConfig(mode=types.FunctionCallingConfigMode.NONE)
+        ),
         system_instruction=SYSTEM_INSTRUCTION,
         temperature=0.4,
     )
@@ -360,16 +392,27 @@ async def run_agent_turn(
         if hard_stop:
             break
 
-    # Out of iterations, hard stop, or time limit: one final answer pass
-    # WITHOUT tools, written from whatever the turn gathered.
+        # Every round resends the whole conversation, tool results included,
+        # so input grows each round. Past the cap, stop gathering and answer.
+        size = _contents_chars(contents)
+        if size > INPUT_CAP_CHARS:
+            print(f"Agent input cap reached ({size} chars after iteration {iteration}); answering now")
+            break
+
+    # Out of iterations, hard stop, time limit or input cap: one final answer pass
+    # with tool calls switched off, written from whatever the turn gathered.
     await _emit(on_step, "Writing the reply…")
     message_text = ""
+    final_contents = contents + [types.Content(role="user", parts=[types.Part.from_text(
+        text="(No more tool calls are available for this message. Answer now from what you found; "
+             "if it wasn't enough, say so plainly.)"
+    )])]
     try:
         final = await generate_with_retries(
             gemini_client,
             deadline=deadline,
             model=AGENT_MODEL,
-            contents=contents,
+            contents=final_contents,
             config=finalize_config,
         )
         message_text = (final.text or "").strip() if final else ""

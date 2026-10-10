@@ -24,9 +24,11 @@ const createInitialNotes = async (userId) => {
             title: "How to Use Checklists",
             isChecklist: true,
             checklist: [
-                { content: "Create a new note.", isCompleted: true },
-                { content: "Click the checklist icon.", isCompleted: false },
-                { content: "Add your to-do items!", isCompleted: false },
+                // Field names must match the note schema (text / completed);
+                // other names are silently dropped, leaving empty items.
+                { text: "Create a new note.", completed: true },
+                { text: "Click the checklist icon.", completed: false },
+                { text: "Add your to-do items!", completed: false },
             ],
             tags: ["welcome"],
             userId,

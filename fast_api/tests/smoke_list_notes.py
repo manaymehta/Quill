@@ -25,14 +25,19 @@ ARCH_1 = "0123456789abcdef01234570"
 ARCH_2 = "0123456789abcdef01234571"
 
 
+# Step 2a: search = a meaning search (faked here, finds nothing) + /v1/agent/search-support.
+async def fake_meaning(query, user_id, limit):
+    return []
+
+
 async def fake_call_express(ctx, method, path, summary, **kwargs):
     if path == "/v1/get-all-archived-notes":
         return {"notes": [
             {"_id": ARCH_1, "title": "Old trip plan", "content": "Goa in December, kep it cheap", "tags": ["travel"], "folderId": None, "updatedAt": "2025-01-01"},
             {"_id": ARCH_2, "title": "Banking info reference", "content": "IFSC etc", "tags": [], "folderId": None, "updatedAt": "2025-02-01"},
         ]}, None
-    if path == "/v1/semantic-search":
-        return {"answer": "", "sourceNotes": []}, None
+    if path == "/v1/agent/search-support":
+        return {"notes": {}, "keywordHits": []}, None
     if path == "/v1/get-folders":
         return {"folders": []}, None
     return None, tools_mod.error_result("not_found", f"unexpected stub path: {path}", recoverable=False, summary=summary)
@@ -58,7 +63,7 @@ async def main():
 
     # executor: archived filter path (no model call)
     tools_mod._call_express = fake_call_express
-    ctx = ToolContext(user_id="smoke3", auth_header="Bearer fake", express_base_url="http://stub")
+    ctx = ToolContext(user_id="smoke3", auth_header="Bearer fake", express_base_url="http://stub", meaning_search=fake_meaning)
     r = await tools_mod.run_list_notes(ctx, {"archived": True, "limit": 10})
     assert r.ok and len(r.data["notes"]) == 2, f"executor failed: {r.summary}"
     print(f"executor archived path: OK ({r.summary})")

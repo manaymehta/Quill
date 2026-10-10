@@ -26,15 +26,20 @@ NOTE_B = "0123456789abcdef01234568"
 LONG_TEXT = ("We deploy with docker compose, three services. " * 30).strip()
 
 
+# Step 2a: search = a meaning search (faked here) + /v1/agent/search-support.
+async def fake_meaning(query, user_id, limit):
+    return [
+        {"noteId": NOTE_A, "chunkIndex": 0, "text": LONG_TEXT[:300], "score": 0.8, "textHash": ""},
+        {"noteId": NOTE_B, "chunkIndex": 0, "text": "Runs the backups.", "score": 0.7, "textHash": ""},
+    ]
+
+
 async def fake_call_express(ctx, method, path, summary, **kwargs):
-    if path == "/v1/semantic-search":
-        return {
-            "answer": "preview",
-            "sourceNotes": [
-                {"_id": NOTE_A, "title": "Docker deploy notes", "content": LONG_TEXT[:300], "tags": ["docker"]},
-                {"_id": NOTE_B, "title": "Home server", "content": "Runs the backups.", "tags": ["infra"]},
-            ],
-        }, None
+    if path == "/v1/agent/search-support":
+        return {"notes": {
+            NOTE_A: {"status": "ok", "title": "Docker deploy notes", "tags": ["docker"], "folder": None, "isArchived": False, "isChecklist": False, "lastEdited": "2026-10-01"},
+            NOTE_B: {"status": "ok", "title": "Home server", "tags": ["infra"], "folder": None, "isArchived": False, "isChecklist": False, "lastEdited": "2026-10-01"},
+        }, "keywordHits": []}, None
     if path.startswith("/v1/get-note/"):
         nid = path.rsplit("/", 1)[-1]
         if nid == NOTE_A:
@@ -69,7 +74,7 @@ async def main():
         print(f"VALIDATION summarize_notes: passed ({e})")
 
     # 2. executor-level parse checks (no model involved)
-    ctx = ToolContext(user_id="smoke2", auth_header="Bearer fake", express_base_url="http://stub")
+    ctx = ToolContext(user_id="smoke2", auth_header="Bearer fake", express_base_url="http://stub", meaning_search=fake_meaning)
     r1 = await tools_mod.run_get_note(ctx, {"noteId": NOTE_A})
     print(f"EXEC get_note ok={r1.ok} truncated={r1.data['note']['contentTruncated']} symbol={r1.summary}")
     r2 = await tools_mod.run_list_folders(ctx, {})

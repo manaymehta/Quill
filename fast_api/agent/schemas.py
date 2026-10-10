@@ -23,6 +23,9 @@ class HistoryTurn(BaseModel):
 class Citation(BaseModel):
     noteId: str
     title: str = ""
+    # For the note cards in chat: the start of what the agent saw, and tags.
+    snippet: str = ""
+    tags: list[str] = Field(default_factory=list)
 
 
 MAX_UNSAVED_NOTES = 12

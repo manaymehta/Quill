@@ -26,6 +26,11 @@ NOTE_ID = "0123456789abcdef01234572"
 FOLDER_ID = "f00000000000000000000001"
 
 
+# Step 2a: search = a meaning search (faked here) + /v1/agent/search-support.
+async def fake_meaning(query, user_id, limit):
+    return [{"noteId": NOTE_ID, "chunkIndex": 0, "text": "compose up -d", "score": 0.8, "textHash": ""}]
+
+
 async def fake_call_express(ctx, method, path, summary, **kwargs):
     if path == "/v1/get-folders":
         return {"folders": [{"_id": FOLDER_ID, "name": "Dev", "parentId": None, "icon": "📁"}]}, None
@@ -34,16 +39,15 @@ async def fake_call_express(ctx, method, path, summary, **kwargs):
             "_id": NOTE_ID, "title": "Docker deploy", "content": "compose up -d",
             "tags": ["docker"], "isChecklist": False, "checklist": [],
         }}, None
-    if path == "/v1/semantic-search":
-        return {"answer": "", "sourceNotes": [
-            {"_id": NOTE_ID, "title": "Docker deploy", "content": "compose up -d", "tags": ["docker"]},
-        ]}, None
+    if path == "/v1/agent/search-support":
+        return {"notes": {NOTE_ID: {"status": "ok", "title": "Docker deploy", "tags": ["docker"], "folder": None, "isArchived": False, "isChecklist": False, "lastEdited": "2026-10-01"}},
+                "keywordHits": []}, None
     return None, tools_mod.error_result("not_found", f"unexpected path {path}", recoverable=False, summary=summary)
 
 
 async def main():
     tools_mod._call_express = fake_call_express
-    ctx = ToolContext(user_id="smoke4", auth_header="Bearer fake", express_base_url="http://stub")
+    ctx = ToolContext(user_id="smoke4", auth_header="Bearer fake", express_base_url="http://stub", meaning_search=fake_meaning)
 
     print("--- unit: draft_note ---")
     r = await tools_mod.run_draft_note(ctx, {"title": "Deploy cheatsheet  ", "content": "compose up -d", "tags": ["docker", "docker", "  deploy "], "folderId": FOLDER_ID})
@@ -55,6 +59,8 @@ async def main():
     print(f"  unknown folderId rejected (recoverable): OK -> {rb.summary}")
 
     print("--- unit: stage_note_edit ---")
+    # Content rewrites need the note read first in the turn (Phase 1 guard).
+    await tools_mod.run_get_note(ctx, {"noteId": NOTE_ID})
     r = await tools_mod.run_stage_note_edit(ctx, {"noteId": NOTE_ID, "content": "compose up -d && profit", "tags": ["docker"]})
     assert r.ok and r.drafts[0].action == "edit" and r.drafts[0].noteId == NOTE_ID and r.drafts[0].content == "compose up -d && profit" and r.drafts[0].tags is None, r
     print(f"  real change staged, no-op tag dropped: OK -> {r.summary}")

@@ -3,6 +3,7 @@ const Folder = require("../models/folder.model");
 const axios = require("axios");
 const mongoose = require("mongoose");
 const { findNearestLivingAncestor, getUserFolders } = require("../services/folder-tree.service");
+const { buildIndexText, indexTextHash } = require("../services/note-index.service");
 const FASTAPI_REQUEST_TIMEOUT_MS = 30_000;
 const FASTAPI_EMBEDDING_TIMEOUT_MS = 10_000;
 const embeddingLocks = new Map();
@@ -84,22 +85,10 @@ const triggerEmbed = (note, userId) => runEmbeddingOperation(String(note._id), a
     const url = process.env.FASTAPI_SUMMARIZE_URL;
     if (!url) return { status: "skipped", reason: "not-configured" };
 
-    // Build meaningful text for embedding, including checklist items if any
-    let embedText = note.content || "";
-    if (note.isChecklist && note.checklist && note.checklist.length > 0) {
-        const checklistStr = note.checklist.map(item => `- [${item.completed ? 'x' : ' '}] ${item.text}`).join('\n');
-        embedText = embedText ? `${embedText}\n\n${checklistStr}` : checklistStr;
-    }
-
-    if (note.linkPreviews && note.linkPreviews.length > 0) {
-        const previewsStr = note.linkPreviews.map(p => `[Link Preview] ${p.title || ""} - ${p.description || ""}`).join('\n');
-        embedText = embedText ? `${embedText}\n\n${previewsStr}` : previewsStr;
-    }
-
-    // A title-only note still has useful searchable content.
-    if (!embedText.trim() && note.title && note.title.trim()) {
-        embedText = note.title.trim();
-    }
+    // Content + checklist + link previews (title alone for a body-less note);
+    // shared with the agent's search check so both compute the same hash.
+    const indexText = buildIndexText(note);
+    const embedText = indexText.text;
 
     // A note that became blank must not leave its old vectors searchable.
     if (!embedText.trim()) return performDeleteEmbed(String(note._id));
@@ -110,6 +99,8 @@ const triggerEmbed = (note, userId) => runEmbeddingOperation(String(note._id), a
             userId: String(userId),
             title: note.title || "",
             text: embedText,
+            tags: indexText.tags,
+            textHash: indexTextHash(indexText),
             embeddingVersion: getEmbeddingVersion(note),
             isArchived: Boolean(note.isArchived),
         }, getFastApiHeaders(FASTAPI_EMBEDDING_TIMEOUT_MS));
@@ -241,8 +232,10 @@ const editNote = async (req, res) => {
 
         await note.save();
 
-        // Only re-embed when semantic content actually changed — not for pin/tag-only edits
+        // Only re-embed when indexed content changed (tags are indexed too) —
+        // not for pin/folder-only edits.
         const contentChanged = typeof title !== "undefined"
+            || typeof tags !== "undefined"
             || typeof content !== "undefined"
             || typeof checklist !== "undefined"
             || typeof isChecklist !== "undefined"
@@ -592,51 +585,6 @@ const permanentDeleteNote = async (req, res) => {
     }
 };
 
-const semanticSearch = async (req, res) => {
-    const userId = req.user._id;
-    const { query } = req.query;
-
-    if (!query || !query.trim()) {
-        return res.status(400).json({ error: true, message: "Query is required" });
-    }
-
-    const FASTAPI_URL = process.env.FASTAPI_SUMMARIZE_URL;
-    if (!FASTAPI_URL) {
-        return res.status(500).json({ error: true, message: "AI service URL not configured" });
-    }
-
-    try {
-        // FastAPI now handles context entirely from Qdrant chunk payloads.
-        // Express only needs to send query + userId.
-        const response = await axios.post(`${FASTAPI_URL}/semantic-search`, {
-            query: query.trim(),
-            userId: String(userId),
-        }, getFastApiHeaders());
-
-        const { answer, sourceNoteIds } = response.data || {};
-        if (typeof answer !== "string" || !Array.isArray(sourceNoteIds)
-            || sourceNoteIds.some(noteId => typeof noteId !== "string")) {
-            return res.status(502).json({ error: true, message: "AI service returned an invalid search response" });
-        }
-
-        // Fetch only the matched source notes by ID for the frontend card display
-        const sourceNotes = sourceNoteIds.length
-            ? await Note.find({ _id: { $in: sourceNoteIds }, userId, isDeleted: { $ne: true } })
-                .select(NOTE_LIST_FIELDS)
-                .lean()
-            : [];
-
-        return res.json({
-            error: false,
-            answer,
-            sourceNotes,
-        });
-    } catch (error) {
-        console.error(error);
-        console.error("Semantic search error:", error.message);
-        return res.status(500).json({ error: true, message: "Semantic search failed" });
-    }
-};
 
 
 const updateNoteArchive = async (req, res) => {
@@ -925,7 +873,6 @@ module.exports = {
     summarizeNote,
     updateNoteArchive,
     getArchivedNotes,
-    semanticSearch,
     reorderNotes,
     reorderHomeNotes,
     moveNote,

@@ -18,9 +18,11 @@ from .schemas import AgentDraft
 from .tools import TOOLS
 
 SHINGLE_WORDS = 8
-# One or two shared 8-word runs happen naturally when the agent describes
-# itself; three distinct ones means at least a pasted sentence.
-LEAK_SHINGLE_THRESHOLD = 3
+# Normal replies echo a few phrases of the guidance (measured Oct 2026: 4-6
+# shared 8-word runs when explaining a draft or the Apply/Skip prompt). Real
+# leaks are far larger: one pasted rule or tool description 9-68, the tool
+# guide 315, a full dump 527. 10 sits between the two.
+LEAK_SHINGLE_THRESHOLD = 10
 
 LEAK_REPLY = (
     "I can't share my internal instructions, but I'm happy to tell you what I "

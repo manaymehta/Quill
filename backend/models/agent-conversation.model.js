@@ -11,6 +11,9 @@ const citationSchema = new Schema(
     {
         noteId: { type: String, required: true },
         title: { type: String, default: "" },
+        // Shown on the chat's note cards (start of the text + a few tags).
+        snippet: { type: String, default: "" },
+        tags: { type: [String], default: [] },
     },
     { _id: false }
 );

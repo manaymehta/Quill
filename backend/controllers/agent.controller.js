@@ -131,6 +131,9 @@ const sanitizeUnsavedNotes = (raw) => {
     return sanitized;
 };
 
+const CITATION_SNIPPET_MAX = 300;
+const CITATION_TAGS_MAX = 5;
+
 const validateAgentResponse = (data) => {
     if (!data || typeof data !== "object") return null;
     if (typeof data.message !== "string" || !data.message.trim()) return null;
@@ -152,8 +155,16 @@ const validateAgentResponse = (data) => {
     if (!drafts.every(isValidDraft)) return null;
     return {
         message: data.message,
-        citations: data.citations,
-        workingSet: data.workingSet,
+        // Citations carry what the chat's note card shows; trimmed, typed.
+        citations: data.citations.map((c) => ({
+            noteId: c.noteId,
+            title: c.title,
+            snippet: typeof c.snippet === "string" ? c.snippet.slice(0, CITATION_SNIPPET_MAX) : "",
+            tags: Array.isArray(c.tags)
+                ? c.tags.filter((t) => typeof t === "string").slice(0, CITATION_TAGS_MAX).map((t) => t.slice(0, 100))
+                : [],
+        })),
+        workingSet: data.workingSet.map((w) => ({ noteId: w.noteId, title: w.title })),
         toolsUsed: data.toolsUsed,
         drafts: drafts.slice(0, 5),
     };

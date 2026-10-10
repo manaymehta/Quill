@@ -15,15 +15,15 @@ from typing import Any, Awaitable, Callable
 import asyncio
 import httpx
 
+from . import retrieval
 from .schemas import AgentDraft, Citation, ToolError, ToolResult
 
 # Tool calls are user-triggered reads, not fire-and-forget jobs: fast fail is
 # better than a hanging turn.
 TOOL_TIMEOUT = httpx.Timeout(15.0, connect=5.0)
 
-# Notes returned to the model are excerpts, not full documents — enough to
-# answer, small enough to keep turns cheap.
-MAX_EXCERPT_CHARS = 1200
+# search_notes returns matching excerpts, not whole notes (retrieval.py caps
+# the text at ~8,000 chars per search).
 SEARCH_RESULT_LIMIT_MIN = 1
 SEARCH_RESULT_LIMIT_MAX = 12
 
@@ -45,6 +45,10 @@ class ToolContext:
     # Notes read in full (get_note) during this turn. Rewriting a note's text
     # requires reading it first, so edits are never made from memory.
     read_note_ids: set[str] = field(default_factory=set)
+    # Meaning search over this user's indexed pieces, provided by main.py
+    # (it owns the Gemini and Qdrant clients): (query, user_id, limit) →
+    # [{noteId, chunkIndex, text, score, textHash}], best first.
+    meaning_search: Callable[[str, str, int], Awaitable[list[dict[str, Any]]]] | None = None
 
 
 _UNSAVED_FIELDS = ("title", "content", "tags", "isChecklist", "checklist")
@@ -58,6 +62,32 @@ def with_unsaved(ctx: ToolContext, note: dict[str, Any]) -> tuple[dict[str, Any]
     if not unsaved:
         return note, False
     return {**note, **{key: unsaved[key] for key in _UNSAVED_FIELDS if key in unsaved}}, True
+
+
+CARD_SNIPPET_CHARS = 160
+CARD_MAX_TAGS = 5
+
+
+def cite(note_id: str, title: str, text: Any = "", tags: Any = None) -> Citation:
+    """A citation carrying what the chat's note card shows: title, the start
+    of the text the agent saw (whitespace collapsed) and a few tags."""
+    snippet = " ".join(str(text or "").split())
+    if len(snippet) > CARD_SNIPPET_CHARS:
+        snippet = snippet[: CARD_SNIPPET_CHARS - 1].rstrip() + "…"
+    clean_tags = [str(t) for t in (tags or []) if str(t).strip()][:CARD_MAX_TAGS]
+    return Citation(noteId=note_id, title=title, snippet=snippet, tags=clean_tags)
+
+
+def card_text(note: dict[str, Any]) -> str:
+    """A note's body for its card; checklist notes show their items."""
+    content = str(note.get("content", "") or "").strip()
+    if content:
+        return content
+    return "; ".join(
+        str(item.get("text") or "").strip()
+        for item in note.get("checklist") or []
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+    )
 
 
 def error_result(
@@ -143,59 +173,129 @@ SEARCH_NOTES_SCHEMA: dict[str, Any] = {
         "query": {
             "type": "string",
             "description": (
-                "A standalone, self-contained semantic search phrase. Resolve "
-                "pronouns and references from the conversation and working set "
-                "before searching — e.g. turn \"the second one\" into its actual "
-                "topic."
+                "A standalone, self-contained search phrase describing what to "
+                "find, searched by meaning. Resolve pronouns and references from "
+                "the conversation and working set first — e.g. turn \"the second "
+                "one\" into its actual topic."
+            ),
+        },
+        "keywords": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Optional exact words to also look for (1-5): names, codes, "
+                "error messages, tags, rare terms. Matched case-insensitively in "
+                "titles, text, tags and checklist items."
             ),
         },
         "limit": {
             "type": "integer",
-            "description": "Max notes to consider (1-12). Default 8.",
+            "description": "Max notes to return (1-12). Default 8.",
         },
     },
     "required": ["query"],
 }
 
+MAX_SEARCH_KEYWORDS = 5
+
 
 async def run_search_notes(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    """Meaning + exact search merged by rank; no LLM call (architecture plan
+    §2.4, step 2a). Scoring rules live in retrieval.py."""
     query = str(args["query"]).strip()
     try:
         limit = int(args.get("limit", 8))
     except (TypeError, ValueError):
         limit = 8
     limit = max(SEARCH_RESULT_LIMIT_MIN, min(SEARCH_RESULT_LIMIT_MAX, limit))
+    keywords = [str(k).strip() for k in (args.get("keywords") or []) if str(k).strip()][:MAX_SEARCH_KEYWORDS]
+    keywords = [k[:100] for k in keywords]
+    summary = f'search_notes("{query[:60]}"{", keywords" if keywords else ""})'
 
-    summary = f'search_notes("{query[:60]}")'
-    payload, failure = await _call_express(
-        ctx, "GET", "/v1/semantic-search", summary, params={"query": query},
+    # 1. Meaning search (FastAPI → Qdrant). A failure still lets a keyword
+    #    search answer, so it is reported instead of ending the call.
+    pieces: list[dict[str, Any]] = []
+    meaning_failed = False
+    if ctx.meaning_search is None:
+        meaning_failed = True
+    else:
+        try:
+            pieces = await ctx.meaning_search(query, ctx.user_id, retrieval.OVERFETCH_PIECES)
+        except Exception as exc:
+            print(f"Agent meaning search failed: {exc!r}")
+            meaning_failed = True
+    if meaning_failed and not keywords:
+        return error_result(
+            "search_unavailable", "Meaning search is unavailable right now. Retry with keywords for an exact search.",
+            recoverable=True, summary=f"{summary} -> meaning search unavailable",
+        )
+
+    meaning = retrieval.group_pieces(pieces)
+
+    # 2. One Express call: note check for the meaning matches + exact search.
+    support, failure = await _call_express(
+        ctx, "POST", "/v1/agent/search-support", summary,
+        json={"keywords": keywords, "candidates": retrieval.best_hashes(pieces, set(meaning))},
     )
     if failure:
         return failure
+    notes_info: dict[str, dict[str, Any]] = support.get("notes", {})
 
-    source_notes = payload.get("sourceNotes", [])[:limit]
-    citations: list[Citation] = []
+    for note_id in list(meaning):
+        info = notes_info.get(note_id, {"status": "gone"})
+        if info.get("status") == "gone":
+            del meaning[note_id]   # trashed/deleted: its leftover pieces are being removed
+        elif info.get("status") == "stale":
+            # The pieces are from an older version (re-index under way): use the
+            # note's current text instead.
+            cand = meaning[note_id]
+            cand.excerpts = [retrieval.Excerpt(text=str(info.get("currentText", "")), score=cand.best_piece or retrieval.FLOOR)]
+
+    # 3-5. Merge by rank, label, keep the top notes, fill the text budget.
+    ranked = [c for c in retrieval.fuse(meaning, support.get("keywordHits", [])) if c.note_id in notes_info
+              and notes_info[c.note_id].get("status") != "gone"][:limit]
+    top_piece = max((c.best_piece for c in ranked if c.best_piece is not None), default=None)
+    shown = retrieval.fill_budget(ranked)
+
     notes_for_model: list[dict[str, Any]] = []
-    for note in source_notes:
-        note, unsaved = with_unsaved(ctx, note)
-        note_id = str(note.get("_id", ""))
-        title = str(note.get("title", "") or "")
-        citations.append(Citation(noteId=note_id, title=title))
-        notes_for_model.append(
-            {
-                "noteId": note_id,
-                "title": title,
-                "excerpt": str(note.get("content", "") or "")[:MAX_EXCERPT_CHARS],
-                "tags": note.get("tags", []),
-                **({"unsavedChanges": True} if unsaved else {}),
-            }
-        )
+    citations: list[Citation] = []
+    for cand in ranked:
+        info = notes_info[cand.note_id]
+        unsaved = ctx.unsaved_notes.get(cand.note_id)
+        title = str((unsaved or info).get("title", "") or "")
+        entry: dict[str, Any] = {
+            "noteId": cand.note_id,
+            "title": title,
+            "folder": info.get("folder"),
+            "tags": (unsaved or info).get("tags", []),
+            "archived": bool(info.get("isArchived")),
+            "isChecklist": bool(info.get("isChecklist")),
+            "lastEdited": str(info.get("lastEdited", ""))[:10],
+            "match": retrieval.strength(cand, top_piece),
+            "matchedBy": sorted(cand.matched_by),
+            "excerpts": retrieval.join_excerpts(shown[cand.note_id]),
+        }
+        hidden = len(cand.excerpts) - len(shown[cand.note_id])
+        if hidden > 0:
+            entry["moreNotShown"] = hidden
+        if unsaved:
+            entry["unsavedChanges"] = True
+        notes_for_model.append(entry)
+        citations.append(cite(cand.note_id, title, entry["excerpts"][0] if entry["excerpts"] else "", entry["tags"]))
 
+    data: dict[str, Any] = {"notes": notes_for_model}
+    if not notes_for_model:
+        data["note"] = "No notes matched."
+    if meaning_failed:
+        data["meaningSearchUnavailable"] = True
+    if any(n.get("unsavedChanges") for n in notes_for_model):
+        data["unsavedNote"] = "Excerpts come from the saved text; call get_note for the version the user sees."
     count = len(notes_for_model)
+    strong = sum(1 for n in notes_for_model if n["match"] == "strong")
     return ToolResult(
         ok=True,
-        data={"notes": notes_for_model, "answerPreview": payload.get("answer", "")},
-        summary=f"{summary} -> {count} note{'s' if count != 1 else ''}",
+        data=data,
+        summary=f"{summary} -> {count} note{'s' if count != 1 else ''} ({strong} strong)",
         citations=citations,
     )
 
@@ -255,7 +355,7 @@ async def run_get_note(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             }
         },
         summary=f"{summary} -> \"{title[:40]}\"{' (unsaved version)' if unsaved else ''}{' (truncated)' if truncated else ''}",
-        citations=[Citation(noteId=str(note.get("_id", note_id)), title=title)],
+        citations=[cite(str(note.get("_id", note_id)), title, card_text(note), note.get("tags"))],
     )
 
 
@@ -324,7 +424,7 @@ async def _fetch_and_summarize_one(
     note, _ = with_unsaved(ctx, payload["note"])
     title = str(note.get("title", "") or "")
     text = str(note.get("content", "") or "").strip()
-    citation = Citation(noteId=note_id, title=title)
+    citation = cite(note_id, title, card_text(note), note.get("tags"))
 
     if len(text) < 50:
         return (
@@ -490,7 +590,7 @@ async def run_list_notes(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     notes = notes[:limit]
 
     citations = [
-        Citation(noteId=str(n.get("_id", "")), title=str(n.get("title", "") or ""))
+        cite(str(n.get("_id", "")), str(n.get("title", "") or ""), card_text(n), n.get("tags"))
         for n in notes
     ]
     return ToolResult(
@@ -700,7 +800,7 @@ async def run_stage_note_edit(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
         ok=True,
         data={"staged": True, "changedFields": sorted(effective.keys()), "note": staged_note},
         summary=f"{summary} -> staged ({', '.join(sorted(effective.keys()))}){' on unsaved version' if unsaved else ''}",
-        citations=[Citation(noteId=note_id, title=title)],
+        citations=[cite(note_id, title, card_text(note), note.get("tags"))],
         drafts=[draft],
     )
 
@@ -793,10 +893,13 @@ TOOLS: dict[str, ToolSpec] = {
     "search_notes": ToolSpec(
         name="search_notes",
         description=(
-            "Search the user's personal notes with a semantic query. Returns "
-            "matching notes as excerpts with their IDs and titles. This is the "
-            "ONLY way to learn what is in the notes — call it before claiming "
-            "anything about the notes' contents."
+            "Search the user's notes by meaning, plus optional exact keywords. "
+            "Returns the best-matching notes with the passages that matched, "
+            "labelled match: strong or partial (partial = loosely related; say "
+            "so or leave it out) and how they matched. This is the ONLY way to "
+            "learn what is in the notes — call it before claiming anything "
+            "about their contents. Use get_note when the excerpts aren't "
+            "enough or moreNotShown says passages were left out."
         ),
         parameters=SEARCH_NOTES_SCHEMA,
         executor=run_search_notes,

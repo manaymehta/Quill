@@ -239,20 +239,40 @@ const AgentChatPanel = () => {
                                     </div>
                                 )}
                                 {message.citations?.length > 0 && (
-                                    <div className="mt-2 pt-2 border-t border-black/5 flex flex-wrap gap-1.5">
+                                    // Cited notes as small note cards; click to open in the dock.
+                                    <div className="mt-2 pt-2 border-t border-black/5 grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         {uniqueCitations(message.citations).map((citation) => (
                                             <button
                                                 key={citation.noteId}
                                                 onClick={() => handleOpenCitation(citation.noteId)}
                                                 title="Open this note"
                                                 disabled={Boolean(openingNoteId)}
-                                                className={`text-[10px] font-semibold rounded-full px-2 py-0.5 border transition-colors cursor-pointer disabled:opacity-50 ${
+                                                className={`text-left rounded-xl bg-[#f4eadc] border p-3 transition-all cursor-pointer disabled:opacity-60 min-w-0 ${
                                                     openingNoteId === citation.noteId
-                                                        ? 'text-[#e85d56] bg-red-50 border-[#e85d56]/40 animate-pulse'
-                                                        : 'text-stone-500 bg-stone-100 border-stone-200 hover:text-[#e85d56] hover:border-[#e85d50]/40'
+                                                        ? 'border-[#e85d56]/50 animate-pulse'
+                                                        : 'border-[#e8dcc8] hover:border-[#e85d56]/40 hover:shadow-md'
                                                 }`}
                                             >
-                                                {citation.title || 'Untitled note'}
+                                                <p
+                                                    className="text-sm font-medium text-[#333] truncate"
+                                                    style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+                                                >
+                                                    {citation.title || 'Untitled note'}
+                                                </p>
+                                                {citation.snippet && (
+                                                    <p className="text-[11px] leading-snug text-stone-500 mt-1 line-clamp-2">
+                                                        {citation.snippet}
+                                                    </p>
+                                                )}
+                                                {citation.tags?.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                                        {citation.tags.map((tag) => (
+                                                            <span key={tag} className="text-[10px] text-[#d55343] bg-[#f2dfd2] rounded-full px-1.5 py-0.5">
+                                                                #{tag}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </button>
                                         ))}
                                     </div>

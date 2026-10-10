@@ -44,6 +44,13 @@ async def main():
                   "archive status, list all your tags, and draft new notes or edits. Drafts stay "
                   "unsaved in your dock until you save them — I can't save, move or delete anything.")
     check("describing abilities in its own words passes", not leaks_instructions(describing))
+    # Regressions (step 2c): these normal replies were blocked when the
+    # threshold was 3 and the user-facing wording sat in the private guide.
+    staged = "I've staged a draft for you — it's unsaved in your dock. Review and save it when you're ready."
+    check("a normal 'draft staged' reply passes", not leaks_instructions(staged))
+    apply_skip = ("I've staged an edit to your Trip note. Since that note has unsaved changes open in your "
+                  "editor, you'll be asked to Apply or Skip it in the chat.")
+    check("a normal Apply/Skip explanation passes", not leaks_instructions(apply_skip))
 
     # Drafts: a leaking draft is dropped and the reply replaced; others kept.
     good = AgentDraft(action="create", title="Groceries", content="milk, eggs")
