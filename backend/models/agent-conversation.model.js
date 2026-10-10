@@ -23,6 +23,10 @@ const turnSchema = new Schema(
         role: { type: String, enum: ["user", "assistant"], required: true },
         text: { type: String, required: true },
         citations: { type: [citationSchema], default: [] },
+        // A bulk change's review list or split choices, so they come back
+        // after a refresh (validated by agent.controller before storing).
+        proposal: { type: Schema.Types.Mixed, default: null },
+        splitChoices: { type: Schema.Types.Mixed, default: null },
     },
     { _id: false, timestamps: { createdAt: true, updatedAt: false } }
 );

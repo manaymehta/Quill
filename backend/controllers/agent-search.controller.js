@@ -14,10 +14,12 @@ const { triggerEmbed, deleteEmbed } = require("./note.controller");
 
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 const HASH_RE = /^[a-f0-9]{1,64}$/;
-const MAX_CANDIDATES = 60;
+// Bulk selection (step 3b) checks up to ~200 matched notes at once.
+const MAX_CANDIDATES = 200;
 const MAX_KEYWORDS = 5;
 const MAX_KEYWORD_CHARS = 100;
-const MAX_KEYWORD_NOTES = 50;
+const MAX_KEYWORD_NOTES = 50;          // default for a normal search
+const MAX_KEYWORD_NOTES_BULK = 500;    // bulk selection asks for the complete list
 const WINDOW_RADIUS = 500;
 const OPENING_CHARS = 1000;
 // Don't re-trigger the same background fix on every search while it runs.
@@ -36,7 +38,8 @@ const healOnce = (key, operation) => {
 };
 
 const sanitizeBody = (body) => {
-    const { keywords, candidates } = body || {};
+    const { keywords, candidates, keywordLimit } = body || {};
+    if (keywordLimit !== undefined && (!Number.isInteger(keywordLimit) || keywordLimit < 1 || keywordLimit > MAX_KEYWORD_NOTES_BULK)) return null;
     const terms = keywords === undefined || keywords === null ? [] : keywords;
     if (!Array.isArray(terms) || terms.length > MAX_KEYWORDS
         || !terms.every((k) => typeof k === "string" && k.trim() && k.length <= MAX_KEYWORD_CHARS)) {
@@ -51,7 +54,7 @@ const sanitizeBody = (body) => {
             && (typeof c.textHash !== "string" || !HASH_RE.test(c.textHash))) return null;
         cleaned.push({ noteId: c.noteId, textHash: c.textHash || null });
     }
-    return { keywords: terms.map((k) => k.trim()), candidates: cleaned };
+    return { keywords: terms.map((k) => k.trim()), candidates: cleaned, keywordLimit: keywordLimit || MAX_KEYWORD_NOTES };
 };
 
 const NOTE_FIELDS = "_id title content tags folderId isArchived isChecklist checklist linkPreviews isDeleted updatedAt";
@@ -128,7 +131,7 @@ const searchSupport = async (req, res) => {
                 $or: regexes.flatMap((re) => [
                     { title: re }, { content: re }, { tags: re }, { "checklist.text": re },
                 ]),
-            }).select(NOTE_FIELDS).sort({ updatedAt: -1 }).limit(MAX_KEYWORD_NOTES).lean();
+            }).select(NOTE_FIELDS).sort({ updatedAt: -1 }).limit(input.keywordLimit).lean();
         }
 
         const folderIds = [...new Set([...candidateNotes, ...keywordNotes]

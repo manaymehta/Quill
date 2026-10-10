@@ -12,12 +12,17 @@ turn's time ceiling) aborts the HTTP request to Google itself.
 """
 import asyncio
 import math
+import os
 import re
 import time
 from typing import Any
 
 from google import genai
 from google.genai import errors as genai_errors
+
+# The text model for the agent and its helpers (the bulk-selection checker).
+# Mirrors main.py's GEMINI_MODEL (gemini-3.5-flash-lite). Kept env-overridable.
+AGENT_MODEL = os.getenv("AGENT_MODEL", "gemini-3.5-flash-lite")
 
 OVERLOAD_RETRY_DELAYS = (1.0, 3.0)
 # A retry is only worth starting if the call itself still has this long.

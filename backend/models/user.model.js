@@ -8,6 +8,13 @@ const userSchema = new Schema({
     password: { type: String },
     googleId: { type: String },
     createdOn: { type: Date, default: () => new Date() },
+    // What the notes agent may do (architecture plan §5.3). Reading is always
+    // on. A turned-off ability's tools are not offered to the agent at all.
+    agentScopes: {
+        compose: { type: Boolean, default: true },       // draft notes and edits
+        organize: { type: Boolean, default: true },      // bulk move / tag / archive (via review list)
+        destructive: { type: Boolean, default: false },  // bulk send to trash (soft delete only)
+    },
 });
 
 userSchema.pre('save', async function () {

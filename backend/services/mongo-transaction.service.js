@@ -29,6 +29,32 @@ const withOptionalTransaction = async (work) => {
     }
 };
 
+class TransactionsUnavailableError extends Error {
+    constructor() {
+        super("This operation needs database transactions, which this MongoDB deployment does not support");
+        this.name = "TransactionsUnavailableError";
+    }
+}
+
+// For changes whose guarantees depend on all-or-nothing (the agent's bulk
+// apply/undo writes the change and its undo record together — architecture
+// plan D15): refuses instead of falling back to running unguarded.
+const withRequiredTransaction = async (work) => {
+    if (!supportsTransactions()) throw new TransactionsUnavailableError();
+    const session = await mongoose.startSession();
+    try {
+        let result;
+        await session.withTransaction(async () => {
+            result = await work(session);
+        });
+        return result;
+    } finally {
+        await session.endSession();
+    }
+};
+
 module.exports = {
     withOptionalTransaction,
+    withRequiredTransaction,
+    TransactionsUnavailableError,
 };

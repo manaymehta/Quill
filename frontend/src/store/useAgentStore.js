@@ -2,7 +2,36 @@ import { create } from 'zustand';
 import axiosInstance from '../utils/axiosInstance';
 import { streamAgentChat } from '../utils/agentStream';
 import { applyAgentEdit, collectUnsavedNotes, noteFields, stageAgentDrafts } from '../utils/agentEdits';
+import { queryClient } from '../utils/queryClient';
 import { useTabsStore } from './useTabsStore';
+import { useToastStore } from './useToastStore';
+
+// ── Bulk changes (review lists, step 3c) ─────────────────────────────────
+// A review list's UI state: likely notes start ticked. status: open →
+// applying → applied → undoing → undone. The server keeps the real record
+// (proposal + receipt); this mirrors it for the chat.
+const withReviewState = (proposal) => (proposal ? {
+  ...proposal,
+  ticked: proposal.candidates.filter((c) => c.verdict === 'likely').map((c) => c.noteId),
+  status: 'open',
+  receipt: null,
+  error: null,
+} : null);
+
+const withChoiceState = (choices) => (choices ? { ...choices, opening: null, opened: [] } : null);
+
+const refreshNoteLists = () => {
+  queryClient.invalidateQueries({ queryKey: ['notes'] });
+  queryClient.invalidateQueries({ queryKey: ['folders'] });
+};
+
+export const bulkDoneLabel = (proposal) => {
+  if (proposal.action === 'archive') return proposal.params?.archived === false ? 'Unarchived' : 'Archived';
+  return { move: 'Moved', tag: 'Tagged', trash: 'Moved to trash' }[proposal.action] || 'Done';
+};
+
+// Opening a split choice may run the AI check for that part (up to ~45 s).
+const OPEN_PART_TIMEOUT_MS = 60_000;
 
 // Agent conversation state. Memory is client-side in the store and persisted
 // server-side (~3-day expiry); recent history is sent with each request and
@@ -67,9 +96,29 @@ export const useAgentStore = create((set, get) => ({
       const data = response.data || {};
       const turns = Array.isArray(data.turns) ? data.turns : [];
       set({
-        messages: turns.map((t) => makeMessage({ role: t.role, text: t.text, citations: t.citations || [] })),
+        messages: turns.map((t) => makeMessage({
+          role: t.role,
+          text: t.text,
+          citations: t.citations || [],
+          proposal: withReviewState(t.proposal),
+          splitChoices: withChoiceState(t.splitChoices),
+        })),
         workingSet: Array.isArray(data.workingSet) ? data.workingSet : [],
       });
+      // Review lists already applied (or undone) show their result, not
+      // fresh tick boxes: match them to the user's receipts.
+      if (get().messages.some((m) => m.proposal)) {
+        const receipts = (await axiosInstance.get('/agent/receipts')).data?.receipts || [];
+        const byProposal = new Map(receipts.map((r) => [r.proposalId, r]));
+        set({
+          messages: get().messages.map((m) => {
+            const receipt = m.proposal && byProposal.get(m.proposal.proposalId);
+            return receipt
+              ? { ...m, proposal: { ...m.proposal, receipt, status: receipt.status === 'applied' ? 'applied' : 'undone' } }
+              : m;
+          }),
+        });
+      }
     } catch (error) {
       // Restore failure must never block a fresh conversation.
       console.error('Agent conversation restore failed:', error?.response?.status || error.message);
@@ -135,6 +184,8 @@ export const useAgentStore = create((set, get) => ({
             citations: data.citations || [],
             drafts: staged,
             pendingEdits: pending,
+            proposal: withReviewState(data.proposal),
+            splitChoices: withChoiceState(data.splitChoices),
           }),
         ],
         workingSet: data.workingSet || get().workingSet,
@@ -158,6 +209,148 @@ export const useAgentStore = create((set, get) => ({
       });
     } finally {
       if (activeTurn === controller) activeTurn = null;
+    }
+  },
+
+  // ── Permission toggles + activity log (step 3d) ──
+  scopes: null,        // { compose, organize, destructive } — read is always on
+  activity: null,      // receipts, newest first (null = not loaded)
+  activityError: null,
+
+  loadScopes: async () => {
+    try {
+      const response = await axiosInstance.get('/agent/settings');
+      set({ scopes: response.data.scopes });
+    } catch {
+      set({ scopes: null });
+    }
+  },
+
+  setScope: async (key, value) => {
+    const previous = get().scopes;
+    set({ scopes: { ...previous, [key]: value } });   // instant feedback
+    try {
+      const response = await axiosInstance.put('/agent/settings', { [key]: value });
+      set({ scopes: response.data.scopes });
+    } catch (error) {
+      set({ scopes: previous });
+      useTabsStore.getState().showTabToast(error?.response?.data?.message || 'Could not save the setting.', 'error');
+    }
+  },
+
+  loadActivity: async () => {
+    try {
+      const response = await axiosInstance.get('/agent/receipts');
+      set({ activity: response.data.receipts || [], activityError: null });
+    } catch {
+      set({ activityError: 'Could not load the activity log.' });
+    }
+  },
+
+  // Undo from the activity log (also updates the matching review list in the chat).
+  undoFromActivity: async (receiptId) => {
+    try {
+      const response = await axiosInstance.post(`/agent/receipts/${receiptId}/undo`);
+      const receipt = response.data.receipt;
+      set({
+        activity: (get().activity || []).map((r) => (r.receiptId === receiptId ? receipt : r)),
+        messages: get().messages.map((m) => (m.proposal?.receipt?.receiptId === receiptId
+          ? { ...m, proposal: { ...m.proposal, status: 'undone', receipt } }
+          : m)),
+      });
+      refreshNoteLists();
+      useToastStore.getState().showToast({ label: 'Undone', message: 'notes put back', type: 'success' });
+    } catch (error) {
+      useTabsStore.getState().showTabToast(error?.response?.data?.message || 'Could not undo. Try again.', 'error');
+      get().loadActivity();
+    }
+  },
+
+  // ── Review lists ──
+  toggleReviewNote: (messageId, noteId) => {
+    set({
+      messages: get().messages.map((m) => {
+        if (m.id !== messageId || m.proposal?.status !== 'open') return m;
+        const ticked = m.proposal.ticked.includes(noteId)
+          ? m.proposal.ticked.filter((id) => id !== noteId)
+          : [...m.proposal.ticked, noteId];
+        return { ...m, proposal: { ...m.proposal, ticked } };
+      }),
+    });
+  },
+
+  // One Apply for every ticked note: one server transaction, one receipt.
+  applyReviewList: async (messageId) => {
+    const proposal = get().messages.find((m) => m.id === messageId)?.proposal;
+    if (!proposal || proposal.status !== 'open' || proposal.ticked.length === 0) return;
+    const patch = (fields) => set({
+      messages: get().messages.map((m) => (m.id === messageId ? { ...m, proposal: { ...m.proposal, ...fields } } : m)),
+    });
+    patch({ status: 'applying', error: null });
+    try {
+      const response = await axiosInstance.post(`/agent/proposals/${proposal.proposalId}/apply`, { noteIds: proposal.ticked });
+      const receipt = response.data.receipt;
+      patch({ status: 'applied', receipt });
+      refreshNoteLists();
+      const count = receipt.counts.applied;
+      useToastStore.getState().showToast({
+        label: bulkDoneLabel(proposal),
+        message: `${count} note${count === 1 ? '' : 's'}`,
+        type: proposal.action === 'trash' ? 'delete' : proposal.action === 'archive' ? 'archive' : 'success',
+        onUndo: () => get().undoReviewList(messageId),
+      });
+    } catch (error) {
+      patch({ status: 'open', error: error?.response?.data?.message || 'Could not apply — nothing was changed. Try again.' });
+    }
+  },
+
+  undoReviewList: async (messageId) => {
+    const proposal = get().messages.find((m) => m.id === messageId)?.proposal;
+    if (!proposal?.receipt || proposal.status !== 'applied') return;
+    const patch = (fields) => set({
+      messages: get().messages.map((m) => (m.id === messageId ? { ...m, proposal: { ...m.proposal, ...fields } } : m)),
+    });
+    patch({ status: 'undoing', error: null });
+    try {
+      const response = await axiosInstance.post(`/agent/receipts/${proposal.receipt.receiptId}/undo`);
+      patch({ status: 'undone', receipt: response.data.receipt });
+      refreshNoteLists();
+      useToastStore.getState().showToast({ label: 'Undone', message: bulkDoneLabel(proposal).toLowerCase() + ' notes put back', type: 'success' });
+    } catch (error) {
+      const data = error?.response?.data;
+      if (error?.response?.status === 409 && data?.receipt) {
+        patch({ status: 'undone', receipt: data.receipt });   // already undone elsewhere
+      } else {
+        patch({ status: 'applied', error: data?.message || 'Could not undo. Try again.' });
+      }
+    }
+  },
+
+  // A split choice → its own review list, added to the chat as a new message.
+  openSplitChoice: async (messageId, index) => {
+    const choices = get().messages.find((m) => m.id === messageId)?.splitChoices;
+    if (!choices || choices.opening !== null) return;
+    const patch = (fields) => set({
+      messages: get().messages.map((m) => (m.id === messageId ? { ...m, splitChoices: { ...m.splitChoices, ...fields } } : m)),
+    });
+    patch({ opening: index });
+    try {
+      const response = await axiosInstance.post(
+        `/agent/selections/${choices.selectionId}/parts/${index}/open`, {}, { timeout: OPEN_PART_TIMEOUT_MS },
+      );
+      const data = response.data;
+      patch({ opening: null, opened: [...get().messages.find((m) => m.id === messageId).splitChoices.opened, index] });
+      set({
+        messages: [...get().messages, makeMessage({
+          role: 'assistant',
+          text: `Opened “${data.partLabel}” — ${data.candidates.length} notes to review below.`,
+          citations: [],
+          proposal: withReviewState({ proposalId: data.proposalId, action: data.action, params: data.params, candidates: data.candidates }),
+        })],
+      });
+    } catch (error) {
+      patch({ opening: null });
+      useTabsStore.getState().showTabToast(error?.response?.data?.message || 'Could not open that part. Try again.', 'error');
     }
   },
 

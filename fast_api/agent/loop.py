@@ -7,8 +7,8 @@ Contract (from agent-architecture-plan.md §3, halt rules):
   reply, never a dead spinner
 """
 import asyncio
+import copy
 import json
-import os
 import re
 import time
 from typing import Any, Awaitable, Callable
@@ -19,6 +19,7 @@ from google.genai import types
 from .memory import merge_working_set, trim_history
 from .output_checks import check_for_leaks
 from .model_calls import (
+    AGENT_MODEL,
     MIN_CALL_SECONDS,
     CallDeadlineExceeded,
     QuotaExceeded,
@@ -27,6 +28,7 @@ from .model_calls import (
 from .prompts import SYSTEM_INSTRUCTION, build_contents
 from .schemas import (
     AgentChatResponse,
+    AgentScopes,
     AgentDraft,
     Citation,
     HistoryTurn,
@@ -38,8 +40,6 @@ from .tools import TOOLS, ToolContext, ToolValidationError, validate_args
 
 MAX_ITERATIONS = 4
 MAX_DRAFTS_PER_TURN = 5
-# Mirrors main.py's GEMINI_MODEL (gemini-3.5-flash-lite). Kept env-overridable.
-AGENT_MODEL = os.getenv("AGENT_MODEL", "gemini-3.5-flash-lite")
 
 # Time limits (architecture plan §2.1, D27): the whole turn ends by 60 s. The
 # tool-calling phase stops early enough to leave room for the forced final
@@ -64,19 +64,54 @@ FALLBACK_MESSAGE = (
 )
 
 
-def _function_declarations() -> list[types.FunctionDeclaration]:
-    return [
-        types.FunctionDeclaration(
-            name=spec.name,
-            description=spec.description,
-            parameters=spec.parameters,
-        )
-        for spec in TOOLS.values()
-    ]
+# Tools each permission toggle unlocks (architecture plan §5.3, D13: a
+# turned-off ability's tools are absent, so the model can't call them).
+COMPOSE_TOOLS = {"draft_note", "stage_note_edit"}
+ORGANIZE_TOOLS = {"propose_bulk_change"}
+
+
+def allowed_tool_names(scopes: AgentScopes) -> set[str]:
+    names = set(TOOLS) - COMPOSE_TOOLS - ORGANIZE_TOOLS
+    if scopes.compose:
+        names |= COMPOSE_TOOLS
+    if scopes.organize:
+        names |= ORGANIZE_TOOLS
+    return names
+
+
+def _function_declarations(allowed: set[str] | None = None, allow_trash: bool = True) -> list[types.FunctionDeclaration]:
+    declarations = []
+    for spec in TOOLS.values():
+        if allowed is not None and spec.name not in allowed:
+            continue
+        parameters = spec.parameters
+        if spec.name == "propose_bulk_change" and not allow_trash:
+            # Trash turned off: it isn't even an option in the action list.
+            parameters = copy.deepcopy(parameters)
+            action = parameters["properties"]["action"]
+            action["enum"] = [a for a in action["enum"] if a != "trash"]
+            action["description"] = "move | tag | archive."
+        declarations.append(types.FunctionDeclaration(name=spec.name, description=spec.description, parameters=parameters))
+    return declarations
+
+
+def _scopes_note(scopes: AgentScopes) -> str:
+    """Told to the model so it can explain a missing ability instead of guessing."""
+    off = []
+    if not scopes.compose:
+        off.append("drafting new notes and proposing edits")
+    if not scopes.organize:
+        off.append("bulk changes (moving, tagging, archiving several notes)")
+    elif not scopes.destructive:
+        off.append("sending notes to trash")
+    if not off:
+        return ""
+    return ("\n\nTurned off by the user in the agent settings (if asked for these, say they're turned off "
+            "in the agent settings and can be switched on there): " + "; ".join(off) + ".")
 
 
 async def _execute_tool_call(
-    ctx: ToolContext, name: str, raw_args: Any
+    ctx: ToolContext, name: str, raw_args: Any, allowed: set[str] | None = None
 ) -> ToolResult:
     try:
         args = validate_args(name, raw_args)
@@ -86,6 +121,12 @@ async def _execute_tool_call(
             ok=False,
             error=ToolError(code="invalid_args", message=str(exc), recoverable=True),
             summary=f"{name} -> invalid arguments",
+        )
+    if allowed is not None and name not in allowed:
+        return ToolResult(
+            ok=False,
+            error=ToolError(code="not_allowed", message="That ability is turned off in the user's agent settings.", recoverable=False),
+            summary=f"{name} -> turned off in settings",
         )
     return await TOOLS[name].executor(ctx, args)
 
@@ -230,6 +271,7 @@ async def run_agent_turn(
     working_set: list[Citation],
     tool_context: ToolContext,
     on_step: StepCallback | None = None,
+    scopes: AgentScopes | None = None,
 ) -> AgentChatResponse:
     """One chat turn. Raises QuotaExceeded when the API key's quota is used up
     for longer than the turn can wait — the caller tells the user how long."""
@@ -237,12 +279,15 @@ async def run_agent_turn(
     deadline = start + TURN_CEILING_SECONDS
     tools_deadline = deadline - FINAL_RESERVE_SECONDS
 
+    scopes = scopes or AgentScopes()
+    allowed = allowed_tool_names(scopes)
+    system_instruction = SYSTEM_INSTRUCTION + _scopes_note(scopes)
     history = trim_history(history)
     contents = build_contents(message, history, working_set)
 
     tools_config = types.GenerateContentConfig(
-        tools=[types.Tool(function_declarations=_function_declarations())],
-        system_instruction=SYSTEM_INSTRUCTION,
+        tools=[types.Tool(function_declarations=_function_declarations(allowed, scopes.destructive))],
+        system_instruction=system_instruction,
         temperature=0.4,
     )
     # The forced final pass must produce text. Leaving the tools out is not
@@ -250,17 +295,19 @@ async def run_agent_turn(
     # a function call (seen Oct 2026 → empty text → the fallback message), so
     # the tools stay declared but calling them is switched off.
     finalize_config = types.GenerateContentConfig(
-        tools=[types.Tool(function_declarations=_function_declarations())],
+        tools=[types.Tool(function_declarations=_function_declarations(allowed, scopes.destructive))],
         tool_config=types.ToolConfig(
             function_calling_config=types.FunctionCallingConfig(mode=types.FunctionCallingConfigMode.NONE)
         ),
-        system_instruction=SYSTEM_INSTRUCTION,
+        system_instruction=system_instruction,
         temperature=0.4,
     )
 
     tools_used: list[ToolCallRecord] = []
     citations: list[Citation] = []
     drafts: list[AgentDraft] = []
+    # The turn's bulk change, if any: a review list or split choices (latest wins).
+    bulk: dict[str, Any] = {"proposal": None, "splitChoices": None}
     # (tool name, args snapshot) → retry count, to break self-fix loops.
     retry_count: dict[str, int] = {}
     # noteId → title, for readable step labels ("Reading “Docker setup”").
@@ -278,6 +325,8 @@ async def run_agent_turn(
             workingSet=merge_working_set(working_set, citations),
             toolsUsed=tools_used,
             drafts=safe_drafts,
+            proposal=bulk["proposal"],
+            splitChoices=bulk["splitChoices"],
         )
 
     for iteration in range(MAX_ITERATIONS):
@@ -350,7 +399,7 @@ async def run_agent_turn(
                 await _emit(on_step, _step_label(fc.name, raw_args, titles))
                 try:
                     result = await asyncio.wait_for(
-                        _execute_tool_call(tool_context, fc.name, raw_args),
+                        _execute_tool_call(tool_context, fc.name, raw_args, allowed),
                         timeout=remaining,
                     )
                 except TimeoutError:
@@ -366,6 +415,8 @@ async def run_agent_turn(
             citations.extend(result.citations)
             titles.update({c.noteId: c.title for c in result.citations if c.title})
             drafts = _merge_drafts(drafts, result.drafts)
+            if result.proposal or result.splitChoices:
+                bulk.update(proposal=result.proposal, splitChoices=result.splitChoices)
             executed_this_round.append(result)
 
             payload: dict[str, Any]

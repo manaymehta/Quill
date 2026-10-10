@@ -55,6 +55,14 @@ class UnsavedNote(BaseModel):
     )
 
 
+class AgentScopes(BaseModel):
+    """The user's permission toggles (architecture plan §5.3). Read is always
+    on; a turned-off ability's tools are not offered to the model at all."""
+    compose: bool = True       # draft_note, stage_note_edit
+    organize: bool = True      # propose_bulk_change (move / tag / archive)
+    destructive: bool = False  # propose_bulk_change may also send to trash
+
+
 class AgentChatRequest(BaseModel):
     message: str = Field(max_length=MAX_AGENT_MESSAGE_CHARS)
     history: list[HistoryTurn] = Field(default_factory=list, max_length=MAX_HISTORY_TURNS)
@@ -62,6 +70,7 @@ class AgentChatRequest(BaseModel):
     # resolved by name, not just by ID.
     workingSet: list[Citation] = Field(default_factory=list, max_length=MAX_WORKING_SET)
     unsavedNotes: list[UnsavedNote] = Field(default_factory=list, max_length=MAX_UNSAVED_NOTES)
+    scopes: AgentScopes = Field(default_factory=AgentScopes)
 
     @field_validator("workingSet")
     @classmethod
@@ -107,6 +116,10 @@ class AgentChatResponse(BaseModel):
     workingSet: list[Citation] = Field(default_factory=list)
     toolsUsed: list[ToolCallRecord] = Field(default_factory=list)
     drafts: list[AgentDraft] = Field(default_factory=list)
+    # Bulk change (step 3b): a saved review list, or split choices when more
+    # than 50 notes matched. At most one per turn (the latest wins).
+    proposal: dict[str, Any] | None = None
+    splitChoices: dict[str, Any] | None = None
 
 
 class ToolError(BaseModel):
@@ -125,3 +138,6 @@ class ToolResult(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
     # Set by draft tools: validated proposed write(s) for the frontend dock.
     drafts: list[AgentDraft] = Field(default_factory=list)
+    # Set by propose_bulk_change (see AgentChatResponse).
+    proposal: dict[str, Any] | None = None
+    splitChoices: dict[str, Any] | None = None

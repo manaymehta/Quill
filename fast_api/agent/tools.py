@@ -47,8 +47,13 @@ class ToolContext:
     read_note_ids: set[str] = field(default_factory=set)
     # Meaning search over this user's indexed pieces, provided by main.py
     # (it owns the Gemini and Qdrant clients): (query, user_id, limit) →
-    # [{noteId, chunkIndex, text, score, textHash}], best first.
-    meaning_search: Callable[[str, str, int], Awaitable[list[dict[str, Any]]]] | None = None
+    # [{noteId, chunkIndex, text, score, textHash}], best first. An optional
+    # 4th arg restricts it to given note IDs.
+    meaning_search: Callable[..., Awaitable[list[dict[str, Any]]]] | None = None
+    # Gemini client for the bulk-selection checker (separate, tool-less calls).
+    gemini_client: Any = None
+    # Permission toggle "destructive": may bulk changes send notes to trash?
+    allow_trash: bool = False
 
 
 _UNSAVED_FIELDS = ("title", "content", "tags", "isChecklist", "checklist")
@@ -149,7 +154,7 @@ async def _call_express(
             "not_found", "Not found (it may have been deleted or never existed).",
             recoverable=False, summary=f"{summary} -> not found",
         )
-    if response.status_code != 200:
+    if not 200 <= response.status_code < 300:   # 201 = saved (proposals, selections)
         return None, error_result(
             "upstream_error", f"Notes backend failed (HTTP {response.status_code}).",
             recoverable=False, summary=f"{summary} -> HTTP {response.status_code}",
@@ -1030,3 +1035,10 @@ def validate_args(name: str, args: Any) -> dict[str, Any]:
     if name == "search_notes" and "limit" not in cleaned:
         cleaned["limit"] = 8
     return cleaned
+
+
+# Bulk changes live in bulk.py (they build on the helpers above), registered
+# here so the registry stays the one list of tools.
+from .bulk import PROPOSE_BULK_CHANGE  # noqa: E402
+
+TOOLS[PROPOSE_BULK_CHANGE.name] = PROPOSE_BULK_CHANGE

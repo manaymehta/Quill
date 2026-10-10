@@ -12,7 +12,7 @@ from google.genai import types
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct,
-    Filter, FieldCondition, MatchValue,
+    Filter, FieldCondition, MatchValue, MatchAny,
     FilterSelector, PointIdsList, PayloadSchemaType
 )
 from fastapi import FastAPI, HTTPException, Header, Response, Depends
@@ -21,6 +21,7 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
+from agent.bulk import judge_note_ids
 from agent import (
     run_agent_turn,
     AgentChatRequest,
@@ -514,10 +515,11 @@ AGENT_QUOTA_MESSAGE = (
 )
 
 
-async def agent_meaning_search(query: str, user_id: str, limit: int) -> list[dict]:
+async def agent_meaning_search(query: str, user_id: str, limit: int, note_ids: list[str] | None = None) -> list[dict]:
     """The agent's meaning search (architecture plan §2.4): embed the query and
     return this user's closest indexed pieces. No LLM call; scoring, cutoffs
-    and merging with the exact search happen in agent/retrieval.py."""
+    and merging with the exact search happen in agent/retrieval.py.
+    `note_ids` restricts it to those notes (the bulk checker's best pieces)."""
     if qdrant_client is None or gemini_client is None:
         raise RuntimeError("Vector store not available.")
     result = await gemini_client.aio.models.embed_content(
@@ -530,7 +532,10 @@ async def agent_meaning_search(query: str, user_id: str, limit: int) -> list[dic
         qdrant_client.query_points,
         collection_name=COLLECTION_NAME,
         query=query_vector,
-        query_filter=Filter(must=[FieldCondition(key="userId", match=MatchValue(value=user_id))]),
+        query_filter=Filter(must=[
+            FieldCondition(key="userId", match=MatchValue(value=user_id)),
+            *([FieldCondition(key="noteId", match=MatchAny(any=list(note_ids)))] if note_ids else []),
+        ]),
         limit=limit,
         with_payload=True,
     )
@@ -572,6 +577,8 @@ async def agent_chat(
         express_base_url=express_base_url,
         unsaved_notes={note.noteId: note.model_dump() for note in request.unsavedNotes},
         meaning_search=agent_meaning_search,
+        gemini_client=gemini_client,
+        allow_trash=request.scopes.organize and request.scopes.destructive,
     )
     events: asyncio.Queue[str | None] = asyncio.Queue()
 
@@ -588,6 +595,7 @@ async def agent_chat(
                 working_set=request.workingSet,
                 tool_context=tool_context,
                 on_step=on_step,
+                scopes=request.scopes,
             )
             print(
                 f"Agent chat turn completed in {time.perf_counter() - start_time:.2f}s "
@@ -629,6 +637,41 @@ async def agent_chat(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )
+
+
+class JudgePartRequest(BaseModel):
+    topic: str = Field(min_length=1, max_length=500)
+    keywords: list[str] = Field(default_factory=list, max_length=5)
+    noteIds: list[str] = Field(min_length=1, max_length=50)
+
+
+# Judge one opened split choice (architecture plan §2.5): Express calls this
+# when the user opens a part of a too-big bulk selection, so the borderline
+# AI check runs only for the part actually opened.
+@app.post("/agent/judge-part")
+async def judge_part(
+    request: JudgePartRequest,
+    authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
+    _: None = Depends(verify_api_key),
+):
+    if not authorization or not x_user_id:
+        raise HTTPException(status_code=400, detail="User authorization is required.")
+    ctx = ToolContext(
+        user_id=x_user_id,
+        auth_header=authorization.strip(),
+        express_base_url=(os.getenv("EXPRESS_INTERNAL_URL") or "").rstrip("/"),
+        meaning_search=agent_meaning_search,
+        gemini_client=gemini_client,
+    )
+    try:
+        candidates = await judge_note_ids(ctx, request.topic, request.keywords, request.noteIds)
+    except QuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=AGENT_QUOTA_MESSAGE.format(seconds=exc.retry_after_seconds))
+    except Exception as e:
+        print(f"judge-part failed: {e!r}")
+        raise HTTPException(status_code=502, detail="Couldn't check these notes right now. Try again shortly.")
+    return {"candidates": candidates}
 
 
 if __name__ == "__main__":
