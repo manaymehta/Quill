@@ -42,6 +42,9 @@ ACTIONS = ("move", "tag", "archive", "trash")
 
 def _params(action: str, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
     if action == "move":
+        new_folder = str(args.get("newFolderName") or "").strip()
+        if new_folder:
+            return {"targetFolderId": None, "newFolderName": new_folder[:80]}, None
         target = args.get("targetFolderId")
         target = None if target in (None, "", "none") else str(target).strip()
         return {"targetFolderId": target}, None
@@ -342,6 +345,7 @@ PROPOSE_BULK_CHANGE_SCHEMA: dict[str, Any] = {
     "properties": {
         "action": {"type": "string", "enum": list(ACTIONS), "description": "move | tag | archive | trash (soft delete, recoverable)."},
         "targetFolderId": {"type": "string", "description": "For move: folder ID from list_folders, or \"none\" for no folder."},
+        "newFolderName": {"type": "string", "description": "For move into a folder that doesn't exist yet: its name (created when the user presses Apply)."},
         "addTags": {"type": "array", "items": {"type": "string"}, "description": "For tag: tags to add."},
         "removeTags": {"type": "array", "items": {"type": "string"}, "description": "For tag: tags to remove."},
         "archived": {"type": "boolean", "description": "For archive: true to archive (default), false to unarchive (then also set filters.archived=true)."},

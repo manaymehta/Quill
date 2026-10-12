@@ -52,6 +52,10 @@ class ToolContext:
     meaning_search: Callable[..., Awaitable[list[dict[str, Any]]]] | None = None
     # Gemini client for the bulk-selection checker (separate, tool-less calls).
     gemini_client: Any = None
+    # Stored meaning vectors per note, provided by main.py: (user_id,
+    # note_ids) → {noteId: {vector, text}} (pieces averaged; text = start of
+    # the first piece). Notes not in the index are missing from the result.
+    note_vectors: Callable[..., Awaitable[dict[str, dict[str, Any]]]] | None = None
     # Permission toggle "destructive": may bulk changes send notes to trash?
     allow_trash: bool = False
 
@@ -1040,5 +1044,7 @@ def validate_args(name: str, args: Any) -> dict[str, Any]:
 # Bulk changes live in bulk.py (they build on the helpers above), registered
 # here so the registry stays the one list of tools.
 from .bulk import PROPOSE_BULK_CHANGE  # noqa: E402
+from .grouping import SUGGEST_GROUPS  # noqa: E402
 
 TOOLS[PROPOSE_BULK_CHANGE.name] = PROPOSE_BULK_CHANGE
+TOOLS[SUGGEST_GROUPS.name] = SUGGEST_GROUPS

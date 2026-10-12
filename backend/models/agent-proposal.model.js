@@ -35,6 +35,8 @@ const agentProposalSchema = new Schema(
     {
         proposalId: { type: String, required: true, unique: true },
         userId: { type: String, required: true, index: true },
+        // The chat it was made in (set by Express when the turn is saved).
+        chatId: { type: String, default: null },
         action: { type: String, enum: ["move", "tag", "archive", "trash"], required: true },
         params: { type: Schema.Types.Mixed, default: {} },
         instruction: { type: String, default: "" },

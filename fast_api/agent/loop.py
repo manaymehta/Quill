@@ -38,7 +38,7 @@ from .schemas import (
 )
 from .tools import TOOLS, ToolContext, ToolValidationError, validate_args
 
-MAX_ITERATIONS = 4
+MAX_ITERATIONS = 8
 MAX_DRAFTS_PER_TURN = 5
 
 # Time limits (architecture plan §2.1, D27): the whole turn ends by 60 s. The
@@ -67,7 +67,7 @@ FALLBACK_MESSAGE = (
 # Tools each permission toggle unlocks (architecture plan §5.3, D13: a
 # turned-off ability's tools are absent, so the model can't call them).
 COMPOSE_TOOLS = {"draft_note", "stage_note_edit"}
-ORGANIZE_TOOLS = {"propose_bulk_change"}
+ORGANIZE_TOOLS = {"propose_bulk_change", "suggest_groups"}
 
 
 def allowed_tool_names(scopes: AgentScopes) -> set[str]:
@@ -207,6 +207,8 @@ def _step_label(name: str, args: dict[str, Any], titles: dict[str, str]) -> str:
     if name == "stage_note_edit":
         title = title_of(args.get("noteId"))
         return f"Preparing an edit to “{_clip(title)}”" if title else "Preparing an edit"
+    if name == "suggest_groups":
+        return "Grouping related notes"
     return "Working…"
 
 
@@ -306,8 +308,9 @@ async def run_agent_turn(
     tools_used: list[ToolCallRecord] = []
     citations: list[Citation] = []
     drafts: list[AgentDraft] = []
-    # The turn's bulk change, if any: a review list or split choices (latest wins).
-    bulk: dict[str, Any] = {"proposal": None, "splitChoices": None}
+    # The turn's bulk change, if any: a review list, split choices or group
+    # suggestions (latest wins).
+    bulk: dict[str, Any] = {"proposal": None, "splitChoices": None, "groupSuggestions": None}
     # (tool name, args snapshot) → retry count, to break self-fix loops.
     retry_count: dict[str, int] = {}
     # noteId → title, for readable step labels ("Reading “Docker setup”").
@@ -327,6 +330,7 @@ async def run_agent_turn(
             drafts=safe_drafts,
             proposal=bulk["proposal"],
             splitChoices=bulk["splitChoices"],
+            groupSuggestions=bulk["groupSuggestions"],
         )
 
     for iteration in range(MAX_ITERATIONS):
@@ -415,8 +419,9 @@ async def run_agent_turn(
             citations.extend(result.citations)
             titles.update({c.noteId: c.title for c in result.citations if c.title})
             drafts = _merge_drafts(drafts, result.drafts)
-            if result.proposal or result.splitChoices:
-                bulk.update(proposal=result.proposal, splitChoices=result.splitChoices)
+            if result.proposal or result.splitChoices or result.groupSuggestions:
+                bulk.update(proposal=result.proposal, splitChoices=result.splitChoices,
+                            groupSuggestions=result.groupSuggestions)
             executed_this_round.append(result)
 
             payload: dict[str, Any]

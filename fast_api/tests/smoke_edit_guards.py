@@ -78,7 +78,7 @@ async def main():
     check("after get_note the content edit is staged on the unsaved version",
           r.ok and r.drafts[0].basedOnUnsaved and "My unsaved line" in r.drafts[0].content)
 
-    # The loop recovers from the refusal within its 4 rounds.
+    # The loop recovers from the refusal within its tool rounds.
     client = FakeClient([
         call_response("stage_note_edit", {"noteId": NOTE_ID, "content": "Passport\nCharger\nAgent line"}),
         call_response("get_note", {"noteId": NOTE_ID}),

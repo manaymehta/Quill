@@ -175,6 +175,20 @@ async def main():
     except QuotaExceeded as exc:
         check("quota mid-turn propagates", exc.retry_after_seconds == 40)
 
+    # 9. Turn: the model keeps asking for tools → it gets MAX_ITERATIONS (8)
+    # tool rounds, then one forced final answer with tools off.
+    rounds = loop.MAX_ITERATIONS
+    client = FakeClient(
+        [call_response("search_notes", {"query": f"docker {i}"}) for i in range(rounds)]
+        + [text_response("Done after many steps.")]
+    )
+    result = await loop.run_agent_turn(
+        gemini_client=client, message="dig deep", history=[], working_set=[], tool_context=ctx,
+    )
+    check("8 tool rounds, then a forced final answer",
+          rounds == 8 and client.calls == rounds + 1 and result.message == "Done after many steps.",
+          f"rounds={rounds}, calls={client.calls}")
+
     TOOLS["search_notes"] = real_search
     print(f"\n{sum(results)}/{len(results)} passed")
     sys.exit(0 if all(results) else 1)

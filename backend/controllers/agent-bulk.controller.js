@@ -1,12 +1,16 @@
 const crypto = require("node:crypto");
-const mongoose = require("mongoose");
 const Note = require("../models/note.model");
 const Folder = require("../models/folder.model");
 const AgentProposal = require("../models/agent-proposal.model");
 const AgentReceipt = require("../models/agent-receipt.model");
 const AgentSelection = require("../models/agent-selection.model");
+const AgentGrouping = require("../models/agent-grouping.model");
 const { withRequiredTransaction, TransactionsUnavailableError } = require("../services/mongo-transaction.service");
-const { collectSubtreeFolderIds, findNearestLivingAncestor, getUserFolders } = require("../services/folder-tree.service");
+const { collectSubtreeFolderIds, getUserFolders } = require("../services/folder-tree.service");
+const {
+    isValidFolderId, findLivingFolder, livingFolderId, moveToFolder, setArchived, trashFields, restoreFromTrash,
+    createFolderRecord, trashFolderIfEmpty,
+} = require("../services/note-actions.service");
 const { triggerEmbed, deleteEmbed } = require("./note.controller");
 const { appendTurns } = require("./agent.controller");
 const { allowsBulkAction, getAgentScopes } = require("../services/agent-scopes.service");
@@ -27,6 +31,7 @@ const MAX_TAGS_PER_ACTION = 10;
 const MAX_TAG_CHARS = 50;
 const MAX_REASON_CHARS = 300;
 const MAX_INSTRUCTION_CHARS = 500;
+const MAX_FOLDER_NAME_CHARS = 80;
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 
 // The fields an action reads or writes; compared to detect a note changed by
@@ -64,10 +69,16 @@ const cleanTags = (list) => {
 const normalizeParams = async (action, params, userId) => {
     const p = params && typeof params === "object" ? params : {};
     if (action === "move") {
+        // A folder that doesn't exist yet: created when the user presses Apply.
+        if (p.newFolderName !== undefined && p.newFolderName !== null && p.newFolderName !== "") {
+            const name = typeof p.newFolderName === "string" ? p.newFolderName.replace(/\s+/g, " ").trim() : "";
+            if (!name || name.length > MAX_FOLDER_NAME_CHARS) return { error: `newFolderName must be 1-${MAX_FOLDER_NAME_CHARS} characters` };
+            return { params: { targetFolderId: null, newFolderName: name, targetFolderName: name } };
+        }
         const target = p.targetFolderId ?? null;
         if (target === null) return { params: { targetFolderId: null } };
-        if (typeof target !== "string" || !mongoose.Types.ObjectId.isValid(target)) return { error: "Invalid target folder" };
-        const folder = await Folder.findOne({ _id: target, userId, isDeleted: false }).select("_id name").lean();
+        if (!isValidFolderId(target)) return { error: "Invalid target folder" };
+        const folder = await findLivingFolder(target, userId);
         if (!folder) return { error: "Target folder not found" };
         return { params: { targetFolderId: String(folder._id), targetFolderName: folder.name || "" } };
     }
@@ -86,31 +97,20 @@ const normalizeParams = async (action, params, userId) => {
     return { params: {} };   // trash
 };
 
-const livingFolderId = async (folderId, userId) => {
-    if (!folderId) return null;
-    const alive = await Folder.findOne({ _id: folderId, userId, isDeleted: false }).select("_id").lean();
-    return alive ? String(folderId) : findNearestLivingAncestor(folderId, await getUserFolders(userId));
-};
-
-// Mutates `note` per the action, following the same rules as the app's own
-// routes (moveNote, updateNoteArchive, deleteNote).
-const applyAction = async (note, action, params, userId) => {
+// Mutates `note` per the action, using the same rules as the app's own routes
+// (services/note-actions.service.js). The move target was checked when the
+// review list was saved; Apply re-checks it inside the transaction.
+const applyAction = async (note, action, params, userId, session) => {
     if (action === "move") {
-        const wasOnHome = note.folderId === null || note.showInHome === true;
-        note.folderId = params.targetFolderId || null;
-        if (!params.targetFolderId) note.showInHome = false;
-        else if (wasOnHome) note.showInHome = true;
+        moveToFolder(note, params.targetFolderId);
     } else if (action === "tag") {
         const tags = (note.tags || []).filter((t) => !params.remove.includes(t));
         for (const t of params.add) if (!tags.includes(t)) tags.push(t);
         note.tags = tags;
     } else if (action === "archive") {
-        note.isArchived = params.archived;
-        if (!params.archived && note.folderId) note.folderId = await livingFolderId(note.folderId, userId);
+        await setArchived(note, params.archived, userId, session);
     } else if (action === "trash") {
-        note.isDeleted = true;
-        note.deletedAt = new Date();
-        note.deletedBatchId = null;
+        Object.assign(note, trashFields());
     }
 };
 
@@ -149,6 +149,12 @@ const syncSearchIndex = (changes, userId) => {
     }
 };
 
+class TargetFolderGoneError extends Error {
+    constructor() {
+        super("The target folder was moved to Trash after the list was made — ask again");
+    }
+}
+
 const transactionError = (res, req, error) => {
     if (error instanceof TransactionsUnavailableError) {
         return res.status(503).json({ error: true, message: "Bulk changes need database transactions, which aren't available" });
@@ -160,7 +166,7 @@ const transactionError = (res, req, error) => {
 // Saves a review list for this user: validates the action, loads each note
 // (this user's, not trashed — anything else is refused), and stores the
 // snapshot Apply will compare against. Returns { status, body }.
-const saveProposal = async (userId, { action, params, instruction, candidates }) => {
+const saveProposal = async (userId, { action, params, instruction, candidates }, chatId = null) => {
     if (!ACTIONS.has(action)) return { status: 400, body: { error: true, message: "action must be move, tag, archive or trash" } };
     if (!Array.isArray(candidates) || candidates.length === 0 || candidates.length > MAX_NOTES) {
         return { status: 400, body: { error: true, message: `candidates must hold 1-${MAX_NOTES} notes` } };
@@ -197,6 +203,7 @@ const saveProposal = async (userId, { action, params, instruction, candidates })
     const proposal = await AgentProposal.create({
         proposalId: crypto.randomUUID(),
         userId,
+        chatId,
         action,
         params: normalized.params,
         instruction: instruction || "",
@@ -407,12 +414,15 @@ const openSelectionPart = async (req, res) => {
 
         const { status, body } = await saveProposal(userId, {
             action: selection.action, params: selection.params, instruction: selection.instruction, candidates,
-        });
-        if (status === 201) {
-            // Keep the opened list in the chat, so it's still there after a refresh.
-            const proposal = { proposalId: body.proposalId, action: body.action, params: body.params, candidates: body.candidates };
+        }, selection.chatId || null);
+        // Which button opened the list, so the chat can scroll to it instead of
+        // opening a duplicate (kept after a refresh too).
+        const openedFrom = `part:${selection.selectionId}:${index}`;
+        if (status === 201 && selection.chatId) {
+            // Keep the opened list in its chat, so it's still there after a refresh.
+            const proposal = { proposalId: body.proposalId, action: body.action, params: body.params, candidates: body.candidates, openedFrom };
             try {
-                await appendTurns(userId, [{
+                await appendTurns(userId, selection.chatId, [{
                     role: "assistant",
                     text: `Opened “${part.label}” — ${body.candidates.length} notes to review below.`,
                     citations: [],
@@ -422,9 +432,143 @@ const openSelectionPart = async (req, res) => {
                 console.error(`[${req.id}] Saving the opened part to the chat failed:`, persistError.message);
             }
         }
-        return res.status(status).json({ ...body, partLabel: part.label });
+        return res.status(status).json({ ...body, partLabel: part.label, openedFrom });
     } catch (error) {
         console.error(`[${req.id}] Agent open-part failed:`, error.message);
+        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
+// ── Groupings (suggest_groups): groups of related notes → review lists ──
+const MAX_GROUPS = 8;
+const MAX_GROUP_NOTES = 200;
+const MAX_GROUP_NAME_CHARS = 40;
+const GROUP_TAG_RE = /^[a-z0-9-]{1,30}$/;
+const SAMPLE_TITLES = 3;
+
+const groupSummary = (group, index, titles) => ({
+    index,
+    name: group.name,
+    tag: group.tag,
+    count: group.noteIds.length,
+    misfitCount: group.misfits.length,
+    sampleTitles: group.noteIds.filter((id) => !group.misfits.some((m) => m.noteId === id)).slice(0, SAMPLE_TITLES)
+        .map((id) => titles.get(id) || "Untitled"),
+});
+
+// POST /v1/agent/groupings — save suggested groups (called by the agent).
+const createGrouping = async (req, res) => {
+    const userId = req.user._id;
+    const { instruction, groups, ungroupedCount, notIndexedCount, scannedCount, totalCount } = req.body || {};
+    if (!Array.isArray(groups) || groups.length === 0 || groups.length > MAX_GROUPS) {
+        return res.status(400).json({ error: true, message: `groups must hold 1-${MAX_GROUPS} groups` });
+    }
+    if (instruction !== undefined && (typeof instruction !== "string" || instruction.length > MAX_INSTRUCTION_CHARS)) {
+        return res.status(400).json({ error: true, message: "instruction is too long" });
+    }
+    const all = new Set();
+    for (const g of groups) {
+        if (!g || typeof g.name !== "string" || !g.name.trim() || g.name.length > MAX_GROUP_NAME_CHARS
+            || typeof g.tag !== "string" || !GROUP_TAG_RE.test(g.tag)
+            || !Array.isArray(g.noteIds) || g.noteIds.length < 2 || !Array.isArray(g.misfits || [])) {
+            return res.status(400).json({ error: true, message: "each group needs a name, a tag and 2+ notes" });
+        }
+        for (const id of g.noteIds) {
+            if (typeof id !== "string" || !OBJECT_ID_RE.test(id) || all.has(id)) {
+                return res.status(400).json({ error: true, message: "groups must not share notes" });
+            }
+            all.add(id);
+        }
+        for (const m of g.misfits || []) {
+            if (!m || !g.noteIds.includes(m.noteId) || (m.reason !== undefined && (typeof m.reason !== "string" || m.reason.length > MAX_REASON_CHARS))) {
+                return res.status(400).json({ error: true, message: "misfits must be notes of their group" });
+            }
+        }
+    }
+    if (all.size > MAX_GROUP_NOTES) return res.status(400).json({ error: true, message: "Too many notes" });
+    const count = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+
+    try {
+        if (!allowsBulkAction(await getAgentScopes(userId), "move")) {
+            return res.status(403).json({ error: true, message: SCOPE_OFF_MESSAGE("move") });
+        }
+        const notes = await Note.find({ _id: { $in: [...all] }, userId, isDeleted: { $ne: true } }).select("_id title").lean();
+        if (notes.length !== all.size) return res.status(400).json({ error: true, message: "Some notes were not found" });
+        const titles = new Map(notes.map((n) => [String(n._id), (n.title || "").trim()]));
+        const grouping = await AgentGrouping.create({
+            groupingId: crypto.randomUUID(),
+            userId,
+            instruction: instruction || "",
+            groups: groups.map((g) => ({
+                name: g.name.trim(),
+                tag: g.tag,
+                noteIds: g.noteIds,
+                misfits: (g.misfits || []).map((m) => ({ noteId: m.noteId, reason: m.reason || "" })),
+            })),
+        });
+        return res.status(201).json({
+            error: false,
+            groupingId: grouping.groupingId,
+            groups: grouping.groups.map((g, i) => groupSummary(g, i, titles)),
+            ungroupedCount: count(ungroupedCount),
+            notIndexedCount: count(notIndexedCount),
+            scannedCount: count(scannedCount),
+            totalCount: count(totalCount),
+        });
+    } catch (error) {
+        console.error(`[${req.id}] Agent grouping failed:`, error.message);
+        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
+// POST /v1/agent/groupings/:groupingId/groups/:index/propose — { action:
+// "new-folder" | "tag" } → a review list for that group: its notes ticked,
+// the ones that may not fit unticked with the AI's reason.
+const GROUP_ACTIONS = new Set(["new-folder", "tag"]);
+
+const proposeGroup = async (req, res) => {
+    const userId = req.user._id;
+    const index = Number(req.params.index);
+    const { action } = req.body || {};
+    if (!GROUP_ACTIONS.has(action)) return res.status(400).json({ error: true, message: "action must be new-folder or tag" });
+    try {
+        const grouping = await AgentGrouping.findOne({ groupingId: req.params.groupingId, userId }).lean();
+        if (!grouping) return res.status(404).json({ error: true, message: "These groups expired — ask again" });
+        const group = Number.isInteger(index) ? grouping.groups[index] : null;
+        if (!group) return res.status(404).json({ error: true, message: "Group not found" });
+        if (group.noteIds.length > MAX_NOTES) {
+            return res.status(400).json({ error: true, message: `This group has ${group.noteIds.length} notes — more than ${MAX_NOTES} for one review list. Ask the agent to group a smaller set.` });
+        }
+        // Notes trashed since the groups were made are left out.
+        const living = new Set((await Note.find({ _id: { $in: group.noteIds }, userId, isDeleted: { $ne: true } }).select("_id").lean())
+            .map((n) => String(n._id)));
+        const misfits = new Map(group.misfits.map((m) => [m.noteId, m.reason]));
+        const candidates = group.noteIds.filter((id) => living.has(id)).map((noteId) => (misfits.has(noteId)
+            ? { noteId, verdict: "rejected", reason: misfits.get(noteId) || "may not fit this group" }
+            : { noteId, verdict: "likely", reason: `grouped as “${group.name}”` }));
+        if (candidates.length === 0) return res.status(400).json({ error: true, message: "None of these notes exist any more" });
+
+        const proposalInput = action === "new-folder"
+            ? { action: "move", params: { newFolderName: group.name }, instruction: `move “${group.name}” group to a new folder` }
+            : { action: "tag", params: { add: [group.tag] }, instruction: `tag “${group.name}” group #${group.tag}` };
+        const { status, body } = await saveProposal(userId, { ...proposalInput, candidates }, grouping.chatId || null);
+        const openedFrom = `group:${grouping.groupingId}:${index}:${action}`;
+        if (status === 201 && grouping.chatId) {
+            const proposal = { proposalId: body.proposalId, action: body.action, params: body.params, candidates: body.candidates, openedFrom };
+            try {
+                await appendTurns(userId, grouping.chatId, [{
+                    role: "assistant",
+                    text: `Review list for “${group.name}” — ${body.candidates.length} notes below.`,
+                    citations: [],
+                    proposal,
+                }]);
+            } catch (persistError) {
+                console.error(`[${req.id}] Saving the group's review list to the chat failed:`, persistError.message);
+            }
+        }
+        return res.status(status).json({ ...body, groupName: group.name, openedFrom });
+    } catch (error) {
+        console.error(`[${req.id}] Agent group proposal failed:`, error.message);
         return res.status(500).json({ error: true, message: "Internal Server Error" });
     }
 };
@@ -457,9 +601,17 @@ const applyProposal = async (req, res) => {
         try {
             receipt = await withRequiredTransaction(async (session) => {
                 changes = [];   // the transaction callback may be retried
+                // The target folder may have gone to Trash since the list was made.
+                if (proposal.action === "move" && proposal.params.targetFolderId
+                    && !(await findLivingFolder(proposal.params.targetFolderId, userId, session))) {
+                    throw new TargetFolderGoneError();
+                }
                 const notes = await Note.find({ _id: { $in: noteIds }, userId }).session(session);
                 const byId = new Map(notes.map((n) => [String(n._id), n]));
                 const ops = [];
+                // "Move to a new folder": the folder is made, in this same
+                // transaction, only once a note is actually going to move.
+                const params = { ...proposal.params };
                 for (const noteId of noteIds) {
                     const candidate = candidates.get(noteId);
                     const note = byId.get(noteId);
@@ -467,8 +619,13 @@ const applyProposal = async (req, res) => {
                         ops.push({ noteId, title: note?.title || candidate.title, before: note ? stateOf(note) : null, after: null, status: "skipped-changed" });
                         continue;
                     }
+                    if (params.newFolderName && !params.targetFolderId) {
+                        const folder = await createFolderRecord({ userId, name: params.newFolderName }, session);
+                        params.targetFolderId = String(folder._id);
+                        params.createdFolderId = String(folder._id);
+                    }
                     const before = stateOf(note);
-                    await applyAction(note, proposal.action, proposal.params, userId);
+                    await applyAction(note, proposal.action, params, userId, session);
                     const after = stateOf(note);
                     if (sameState(before, after)) {
                         ops.push({ noteId, title: note.title, before, after, status: "skipped-unchanged" });
@@ -479,12 +636,15 @@ const applyProposal = async (req, res) => {
                     changes.push({ noteId, wasDeleted: before.isDeleted, isDeleted: after.isDeleted });
                 }
                 const [created] = await AgentReceipt.create([{
-                    proposalId, userId, instruction: proposal.instruction, action: proposal.action, params: proposal.params, ops,
+                    proposalId, userId, instruction: proposal.instruction, action: proposal.action, params, ops,
                 }], { session });
                 await AgentProposal.updateOne({ proposalId, userId }, { $set: { status: "applied", receiptId: String(created._id) } }, { session });
                 return created;
             });
         } catch (error) {
+            if (error instanceof TargetFolderGoneError) {
+                return res.status(409).json({ error: true, message: error.message });
+            }
             if (error?.code === 11000) {
                 // A simultaneous Apply won the race; return its receipt.
                 const winner = await AgentReceipt.findOne({ proposalId, userId }).lean();
@@ -534,19 +694,28 @@ const undoReceipt = async (req, res) => {
                     note.tags = [...op.before.tags];
                     note.isArchived = op.before.isArchived;
                     note.showInHome = op.before.showInHome;
-                    note.folderId = op.before.folderId ? await livingFolderId(op.before.folderId, userId) : null;
+                    note.folderId = op.before.folderId;
                     if (!op.before.isDeleted && note.isDeleted) {
-                        note.isDeleted = false;
-                        note.deletedAt = null;
-                        note.deletedBatchId = null;
-                    } else if (op.before.isDeleted && !note.isDeleted) {
-                        note.isDeleted = true;
-                        note.deletedAt = new Date();
-                        note.deletedBatchId = null;
+                        // Refused if it went to Trash with its folder since (e.g.
+                        // restored, then the folder was trashed): it comes back
+                        // with the folder. The unsaved edits above are dropped.
+                        if (await restoreFromTrash(note, userId, session)) {
+                            op.status = "undo-skipped";
+                            continue;
+                        }
+                    } else {
+                        note.folderId = await livingFolderId(note.folderId, userId, session);
+                        if (op.before.isDeleted && !note.isDeleted) Object.assign(note, trashFields());
                     }
                     await note.save({ session });
                     op.status = "undone";
                     changes.push({ noteId: op.noteId, wasDeleted, isDeleted: Boolean(note.isDeleted) });
+                }
+                // A folder this change created goes to Trash once it's empty
+                // again (restorable); kept if anything else is in it now.
+                if (doc.params?.createdFolderId && await trashFolderIfEmpty(doc.params.createdFolderId, userId, session)) {
+                    doc.params = { ...doc.params, createdFolderTrashed: true };
+                    doc.markModified("params");
                 }
                 const remaining = doc.ops.some((op) => op.status === "undo-skipped");
                 doc.status = remaining ? "partially-undone" : "undone";
@@ -578,4 +747,5 @@ const listReceipts = async (req, res) => {
 
 module.exports = {
     createProposal, applyProposal, undoReceipt, listReceipts, selectNotes, createSelection, openSelectionPart, stateOf, sameState,
+    createGrouping, proposeGroup,
 };

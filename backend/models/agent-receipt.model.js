@@ -5,7 +5,7 @@ const Schema = mongoose.Schema;
 // in the SAME transaction as the change itself, so a change without a receipt
 // cannot exist. Undo restores each note's `before` — but only if the note
 // still looks like `after` (the user's newer edits are never reverted).
-const RECEIPT_TTL_DAYS = 30;
+const RECEIPT_TTL_DAYS = 10;
 
 const stateSchema = new Schema(
     {

@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { RiSparkling2Fill } from 'react-icons/ri';
-import { IoMdClose, IoMdSend } from 'react-icons/io';
-import { IoSettingsOutline, IoStop } from 'react-icons/io5';
-import { MdHistory } from 'react-icons/md';
+import { IoMdSend } from 'react-icons/io';
+import { IoAdd, IoSettingsOutline, IoStop } from 'react-icons/io5';
+import { MdDeleteOutline, MdHistory, MdOutlineEdit } from 'react-icons/md';
+import { BsPinAngle, BsPinAngleFill } from 'react-icons/bs';
 import ReactMarkdown from 'react-markdown';
 import axiosInstance from '../../utils/axiosInstance';
-import { bulkDoneLabel, useAgentStore } from '../../store/useAgentStore';
+import { bulkDoneLabel, CHAT_LIMIT, useAgentStore } from '../../store/useAgentStore';
 import { useTabsStore } from '../../store/useTabsStore';
+
+const CHAT_TITLE_MAX = 80;
 
 const markdownComponents = {
     p: ({node, ...props}) => <p className="mb-3 last:mb-0" data-type={node?.type} {...props} />,
@@ -114,6 +117,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const reviewHeading = (p) => {
     const found = `${plural(p.candidates.length, 'note')} found`;
+    if (p.action === 'move' && p.params?.newFolderName) return `Move to new folder “${p.params.newFolderName}” — ${found}`;
     if (p.action === 'move') return `Move to “${p.params?.targetFolderName || 'No folder'}” — ${found}`;
     if (p.action === 'tag') {
         const changes = [...(p.params?.add || []).map((t) => `+#${t}`), ...(p.params?.remove || []).map((t) => `−#${t}`)];
@@ -158,6 +162,9 @@ const ReviewList = ({ proposal, onToggle, onApply, onUndo, onOpenNote }) => {
                 ))}
             </div>
 
+            {status === 'expired' && (
+                <p className="text-[11px] text-stone-600">This list expired — ask again to get a fresh one.</p>
+            )}
             {(status === 'open' || status === 'applying') && (
                 <button
                     onClick={onApply}
@@ -203,21 +210,63 @@ const ReviewList = ({ proposal, onToggle, onApply, onUndo, onOpenNote }) => {
 const SplitChoices = ({ choices, onOpen }) => (
     <div className="rounded-xl border border-stone-300 bg-white/70 p-3 flex flex-col gap-2 text-[#494949]">
         <p className="text-xs font-semibold">{choices.total} notes matched — too many for one review list. Pick a part:</p>
+        {choices.expired && <p className="text-[11px] text-stone-600">These choices expired — ask again to get fresh ones.</p>}
         <div className="flex flex-wrap gap-1.5">
             {choices.parts.map((part) => (
                 <button
                     key={part.index}
                     onClick={() => onOpen(part.index)}
-                    disabled={choices.opening !== null}
+                    disabled={choices.opening !== null || choices.expired}
                     className="text-[11px] font-semibold rounded-full px-3 py-1 border border-stone-300 hover:bg-stone-100 disabled:opacity-50 cursor-pointer"
                 >
                     {choices.opening === part.index ? 'Opening…' : `${part.label} (${part.count})`}
-                    {choices.opened.includes(part.index) ? ' ✓' : ''}
                 </button>
             ))}
         </div>
     </div>
 );
+
+// Suggested groups of related notes: each can become a review list.
+const GroupSuggestions = ({ groups, onAction }) => {
+    const extra = [
+        groups.ungroupedCount > 0 && `${plural(groups.ungroupedCount, 'note')} didn't fit any group`,
+        groups.notIndexedCount > 0 && `${plural(groups.notIndexedCount, 'note')} couldn't be grouped (not indexed yet)`,
+        groups.totalCount > groups.scannedCount && `grouped the ${groups.scannedCount} most recently edited of ${groups.totalCount}`,
+    ].filter(Boolean);
+    return (
+        <div className="rounded-xl border border-stone-300 bg-white/70 p-3 flex flex-col gap-2 text-[#494949]">
+            <p className="text-xs font-semibold">{plural(groups.groups.length, 'group')} of related notes</p>
+            {groups.expired && <p className="text-[11px] text-stone-600">These groups expired — ask again to get fresh ones.</p>}
+            {groups.groups.map((g) => (
+                <div key={g.index} className="rounded-lg border border-stone-200 bg-white/80 p-2.5 flex flex-col gap-1.5">
+                    <p className="text-xs font-semibold">
+                        {g.name} <span className="font-normal text-stone-500">· {plural(g.count, 'note')}{g.misfitCount > 0 ? ` · ${g.misfitCount} may not fit` : ''}</span>
+                    </p>
+                    {g.sampleTitles.length > 0 && (
+                        <p className="text-[11px] text-stone-500 truncate">{g.sampleTitles.join(' · ')}{g.count > g.sampleTitles.length ? ' …' : ''}</p>
+                    )}
+                    <div className="flex flex-wrap gap-1.5">
+                        {[['new-folder', `Move to new folder “${g.name}”`], ['tag', `Tag #${g.tag}`]].map(([action, label]) => {
+                            const key = `${g.index}:${action}`;
+                            return (
+                                <button
+                                    key={action}
+                                    onClick={() => onAction(g.index, action)}
+                                    disabled={groups.opening !== null || groups.expired}
+                                    className={`${pillButton} border-stone-300 hover:bg-stone-100`}
+                                >
+                                    {groups.opening === key ? 'Preparing…' : label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            ))}
+            {extra.length > 0 && <p className="text-[11px] text-stone-500">{extra.join(' · ')}.</p>}
+            <p className="text-[11px] text-stone-500">A button opens a review list below; nothing changes until you press Apply.</p>
+        </div>
+    );
+};
 
 // ── Settings (permission toggles) ──
 const ScopeRow = ({ label, hint, checked, disabled, onToggle }) => (
@@ -247,8 +296,104 @@ const AgentSettings = ({ scopes, onChange }) => {
     );
 };
 
+// ── Chat list (up to CHAT_LIMIT): open, rename, pin, delete ──
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const expiryHint = (chat) => {
+    if (chat.pinned || !chat.expiresAt) return 'Pinned — kept until you delete it';
+    const days = Math.max(0, Math.ceil((new Date(chat.expiresAt).getTime() - Date.now()) / DAY_MS));
+    return days <= 1 ? 'Erased within a day if unused' : `Erased in ${days} days if unused`;
+};
+
+const iconButton = 'p-1 rounded-full text-stone-400 hover:text-[#e85d56] hover:bg-red-50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
+
+const ChatRow = ({ chat, isActive, disabled, onOpen, onRename, onTogglePin, onDelete }) => {
+    const [editing, setEditing] = useState(false);
+    const [title, setTitle] = useState(chat.title);
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+    const saveTitle = async () => {
+        const clean = title.trim();
+        if (clean && clean !== chat.title && !(await onRename(clean))) return;
+        setTitle(clean || chat.title);
+        setEditing(false);
+    };
+
+    return (
+        <div className={`rounded-xl border p-2.5 flex flex-col gap-1 ${isActive ? 'border-[#e85d56]/50 bg-white' : 'border-stone-300 bg-white/70'}`}>
+            <div className="flex items-center gap-1.5 min-w-0">
+                {editing ? (
+                    <input
+                        autoFocus
+                        value={title}
+                        maxLength={CHAT_TITLE_MAX}
+                        onChange={(e) => setTitle(e.target.value)}
+                        onBlur={saveTitle}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveTitle();
+                            if (e.key === 'Escape') { setTitle(chat.title); setEditing(false); }
+                        }}
+                        className="flex-1 min-w-0 text-sm font-semibold text-[#494949] bg-white border border-stone-300 rounded-lg px-2 py-0.5 outline-none focus:border-[#e85d56]/60"
+                    />
+                ) : (
+                    <button
+                        onClick={onOpen}
+                        disabled={disabled}
+                        title={disabled ? 'Wait for the answer (or press Stop) first' : 'Open this chat'}
+                        className="flex-1 min-w-0 text-left text-sm font-semibold text-[#494949] truncate hover:text-[#e85d56] cursor-pointer disabled:cursor-not-allowed"
+                    >
+                        {chat.pinned && <BsPinAngleFill className="inline text-[#e85d56] text-xs mr-1 -mt-0.5" />}
+                        {chat.title}
+                    </button>
+                )}
+                <button onClick={() => setEditing(true)} title="Rename" className={iconButton}><MdOutlineEdit className="text-base" /></button>
+                <button onClick={onTogglePin} title={chat.pinned ? 'Unpin (erased 3 days after its last message)' : 'Pin (never erased)'} className={iconButton}>
+                    {chat.pinned ? <BsPinAngleFill className="text-sm text-[#e85d56]" /> : <BsPinAngle className="text-sm" />}
+                </button>
+                <button onClick={() => setConfirmingDelete(true)} disabled={disabled && isActive} title="Delete" className={iconButton}>
+                    <MdDeleteOutline className="text-base" />
+                </button>
+            </div>
+            {confirmingDelete ? (
+                <div className="flex items-center gap-2 text-[11px]">
+                    <span className="text-stone-600">Delete this chat? Changes already applied stay in Activity.</span>
+                    <button onClick={() => { setConfirmingDelete(false); onDelete(); }} className={`${pillButton} border-red-300 text-red-700 hover:bg-red-50`}>Delete</button>
+                    <button onClick={() => setConfirmingDelete(false)} className={`${pillButton} border-stone-300 text-stone-600 hover:bg-stone-100`}>Cancel</button>
+                </div>
+            ) : (
+                <p className="text-[11px] text-stone-500">
+                    {isActive ? 'Open now · ' : ''}{expiryHint(chat)}
+                </p>
+            )}
+        </div>
+    );
+};
+
+const ChatList = ({ chats, error, activeChatId, isBusy, onOpen, onRename, onTogglePin, onDelete }) => {
+    if (error) return <p className="text-sm text-red-700 px-1">{error}</p>;
+    if (!chats) return <p className="text-sm text-stone-500 px-1">Loading chats…</p>;
+    if (chats.length === 0) return <p className="text-sm text-stone-500 px-1">No saved chats yet. A chat is saved when you send its first message.</p>;
+    return (
+        <div className="flex flex-col gap-2">
+            <p className="text-[11px] text-stone-500 px-1">{chats.length} of {CHAT_LIMIT} chats</p>
+            {chats.map((chat) => (
+                <ChatRow
+                    key={chat.chatId}
+                    chat={chat}
+                    isActive={chat.chatId === activeChatId}
+                    disabled={isBusy}
+                    onOpen={() => onOpen(chat.chatId)}
+                    onRename={(title) => onRename(chat.chatId, title)}
+                    onTogglePin={() => onTogglePin(chat.chatId)}
+                    onDelete={() => onDelete(chat.chatId)}
+                />
+            ))}
+        </div>
+    );
+};
+
 // ── Activity log (past bulk changes, backed by receipts) ──
-const RECEIPT_TTL_DAYS = 30;
+const RECEIPT_TTL_DAYS = 10;
 // Notes the change originally touched: undo turns 'applied' ops into
 // 'undone' (or 'undo-skipped' when the user had edited them since).
 const changedCount = (r) => r.counts.applied + r.counts.undone + r.counts.undoSkipped;
@@ -303,12 +448,23 @@ const AgentChatPanel = () => {
     const sendMessage = useAgentStore((state) => state.sendMessage);
     const stop = useAgentStore((state) => state.stop);
     const wake = useAgentStore((state) => state.wake);
-    const resetConversation = useAgentStore((state) => state.resetConversation);
+    const chats = useAgentStore((state) => state.chats);
+    const chatsError = useAgentStore((state) => state.chatsError);
+    const activeChatId = useAgentStore((state) => state.activeChatId);
+    const isOpeningChat = useAgentStore((state) => state.isOpeningChat);
+    const scrollTarget = useAgentStore((state) => state.scrollTarget);
+    const loadChats = useAgentStore((state) => state.loadChats);
+    const openChat = useAgentStore((state) => state.openChat);
+    const newChat = useAgentStore((state) => state.newChat);
+    const renameChat = useAgentStore((state) => state.renameChat);
+    const togglePin = useAgentStore((state) => state.togglePin);
+    const deleteChat = useAgentStore((state) => state.deleteChat);
     const resolvePendingEdit = useAgentStore((state) => state.resolvePendingEdit);
     const toggleReviewNote = useAgentStore((state) => state.toggleReviewNote);
     const applyReviewList = useAgentStore((state) => state.applyReviewList);
     const undoReviewList = useAgentStore((state) => state.undoReviewList);
     const openSplitChoice = useAgentStore((state) => state.openSplitChoice);
+    const openGroupAction = useAgentStore((state) => state.openGroupAction);
     const scopes = useAgentStore((state) => state.scopes);
     const activity = useAgentStore((state) => state.activity);
     const activityError = useAgentStore((state) => state.activityError);
@@ -316,14 +472,30 @@ const AgentChatPanel = () => {
     const setScope = useAgentStore((state) => state.setScope);
     const loadActivity = useAgentStore((state) => state.loadActivity);
     const undoFromActivity = useAgentStore((state) => state.undoFromActivity);
-    // 'chat' | 'activity' | 'settings' — the panel shows one at a time.
+    // 'chat' | 'history' | 'settings' — the panel shows one at a time. History
+    // holds the chat list and the activity log (two tabs, one button).
     const [view, setView] = useState('chat');
+    const [historyTab, setHistoryTab] = useState('chats');
+    const showHistoryTab = (tab) => {
+        if (tab === 'chats') loadChats();
+        else loadActivity();
+        setHistoryTab(tab);
+    };
     const switchView = (next) => {
         const target = view === next ? 'chat' : next;
-        if (target === 'activity') loadActivity();
+        if (target === 'history') showHistoryTab(historyTab);
         if (target === 'settings') loadScopes();
         setView(target);
     };
+    const handleOpenChat = async (chatId) => {
+        await openChat(chatId);
+        if (useAgentStore.getState().activeChatId === chatId) setView('chat');
+    };
+    const handleNewChat = () => {
+        newChat();
+        if (useAgentStore.getState().activeChatId === null && useAgentStore.getState().messages.length === 0) setView('chat');
+    };
+    const activeTitle = activeChatId ? chats?.find((c) => c.chatId === activeChatId)?.title : null;
     const hydrate = useAgentStore((state) => state.hydrate);
     const [draft, setDraft] = useState('');
     const scrollAnchorRef = useRef(null);
@@ -361,6 +533,21 @@ const AgentChatPanel = () => {
         scrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }, [messages.length, isBusy, steps.length]);
 
+    // A used split-choice / group-card button: bring its review list into
+    // view and briefly outline it.
+    useEffect(() => {
+        const element = scrollTarget && document.getElementById(`agent-message-${scrollTarget.messageId}`);
+        if (!element) return undefined;
+        const outline = ['ring-2', 'ring-[#e85d56]/60'];
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        element.classList.add(...outline);
+        const timer = setTimeout(() => element.classList.remove(...outline), 1500);
+        return () => {
+            clearTimeout(timer);
+            element.classList.remove(...outline);
+        };
+    }, [scrollTarget]);
+
     const handleSend = () => {
         const text = draft.trim();
         if (!text || isBusy) return;
@@ -388,9 +575,17 @@ const AgentChatPanel = () => {
                 </div>
                 <div className="flex items-center gap-1">
                     <button
-                        onClick={() => switchView('activity')}
-                        title={view === 'activity' ? 'Back to chat' : 'Activity — past bulk changes, with Undo'}
-                        className={`p-1 rounded-full transition-colors cursor-pointer ${view === 'activity' ? 'text-[#e85d56] bg-red-50' : 'text-stone-400 hover:text-[#e85d56] hover:bg-red-50'}`}
+                        onClick={handleNewChat}
+                        disabled={isBusy}
+                        title={isBusy ? 'Wait for the answer (or press Stop) first' : 'New chat'}
+                        className="p-1 rounded-full transition-colors cursor-pointer text-stone-400 hover:text-[#e85d56] hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        <IoAdd className="text-xl" />
+                    </button>
+                    <button
+                        onClick={() => switchView('history')}
+                        title={view === 'history' ? 'Back to chat' : 'History — your chats and past bulk changes'}
+                        className={`p-1 rounded-full transition-colors cursor-pointer ${view === 'history' ? 'text-[#e85d56] bg-red-50' : 'text-stone-400 hover:text-[#e85d56] hover:bg-red-50'}`}
                     >
                         <MdHistory className="text-xl" />
                     </button>
@@ -401,30 +596,54 @@ const AgentChatPanel = () => {
                     >
                         <IoSettingsOutline className="text-lg" />
                     </button>
-                    {view === 'chat' && (
-                        <button
-                            onClick={resetConversation}
-                            title="Clear conversation"
-                            className="text-stone-400 hover:text-red-500 hover:bg-red-50 p-1 rounded-full transition-colors cursor-pointer"
-                        >
-                            <IoMdClose className="text-xl" />
-                        </button>
-                    )}
                 </div>
             </div>
 
-            {view !== 'chat' && (
+            {view === 'settings' && (
                 <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5">
-                    {view === 'settings'
-                        ? <AgentSettings scopes={scopes} onChange={setScope} />
-                        : <ActivityLog activity={activity} error={activityError} onUndo={undoFromActivity} />}
+                    <AgentSettings scopes={scopes} onChange={setScope} />
+                </div>
+            )}
+
+            {view === 'history' && (
+                <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 flex flex-col gap-3">
+                    <div className="flex gap-1.5">
+                        {[['chats', 'Chats'], ['activity', 'Activity']].map(([tab, label]) => (
+                            <button
+                                key={tab}
+                                onClick={() => showHistoryTab(tab)}
+                                className={`${pillButton} ${historyTab === tab ? 'bg-[#dd5e57] text-white border-[#dd5e57]' : 'border-stone-300 text-stone-600 hover:bg-stone-100'}`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    {historyTab === 'chats' ? (
+                        <ChatList
+                            chats={chats}
+                            error={chatsError}
+                            activeChatId={activeChatId}
+                            isBusy={isBusy}
+                            onOpen={handleOpenChat}
+                            onRename={renameChat}
+                            onTogglePin={togglePin}
+                            onDelete={deleteChat}
+                        />
+                    ) : (
+                        <ActivityLog activity={activity} error={activityError} onUndo={undoFromActivity} />
+                    )}
                 </div>
             )}
 
             {view === 'chat' && <>
             {/* messages */}
             <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-4 flex flex-col gap-3">
-                {messages.length === 0 && !isBusy && (
+                {(activeTitle || isOpeningChat) && (
+                    <p className="text-[11px] font-semibold text-stone-500 truncate">
+                        {isOpeningChat ? 'Opening chat…' : activeTitle}
+                    </p>
+                )}
+                {messages.length === 0 && !isBusy && !isOpeningChat && (
                     <p className="text-[#494949] text-sm font-medium leading-relaxed border-l-[3px] border-[#e85d56]/50 pl-4">
                         Ask anything about your notes. I can search and summarize them, list your
                         tags and folders, and draft new notes or edits for you to review — nothing
@@ -435,7 +654,8 @@ const AgentChatPanel = () => {
                 {messages.map((message) => (
                     <div
                         key={message.id}
-                        className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed font-medium ${
+                        id={`agent-message-${message.id}`}
+                        className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed font-medium transition-shadow ${
                             message.role === 'user'
                                 ? 'self-end bg-[#dd5e57] text-white whitespace-pre-wrap'
                                 : message.isError
@@ -462,6 +682,14 @@ const AgentChatPanel = () => {
                                 {message.splitChoices && (
                                     <div className="mt-2">
                                         <SplitChoices choices={message.splitChoices} onOpen={(index) => openSplitChoice(message.id, index)} />
+                                    </div>
+                                )}
+                                {message.groupSuggestions && (
+                                    <div className="mt-2">
+                                        <GroupSuggestions
+                                            groups={message.groupSuggestions}
+                                            onAction={(index, action) => openGroupAction(message.id, index, action)}
+                                        />
                                     </div>
                                 )}
                                 {message.pendingEdits?.length > 0 && (
@@ -592,7 +820,7 @@ const AgentChatPanel = () => {
                     )}
                 </div>
                 <p className="text-[10px] text-stone-400 font-medium mt-2">
-                    Enter to send · Shift+Enter for a new line · restores after refresh, auto-clears in 3 days
+                    Enter to send · Shift+Enter for a new line · each chat is erased 3 days after its last message, unless pinned
                 </p>
             </div>
             </>}

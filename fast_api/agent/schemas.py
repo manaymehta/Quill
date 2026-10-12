@@ -120,6 +120,8 @@ class AgentChatResponse(BaseModel):
     # than 50 notes matched. At most one per turn (the latest wins).
     proposal: dict[str, Any] | None = None
     splitChoices: dict[str, Any] | None = None
+    # Grouping: suggested groups of related notes, saved in Express.
+    groupSuggestions: dict[str, Any] | None = None
 
 
 class ToolError(BaseModel):
@@ -138,6 +140,7 @@ class ToolResult(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
     # Set by draft tools: validated proposed write(s) for the frontend dock.
     drafts: list[AgentDraft] = Field(default_factory=list)
-    # Set by propose_bulk_change (see AgentChatResponse).
+    # Set by propose_bulk_change / suggest_groups (see AgentChatResponse).
     proposal: dict[str, Any] | None = None
     splitChoices: dict[str, Any] | None = None
+    groupSuggestions: dict[str, Any] | None = None

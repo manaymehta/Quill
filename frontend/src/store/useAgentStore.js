@@ -10,15 +10,32 @@ import { useToastStore } from './useToastStore';
 // A review list's UI state: likely notes start ticked. status: open →
 // applying → applied → undoing → undone. The server keeps the real record
 // (proposal + receipt); this mirrors it for the chat.
+// A list whose saved record is gone (erased after 3 days; a pinned chat
+// outlives it) is 'expired': shown, but it can't be applied any more.
 const withReviewState = (proposal) => (proposal ? {
   ...proposal,
   ticked: proposal.candidates.filter((c) => c.verdict === 'likely').map((c) => c.noteId),
-  status: 'open',
+  status: proposal.expired ? 'expired' : 'open',
   receipt: null,
   error: null,
 } : null);
 
-const withChoiceState = (choices) => (choices ? { ...choices, opening: null, opened: [] } : null);
+const withChoiceState = (choices) => (choices ? { ...choices, opening: null } : null);
+// Group cards: `opening` holds an "index:action" key (action: new-folder | tag).
+const withGroupState = (groups) => (groups ? { ...groups, opening: null } : null);
+
+// A split choice or group-card button that already opened a review list
+// scrolls to it instead of opening a duplicate — unless that list was undone
+// or expired, where a fresh one is the only way to act again.
+// `openedFrom` ("part:<selectionId>:<index>" / "group:<groupingId>:<index>:<action>")
+// is set by the server on the list.
+const findOpenedList = (messages, openedFrom) => messages.find((m) => m.proposal?.openedFrom === openedFrom
+  && m.proposal.status !== 'undone' && m.proposal.status !== 'expired');
+
+export const CHAT_LIMIT = 10;
+const CHAT_LIMIT_MESSAGE = `${CHAT_LIMIT} chats is the limit — delete one to start a new chat`;
+const BUSY_MESSAGE = 'Wait for the answer (or press Stop) first.';
+const showError = (message) => useTabsStore.getState().showTabToast(message, 'error');
 
 const refreshNoteLists = () => {
   queryClient.invalidateQueries({ queryKey: ['notes'] });
@@ -33,9 +50,10 @@ export const bulkDoneLabel = (proposal) => {
 // Opening a split choice may run the AI check for that part (up to ~45 s).
 const OPEN_PART_TIMEOUT_MS = 60_000;
 
-// Agent conversation state. Memory is client-side in the store and persisted
-// server-side (~3-day expiry); recent history is sent with each request and
-// the working set is the list of notes the chat is "about".
+// Agent chat state: up to CHAT_LIMIT chats per user, saved server-side (each
+// erased 3 days after its last message unless pinned). The open chat's
+// messages and working set (the notes it is "about") live here; recent
+// history is sent with each request.
 let nextMessageId = 1;
 
 const makeMessage = (partial) => ({ id: nextMessageId++, ...partial });
@@ -57,8 +75,8 @@ const recentHistory = (messages) => {
   return turns;
 };
 
-// The running turn's AbortController (Stop), and a counter bumped by reset so
-// a turn that finishes after the conversation was cleared is ignored.
+// The running turn's AbortController (Stop), and a counter bumped whenever
+// the open chat changes, so a late reply never lands in another chat.
 let activeTurn = null;
 let conversationEpoch = 0;
 
@@ -78,6 +96,11 @@ export const useAgentStore = create((set, get) => ({
   isBusy: false,
   steps: [],           // progress lines for the running turn ("Searching your notes for …")
   isHydrated: false,
+  chats: null,         // [{ chatId, title, pinned, lastActivityAt, expiresAt }] — pinned first (null = not loaded)
+  chatsError: null,
+  activeChatId: null,  // null = a new chat, saved by its first message
+  isOpeningChat: false,
+  scrollTarget: null,  // { messageId, at } — the panel scrolls to that message and highlights it
 
   wake: () => {
     const now = Date.now();
@@ -86,42 +109,116 @@ export const useAgentStore = create((set, get) => ({
     axiosInstance.get('/agent/wake').catch(() => {});
   },
 
-  // Restores the persisted conversation (survives refresh; ~3-day expiry
-  // server-side). Called once when the chat panel first mounts.
+  // First mount: load the chat list and reopen the most recently active chat
+  // (unless a message was already sent meanwhile, e.g. from the search bar).
   hydrate: async () => {
     if (get().isHydrated) return;
     set({ isHydrated: true });
+    await get().loadChats();
+    const chats = get().chats || [];
+    if (chats.length === 0 || get().activeChatId || get().messages.length > 0 || get().isBusy) return;
+    const latest = [...chats].sort((a, b) => new Date(b.lastActivityAt) - new Date(a.lastActivityAt))[0];
+    await get().openChat(latest.chatId);
+  },
+
+  loadChats: async () => {
     try {
-      const response = await axiosInstance.get('/agent/conversation');
-      const data = response.data || {};
+      const response = await axiosInstance.get('/agent/chats');
+      set({ chats: response.data.chats || [], chatsError: null });
+    } catch {
+      set({ chatsError: 'Could not load your chats.' });
+    }
+  },
+
+  openChat: async (chatId) => {
+    if (get().isBusy) return showError(BUSY_MESSAGE);
+    conversationEpoch += 1;
+    const epoch = conversationEpoch;
+    set({ isOpeningChat: true });
+    try {
+      const data = (await axiosInstance.get(`/agent/chats/${chatId}`)).data || {};
+      if (epoch !== conversationEpoch) return;
       const turns = Array.isArray(data.turns) ? data.turns : [];
-      set({
-        messages: turns.map((t) => makeMessage({
-          role: t.role,
-          text: t.text,
-          citations: t.citations || [],
-          proposal: withReviewState(t.proposal),
-          splitChoices: withChoiceState(t.splitChoices),
-        })),
-        workingSet: Array.isArray(data.workingSet) ? data.workingSet : [],
-      });
+      let messages = turns.map((t) => makeMessage({
+        role: t.role,
+        text: t.text,
+        citations: t.citations || [],
+        proposal: withReviewState(t.proposal),
+        splitChoices: withChoiceState(t.splitChoices),
+        groupSuggestions: withGroupState(t.groupSuggestions),
+      }));
       // Review lists already applied (or undone) show their result, not
       // fresh tick boxes: match them to the user's receipts.
-      if (get().messages.some((m) => m.proposal)) {
+      if (messages.some((m) => m.proposal)) {
         const receipts = (await axiosInstance.get('/agent/receipts')).data?.receipts || [];
+        if (epoch !== conversationEpoch) return;
         const byProposal = new Map(receipts.map((r) => [r.proposalId, r]));
-        set({
-          messages: get().messages.map((m) => {
-            const receipt = m.proposal && byProposal.get(m.proposal.proposalId);
-            return receipt
-              ? { ...m, proposal: { ...m.proposal, receipt, status: receipt.status === 'applied' ? 'applied' : 'undone' } }
-              : m;
-          }),
+        messages = messages.map((m) => {
+          const receipt = m.proposal && byProposal.get(m.proposal.proposalId);
+          return receipt
+            ? { ...m, proposal: { ...m.proposal, receipt, status: receipt.status === 'applied' ? 'applied' : 'undone' } }
+            : m;
         });
       }
+      set({
+        activeChatId: chatId,
+        messages,
+        workingSet: Array.isArray(data.workingSet) ? data.workingSet : [],
+        steps: [],
+      });
     } catch (error) {
-      // Restore failure must never block a fresh conversation.
-      console.error('Agent conversation restore failed:', error?.response?.status || error.message);
+      if (epoch !== conversationEpoch) return;
+      showError(error?.response?.data?.message || 'Could not open that chat.');
+      if (error?.response?.status === 404) get().loadChats();
+    } finally {
+      if (epoch === conversationEpoch) set({ isOpeningChat: false });
+    }
+  },
+
+  // An empty chat; it's saved (and counts toward the limit) with its first message.
+  newChat: () => {
+    if (get().isBusy) return showError(BUSY_MESSAGE);
+    if ((get().chats || []).length >= CHAT_LIMIT) return showError(CHAT_LIMIT_MESSAGE);
+    conversationEpoch += 1;
+    set({ activeChatId: null, messages: [], workingSet: [], steps: [], isOpeningChat: false });
+  },
+
+  renameChat: async (chatId, title) => {
+    try {
+      const response = await axiosInstance.patch(`/agent/chats/${chatId}`, { title });
+      set({ chats: (get().chats || []).map((c) => (c.chatId === chatId ? response.data.chat : c)) });
+      return true;
+    } catch (error) {
+      showError(error?.response?.data?.message || 'Could not rename the chat.');
+      return false;
+    }
+  },
+
+  togglePin: async (chatId) => {
+    const chat = (get().chats || []).find((c) => c.chatId === chatId);
+    if (!chat) return;
+    try {
+      await axiosInstance.patch(`/agent/chats/${chatId}`, { pinned: !chat.pinned });
+      await get().loadChats();   // re-sorts: pinned first
+    } catch (error) {
+      showError(error?.response?.data?.message || 'Could not change the pin.');
+    }
+  },
+
+  deleteChat: async (chatId) => {
+    if (get().isBusy && get().activeChatId === chatId) return showError(BUSY_MESSAGE);
+    try {
+      await axiosInstance.delete(`/agent/chats/${chatId}`);
+    } catch (error) {
+      if (error?.response?.status !== 404) {
+        showError(error?.response?.data?.message || 'Could not delete the chat.');
+        return;
+      }
+    }
+    set({ chats: (get().chats || []).filter((c) => c.chatId !== chatId) });
+    if (get().activeChatId === chatId) {
+      conversationEpoch += 1;
+      set({ activeChatId: null, messages: [], workingSet: [], steps: [] });
     }
   },
 
@@ -151,7 +248,7 @@ export const useAgentStore = create((set, get) => ({
 
     try {
       const data = await streamAgentChat(
-        { message: text, history, workingSet, unsavedNotes },
+        { message: text, history, workingSet, unsavedNotes, chatId: get().activeChatId },
         {
           signal: controller.signal,
           onStep: (label) => {
@@ -186,12 +283,15 @@ export const useAgentStore = create((set, get) => ({
             pendingEdits: pending,
             proposal: withReviewState(data.proposal),
             splitChoices: withChoiceState(data.splitChoices),
+            groupSuggestions: withGroupState(data.groupSuggestions),
           }),
         ],
         workingSet: data.workingSet || get().workingSet,
+        activeChatId: data.chatId || get().activeChatId,
         isBusy: false,
         steps: [],
       });
+      get().loadChats();   // a new chat's title, and the new order
     } catch (error) {
       if (epoch !== conversationEpoch) return;
       // Error bubbles (including "Stopped.") are excluded from history.
@@ -330,6 +430,8 @@ export const useAgentStore = create((set, get) => ({
   openSplitChoice: async (messageId, index) => {
     const choices = get().messages.find((m) => m.id === messageId)?.splitChoices;
     if (!choices || choices.opening !== null) return;
+    const existing = findOpenedList(get().messages, `part:${choices.selectionId}:${index}`);
+    if (existing) return set({ scrollTarget: { messageId: existing.id, at: Date.now() } });
     const patch = (fields) => set({
       messages: get().messages.map((m) => (m.id === messageId ? { ...m, splitChoices: { ...m.splitChoices, ...fields } } : m)),
     });
@@ -339,18 +441,52 @@ export const useAgentStore = create((set, get) => ({
         `/agent/selections/${choices.selectionId}/parts/${index}/open`, {}, { timeout: OPEN_PART_TIMEOUT_MS },
       );
       const data = response.data;
-      patch({ opening: null, opened: [...get().messages.find((m) => m.id === messageId).splitChoices.opened, index] });
+      patch({ opening: null });
       set({
         messages: [...get().messages, makeMessage({
           role: 'assistant',
           text: `Opened “${data.partLabel}” — ${data.candidates.length} notes to review below.`,
           citations: [],
-          proposal: withReviewState({ proposalId: data.proposalId, action: data.action, params: data.params, candidates: data.candidates }),
+          proposal: withReviewState({
+            proposalId: data.proposalId, action: data.action, params: data.params, candidates: data.candidates, openedFrom: data.openedFrom,
+          }),
         })],
       });
     } catch (error) {
       patch({ opening: null });
       useTabsStore.getState().showTabToast(error?.response?.data?.message || 'Could not open that part. Try again.', 'error');
+    }
+  },
+
+  // A suggested group → its own review list (move to a new folder, or tag),
+  // added to the chat as a new message.
+  openGroupAction: async (messageId, index, action) => {
+    const groups = get().messages.find((m) => m.id === messageId)?.groupSuggestions;
+    if (!groups || groups.opening !== null || groups.expired) return;
+    const key = `${index}:${action}`;
+    const existing = findOpenedList(get().messages, `group:${groups.groupingId}:${key}`);
+    if (existing) return set({ scrollTarget: { messageId: existing.id, at: Date.now() } });
+    const patch = (fields) => set({
+      messages: get().messages.map((m) => (m.id === messageId ? { ...m, groupSuggestions: { ...m.groupSuggestions, ...fields } } : m)),
+    });
+    patch({ opening: key });
+    try {
+      const response = await axiosInstance.post(`/agent/groupings/${groups.groupingId}/groups/${index}/propose`, { action });
+      const data = response.data;
+      patch({ opening: null });
+      set({
+        messages: [...get().messages, makeMessage({
+          role: 'assistant',
+          text: `Review list for “${data.groupName}” — ${data.candidates.length} notes below.`,
+          citations: [],
+          proposal: withReviewState({
+            proposalId: data.proposalId, action: data.action, params: data.params, candidates: data.candidates, openedFrom: data.openedFrom,
+          }),
+        })],
+      });
+    } catch (error) {
+      patch({ opening: null });
+      showError(error?.response?.data?.message || 'Could not prepare that review list. Try again.');
     }
   },
 
@@ -390,14 +526,5 @@ export const useAgentStore = create((set, get) => ({
   // cancel the turn. Safe at any point — turns never write to the notes.
   stop: () => {
     activeTurn?.abort();
-  },
-
-  resetConversation: () => {
-    conversationEpoch += 1;
-    activeTurn?.abort();
-    activeTurn = null;
-    set({ messages: [], workingSet: [], isBusy: false, steps: [] });
-    // Persisted copy is best-effort: local reset wins immediately either way.
-    axiosInstance.delete('/agent/conversation').catch(() => {});
   },
 }));

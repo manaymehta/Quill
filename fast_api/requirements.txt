@@ -6,4 +6,6 @@ qdrant-client==1.19.1
 pydantic
 python-dotenv
 httpx
+# Grouping (agent/grouping.py); also installed by qdrant-client.
+numpy
 

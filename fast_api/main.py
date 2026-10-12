@@ -5,6 +5,7 @@ import os
 import re
 import time
 import uuid
+import numpy as np
 import uvicorn
 from contextlib import asynccontextmanager
 from google import genai
@@ -552,6 +553,45 @@ async def agent_meaning_search(query: str, user_id: str, limit: int, note_ids: l
     ]
 
 
+async def agent_note_vectors(user_id: str, note_ids: list[str]) -> dict[str, dict]:
+    """Stored meaning vectors for grouping (agent/grouping.py): each note's
+    pieces averaged and normalized, plus the start of its first piece. No
+    embedding call. Notes not in the index are missing from the result."""
+    if qdrant_client is None:
+        raise RuntimeError("Vector store not available.")
+    points, offset = [], None
+    while True:
+        batch, offset = await run_blocking(
+            qdrant_client.scroll,
+            collection_name=COLLECTION_NAME,
+            scroll_filter=Filter(must=[
+                FieldCondition(key="userId", match=MatchValue(value=user_id)),
+                FieldCondition(key="noteId", match=MatchAny(any=list(note_ids))),
+            ]),
+            with_payload=["noteId", "chunkIndex", "text"],
+            with_vectors=True,
+            limit=256,
+            offset=offset,
+        )
+        points.extend(batch)
+        if offset is None:
+            break
+    by_note: dict[str, list] = {}
+    for point in points:
+        if point.payload and point.payload.get("noteId") and point.vector:
+            by_note.setdefault(str(point.payload["noteId"]), []).append(point)
+    out = {}
+    for note_id, pieces in by_note.items():
+        vector = np.mean([np.asarray(p.vector, dtype=float) for p in pieces], axis=0)
+        norm = float(np.linalg.norm(vector))
+        first = min(pieces, key=lambda p: int(p.payload.get("chunkIndex", 0) or 0))
+        out[note_id] = {
+            "vector": (vector / norm if norm else vector).tolist(),
+            "text": str(first.payload.get("text", "") or ""),
+        }
+    return out
+
+
 def sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
@@ -577,6 +617,7 @@ async def agent_chat(
         express_base_url=express_base_url,
         unsaved_notes={note.noteId: note.model_dump() for note in request.unsavedNotes},
         meaning_search=agent_meaning_search,
+        note_vectors=agent_note_vectors,
         gemini_client=gemini_client,
         allow_trash=request.scopes.organize and request.scopes.destructive,
     )

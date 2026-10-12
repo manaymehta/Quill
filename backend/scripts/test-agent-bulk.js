@@ -140,6 +140,29 @@ const check = (name, ok, detail = "") => {
         check("undo brings it back from the trash, in its folder", u4.data.receipt.status === "undone"
             && (await getNote(USER_A, n2._id))?.folderId === fA._id);  // get-note only returns non-trashed notes
 
+        // 6b. Undo never pulls a note out of a folder that went to Trash with it
+        // (same rule as the app's own Restore).
+        const fT = await folder(USER_A, "Bulk trash-with-folder");
+        const nT = await note(USER_A, { title: "Bulk in folder", content: "batch", folderId: fT._id });
+        const p5 = await propose(USER_A, { action: "trash", candidates: [{ noteId: nT._id }] });
+        const a5 = await call(USER_A, "POST", `/agent/proposals/${p5.data.proposalId}/apply`, { noteIds: [nT._id] });
+        await call(USER_A, "PUT", `/restore-note/${nT._id}`);      // user restores it…
+        await call(USER_A, "DELETE", `/delete-folder/${fT._id}`);  // …then trashes the whole folder
+        const u5 = await call(USER_A, "POST", `/agent/receipts/${a5.data.receipt.receiptId}/undo`);
+        const stillTrashed = ((await call(USER_A, "GET", "/get-trash-notes")).data.notes || []).every((n) => n._id !== nT._id)
+            && !(await getNote(USER_A, nT._id));   // batch notes aren't in the Trash list or get-note
+        check("undo skips a note trashed together with its folder", u5.data?.receipt?.counts?.undoSkipped === 1 && stillTrashed,
+            JSON.stringify(u5.data?.receipt?.counts));
+
+        // 6c. Apply refuses a move whose target folder went to Trash after the list was made.
+        const fGone = await folder(USER_A, "Bulk gone folder");
+        const p6 = await propose(USER_A, { action: "move", params: { targetFolderId: fGone._id }, candidates: [{ noteId: n3._id }] });
+        await call(USER_A, "DELETE", `/delete-folder/${fGone._id}`);
+        const a6 = await call(USER_A, "POST", `/agent/proposals/${p6.data.proposalId}/apply`, { noteIds: [n3._id] });
+        const noReceipt = !(await AgentReceipt.findOne({ proposalId: p6.data.proposalId }).lean());
+        check("apply refuses a move into a folder now in Trash", a6.status === 409 && noReceipt
+            && (await getNote(USER_A, n3._id))?.folderId === null, String(a6.status));
+
         // 6. Cross-user: every route must refuse B acting on A's items and vice versa.
         const pA = await propose(USER_A, { action: "archive", params: { archived: true }, candidates: [{ noteId: n3._id }] });
         const bApplies = await call(USER_B, "POST", `/agent/proposals/${pA.data.proposalId}/apply`, { noteIds: [n3._id] });
@@ -169,7 +192,7 @@ const check = (name, ok, detail = "") => {
         const pIdx = await AgentProposal.collection.indexes();
         const rIdx = await AgentReceipt.collection.indexes();
         const ttl = (idx) => idx.find((i) => i.expireAfterSeconds !== undefined)?.expireAfterSeconds;
-        check("TTL indexes present (proposals 3 days, receipts 30 days)", ttl(pIdx) === 3 * 86400 && ttl(rIdx) === 30 * 86400,
+        check("TTL indexes present (proposals 3 days, receipts 10 days)", ttl(pIdx) === 3 * 86400 && ttl(rIdx) === 10 * 86400,
             `${ttl(pIdx)} / ${ttl(rIdx)}`);
         check("proposalId unique on both collections",
             pIdx.some((i) => i.key.proposalId && i.unique) && rIdx.some((i) => i.key.proposalId && i.unique));

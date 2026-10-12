@@ -9,6 +9,7 @@ const {
     getUserFolders,
 } = require("../services/folder-tree.service");
 const { withOptionalTransaction } = require("../services/mongo-transaction.service");
+const { createFolderRecord } = require("../services/note-actions.service");
 const FOLDER_LIST_FIELDS = "_id name parentId color icon orderIndex";
 
 const getFolders = async (req, res) => {
@@ -49,23 +50,7 @@ const createFolder = async (req, res) => {
             }
         }
 
-        // Calculate order index based on siblings
-        const siblingCount = await Folder.countDocuments({
-            userId,
-            parentId: normalizedParentId,
-            isDeleted: false,
-        });
-
-        const folder = new Folder({
-            userId,
-            name: name.trim(),
-            parentId: normalizedParentId,
-            color: color || '#e85d56',
-            icon: icon || '📁',
-            orderIndex: siblingCount,
-        });
-
-        await folder.save();
+        const folder = await createFolderRecord({ userId, name, parentId: normalizedParentId, color, icon });
         return res.json({ error: false, folder, message: "Folder created successfully" });
     } catch (error) {
         console.error(error);
