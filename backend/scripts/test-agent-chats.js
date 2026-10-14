@@ -128,12 +128,17 @@ const near = (date, ms, slack = 60_000) => date && Math.abs(new Date(date).getTi
             candidates: [{ noteId: noteR.data.note._id }] });
         await AgentProposal.updateOne({ proposalId: applied.data.proposalId }, { $set: { chatId } });
         const applyRes = await call(USER_A, "POST", `/agent/proposals/${applied.data.proposalId}/apply`, { noteIds: [noteR.data.note._id] });
+        // One pending list per account: the one above merged into `live` and
+        // was applied with it, so a fresh pending list stands in for "open".
+        const pendingNow = await call(USER_A, "POST", "/agent/proposals", { action: "tag", params: { add: ["chatstest3"] },
+            candidates: [{ noteId: noteR.data.note._id }] });
+        await AgentProposal.updateOne({ proposalId: pendingNow.data.proposalId }, { $set: { chatId } });
         await AgentSelection.create({ selectionId: `chats-test-${Date.now()}`, userId: USER_A, chatId, action: "tag", params: { add: ["x"] },
             parts: [{ label: "a", noteIds: [noteR.data.note._id] }, { label: "b", noteIds: [noteR.data.note._id] }] });
         const del = await call(USER_A, "DELETE", `/agent/chats/${chatId}`);
         const afterDelete = {
             chat: await AgentChat.exists({ _id: chatId }),
-            openList: await AgentProposal.exists({ proposalId: live.data.proposalId }),
+            openList: await AgentProposal.exists({ proposalId: pendingNow.data.proposalId }),
             selection: await AgentSelection.exists({ chatId }),
             receipt: await AgentReceipt.exists({ proposalId: applied.data.proposalId }),
         };

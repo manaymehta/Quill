@@ -22,7 +22,14 @@ const agentSelectionSchema = new Schema(
         userId: { type: String, required: true, index: true },
         // The chat it was made in (set by Express when the turn is saved).
         chatId: { type: String, default: null },
-        action: { type: String, enum: ["move", "tag", "archive", "trash"], required: true },
+        // The changes and each note's items (as in a review list, before
+        // their rows are worked out), for selections made after several
+        // changes per list; topic items not judged yet are `pending`.
+        changes: { type: Schema.Types.Mixed, default: undefined },
+        noteItems: { type: Schema.Types.Mixed, default: undefined },
+        groups: { type: Schema.Types.Mixed, default: undefined },
+        // Selections saved before that: one action for every note.
+        action: { type: String, enum: ["move", "tag", "archive", "trash"] },
         params: { type: Schema.Types.Mixed, default: {} },
         instruction: { type: String, default: "" },
         topic: { type: String, default: "" },

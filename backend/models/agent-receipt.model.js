@@ -29,6 +29,8 @@ const opSchema = new Schema(
             enum: ["applied", "skipped-changed", "skipped-unchanged", "undone", "undo-skipped"],
             required: true,
         },
+        // The list's change keys applied to this note.
+        changes: { type: [String], default: undefined },
     },
     { _id: false }
 );
@@ -40,6 +42,11 @@ const agentReceiptSchema = new Schema(
         proposalId: { type: String, required: true, unique: true },
         userId: { type: String, required: true },
         instruction: { type: String, default: "" },
+        // The list's changes ([{ key, action, params, instruction }]) and the
+        // folders Apply created (trashed again by Undo once empty). Receipts
+        // from before several changes per list have only action / params.
+        changes: { type: Schema.Types.Mixed, default: undefined },
+        createdFolderIds: { type: [String], default: undefined },
         action: { type: String, required: true },
         params: { type: Schema.Types.Mixed, default: {} },
         ops: { type: [opSchema], default: [] },

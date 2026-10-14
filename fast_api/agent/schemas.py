@@ -71,6 +71,12 @@ class AgentChatRequest(BaseModel):
     workingSet: list[Citation] = Field(default_factory=list, max_length=MAX_WORKING_SET)
     unsavedNotes: list[UnsavedNote] = Field(default_factory=list, max_length=MAX_UNSAVED_NOTES)
     scopes: AgentScopes = Field(default_factory=AgentScopes)
+    # The chat this turn belongs to (None = a new chat). Passed on when saving
+    # a review list, so it can absorb the chat's open lists sharing notes.
+    chatId: str | None = Field(default=None, pattern=r"^[a-fA-F0-9]{24}$")
+    # The user's pending review list in brief ({proposalId, changes: [titles],
+    # notes}), or None — so the agent can tell an add-on from a separate task.
+    pendingList: dict[str, Any] | None = None
 
     @field_validator("workingSet")
     @classmethod

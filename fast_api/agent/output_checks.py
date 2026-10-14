@@ -20,8 +20,8 @@ from .tools import TOOLS
 SHINGLE_WORDS = 8
 # Normal replies echo a few phrases of the guidance (measured Oct 2026: 4-6
 # shared 8-word runs when explaining a draft or the Apply/Skip prompt). Real
-# leaks are far larger: one pasted rule or tool description 9-68, the tool
-# guide 315, a full dump 527. 10 sits between the two.
+# leaks are far larger: one pasted rule or tool description 9-68, a full dump
+# several hundred. 10 sits between the two.
 LEAK_SHINGLE_THRESHOLD = 10
 
 LEAK_REPLY = (

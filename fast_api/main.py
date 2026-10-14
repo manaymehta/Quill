@@ -620,6 +620,8 @@ async def agent_chat(
         note_vectors=agent_note_vectors,
         gemini_client=gemini_client,
         allow_trash=request.scopes.organize and request.scopes.destructive,
+        chat_id=request.chatId,
+        pending_list=request.pendingList,
     )
     events: asyncio.Queue[str | None] = asyncio.Queue()
 

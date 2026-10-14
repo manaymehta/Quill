@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from .bulk import _exact_notes, _filter_reason, _filters
 from .model_calls import AGENT_MODEL, QuotaExceeded, generate_with_retries
 from .schemas import ToolResult
+from .bulk import ADD_TO_PENDING_SCHEMA, save_to_review_list
 from .tools import ToolContext, ToolSpec, _call_express, error_result
 
 MAX_GROUP_NOTES = 200
@@ -197,6 +198,7 @@ SUGGEST_GROUPS_SCHEMA: dict[str, Any] = {
                 "editedWithinDays": {"type": "integer"},
             },
         },
+        "addToPending": ADD_TO_PENDING_SCHEMA,
     },
 }
 
@@ -234,42 +236,31 @@ async def run_suggest_groups(ctx: ToolContext, args: dict[str, Any]) -> ToolResu
     grouped_ids = {n["noteId"] for g in groups for n in g["notes"]}
     ungrouped_count = len(usable) - len(grouped_ids)
 
-    payload, failure = await _call_express(ctx, "POST", "/v1/agent/groupings", summary, json={
-        "instruction": f"group related notes ({_filter_reason(filters, None)})" if filters else "group related notes",
-        "groups": [{
-            "name": g["name"], "tag": g["tag"],
-            "noteIds": [n["noteId"] for n in g["notes"]],
-            "misfits": [{"noteId": nid, "reason": reason} for nid, reason in g["misfits"].items()],
-        } for g in groups],
-        "ungroupedCount": ungrouped_count,
-        "notIndexedCount": not_indexed,
-        "scannedCount": len(notes),
-        "totalCount": total,
+    # Each group becomes two changes in one review list: "move to a new folder
+    # <name>" and "tag #<tag>", shown per group; the user ticks what they want.
+    body = {"groups": [{
+        "name": g["name"], "tag": g["tag"],
+        "noteIds": [n["noteId"] for n in g["notes"]],
+        "misfits": [{"noteId": nid, "reason": reason} for nid, reason in g["misfits"].items()],
+    } for g in groups]}
+    return await save_to_review_list(ctx, body, summary, args.get("addToPending"), {
+        "groups": [{"name": g["name"], "notes": len(g["notes"]), "mayNotFit": len(g["misfits"])} for g in groups],
+        "ungrouped": ungrouped_count,
+        "notIndexed": not_indexed,
+        "scanned": len(notes),
+        "total": total,
+        "groupingNote": ("Each group is offered in the review list as 'move to a new folder' and 'tag', both unticked: the user "
+                         "ticks what they want per group."),
     })
-    if failure:
-        return failure
-    suggestions = {k: payload[k] for k in ("groupingId", "groups", "ungroupedCount", "notIndexedCount", "scannedCount", "totalCount")}
-    return ToolResult(
-        ok=True,
-        data={
-            "groups": [{"name": g["name"], "notes": g["count"], "mayNotFit": g["misfitCount"]} for g in payload["groups"]],
-            "ungrouped": ungrouped_count,
-            "notIndexed": not_indexed,
-            "scanned": len(notes),
-            "total": total,
-            "note": "The user sees these groups as cards and can turn one into a review list (new folder or tag). Nothing changes until they press Apply.",
-        },
-        summary=f"{summary} -> {len(payload['groups'])} groups from {len(usable)} notes",
-        groupSuggestions=suggestions,
-    )
 
 
 SUGGEST_GROUPS = ToolSpec(
     name="suggest_groups",
     description=(
-        "Suggest groups of related notes (by meaning), e.g. \"group my College notes that feel related\". "
-        "Shows the groups as cards; the user can turn a group into a review list that moves it to a new folder "
-        "or tags it. Suggestions only — nothing changes until the user presses Apply."
+        "Suggest groups of related notes (by meaning), e.g. \"group my College notes that feel related\" or "
+        "\"organize my notes\". The groups appear in a review list; per group the user ticks \"move to a new "
+        "folder\" and/or \"tag\". Optional filters limit which notes are grouped. Nothing changes until they "
+        "press Apply."
     ),
     parameters=SUGGEST_GROUPS_SCHEMA,
     executor=run_suggest_groups,

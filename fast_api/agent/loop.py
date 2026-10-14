@@ -88,7 +88,7 @@ def _function_declarations(allowed: set[str] | None = None, allow_trash: bool = 
         if spec.name == "propose_bulk_change" and not allow_trash:
             # Trash turned off: it isn't even an option in the action list.
             parameters = copy.deepcopy(parameters)
-            action = parameters["properties"]["action"]
+            action = parameters["properties"]["changes"]["items"]["properties"]["action"]
             action["enum"] = [a for a in action["enum"] if a != "trash"]
             action["description"] = "move | tag | archive."
         declarations.append(types.FunctionDeclaration(name=spec.name, description=spec.description, parameters=parameters))
@@ -108,6 +108,22 @@ def _scopes_note(scopes: AgentScopes) -> str:
         return ""
     return ("\n\nTurned off by the user in the agent settings (if asked for these, say they're turned off "
             "in the agent settings and can be switched on there): " + "; ".join(off) + ".")
+
+
+def _pending_note(pending: dict[str, Any] | None) -> str:
+    """The user's pending review list, so the agent can say whether new
+    changes add to it (addToPending: true) or are a separate task."""
+    if not pending:
+        # Earlier review lists in this chat were applied or discarded: their
+        # changes must not be carried into new proposals.
+        return ("\n\nNo review list is waiting for Apply right now — earlier ones were applied or discarded. "
+                "Propose only what the user asks for now; don't continue or repeat earlier review lists.")
+    changes = "; ".join(str(c) for c in (pending.get("changes") or [])[:10])
+    return ("\n\nThe user has a review list waiting for Apply (not applied yet): "
+            f"{pending.get('notes', 0)} notes — {changes}. When you propose changes (propose_bulk_change or "
+            "suggest_groups), set addToPending: true if the request continues or adjusts that list, false if it's "
+            "a separate task (it is then held: the user can add it to the waiting list with one click, or show it "
+            "after finishing that list). Never repeat changes already in that list.")
 
 
 async def _execute_tool_call(
@@ -283,7 +299,7 @@ async def run_agent_turn(
 
     scopes = scopes or AgentScopes()
     allowed = allowed_tool_names(scopes)
-    system_instruction = SYSTEM_INSTRUCTION + _scopes_note(scopes)
+    system_instruction = SYSTEM_INSTRUCTION + _scopes_note(scopes) + _pending_note(tool_context.pending_list)
     history = trim_history(history)
     contents = build_contents(message, history, working_set)
 

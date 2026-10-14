@@ -7,30 +7,70 @@ import { useTabsStore } from './useTabsStore';
 import { useToastStore } from './useToastStore';
 
 // ── Bulk changes (review lists, step 3c) ─────────────────────────────────
-// A review list's UI state: likely notes start ticked. status: open →
-// applying → applied → undoing → undone. The server keeps the real record
-// (proposal + receipt); this mirrors it for the chat.
-// A list whose saved record is gone (erased after 3 days; a pinned chat
-// outlives it) is 'expired': shown, but it can't be applied any more.
-const withReviewState = (proposal) => (proposal ? {
-  ...proposal,
-  ticked: proposal.candidates.filter((c) => c.verdict === 'likely').map((c) => c.noteId),
-  status: proposal.expired ? 'expired' : 'open',
-  receipt: null,
-  error: null,
-} : null);
+// The user has at most ONE pending review list (per account), updated in
+// place as changes are added. It's shown in the newest message that holds
+// it; older messages show a one-line pointer ('moved'). Changes the agent
+// prepared for a separate task while a list is pending are 'held': a short
+// card with "Add to the pending list" / "Show it after".
+// A list holds one or more changes; each note is one row with an item per
+// change (labels and clashes worked out by the server). `ticked` holds
+// "noteId|changeKey" per ticked item — likely items start ticked, clashing
+// ones don't. Grouping lists show their changes per group: nothing starts
+// ticked, and `excluded` holds notes left out (those that may not fit).
+// status: open → applying → applied → undoing → undone; also held, moved,
+// expired (record erased after 3 days), discarded, replaced (older lists).
+const itemKey = (noteId, change) => `${noteId}|${change}`;
+
+// Lists saved before several changes per list had one action and a verdict
+// per note.
+const normalizeProposal = (p) => {
+  const changes = p.changes?.length ? p.changes : [{ key: 'c1', action: p.action, params: p.params || {} }];
+  const candidates = (p.candidates || []).map((c) => ({
+    ...c,
+    items: c.items?.length ? c.items : [{ change: 'c1', verdict: c.verdict, reason: c.reason || '', label: '', clashesWith: [] }],
+  }));
+  const openedFrom = Array.isArray(p.openedFrom) ? p.openedFrom : p.openedFrom ? [p.openedFrom] : [];
+  return { ...p, changes, candidates, openedFrom, groups: Array.isArray(p.groups) ? p.groups : [] };
+};
+
+const groupChangeKeys = (p) => new Set(p.groups.flatMap((g) => g.changes));
+
+const withReviewState = (proposal) => {
+  if (!proposal) return null;
+  if (proposal.moved) return { proposalId: proposal.proposalId, status: 'moved' };
+  const p = normalizeProposal(proposal);
+  const grouped = groupChangeKeys(p);
+  return {
+    ...p,
+    ticked: p.candidates.flatMap((c) => c.items
+      .filter((i) => i.verdict === 'likely' && !(i.clashesWith || []).length && !grouped.has(i.change))
+      .map((i) => itemKey(c.noteId, i.change))),
+    excluded: p.candidates.filter((c) => c.items.some((i) => grouped.has(i.change) && i.verdict !== 'likely')).map((c) => c.noteId),
+    status: p.closed || (p.expired ? 'expired' : p.status === 'held' ? 'held' : 'open'),
+    receipt: null,
+    error: null,
+  };
+};
+
+// Notes with at least one ticked item, as Apply's picks.
+export const reviewPicks = (proposal) => proposal.candidates
+  .map((c) => ({ noteId: c.noteId, changes: c.items.filter((i) => proposal.ticked.includes(itemKey(c.noteId, i.change))).map((i) => i.change) }))
+  .filter((p) => p.changes.length > 0);
+
+// The list now lives in a newer message: older messages holding it point there.
+const markMoved = (messages, proposalId) => messages.map((m) => (m.proposal?.proposalId === proposalId && m.proposal.status !== 'moved'
+  ? { ...m, proposal: { proposalId, status: 'moved' } }
+  : m));
 
 const withChoiceState = (choices) => (choices ? { ...choices, opening: null } : null);
-// Group cards: `opening` holds an "index:action" key (action: new-folder | tag).
-const withGroupState = (groups) => (groups ? { ...groups, opening: null } : null);
 
-// A split choice or group-card button that already opened a review list
-// scrolls to it instead of opening a duplicate — unless that list was undone
-// or expired, where a fresh one is the only way to act again.
-// `openedFrom` ("part:<selectionId>:<index>" / "group:<groupingId>:<index>:<action>")
-// is set by the server on the list.
-const findOpenedList = (messages, openedFrom) => messages.find((m) => m.proposal?.openedFrom === openedFrom
-  && m.proposal.status !== 'undone' && m.proposal.status !== 'expired');
+// A split-choice button whose part is already in a list scrolls to it
+// instead of adding it again — unless that list is closed (undone, expired,
+// discarded…), where opening the part again is the only way to act.
+// `openedFrom` (["part:<selectionId>:<index>", …]) is set by the server.
+const CLOSED_STATUSES = ['undone', 'expired', 'replaced', 'discarded', 'moved'];
+const findOpenedList = (messages, openedFrom) => messages.find((m) => m.proposal?.openedFrom?.includes(openedFrom)
+  && !CLOSED_STATUSES.includes(m.proposal.status));
 
 export const CHAT_LIMIT = 10;
 const CHAT_LIMIT_MESSAGE = `${CHAT_LIMIT} chats is the limit — delete one to start a new chat`;
@@ -42,10 +82,15 @@ const refreshNoteLists = () => {
   queryClient.invalidateQueries({ queryKey: ['folders'] });
 };
 
+// "Moved", "Tagged"… for a list or receipt with one change; "Changed" for several.
 export const bulkDoneLabel = (proposal) => {
-  if (proposal.action === 'archive') return proposal.params?.archived === false ? 'Unarchived' : 'Archived';
-  return { move: 'Moved', tag: 'Tagged', trash: 'Moved to trash' }[proposal.action] || 'Done';
+  const changes = proposal.changes?.length ? proposal.changes : [{ action: proposal.action, params: proposal.params }];
+  if (changes.length !== 1) return 'Changed';
+  const { action, params } = changes[0];
+  if (action === 'archive') return params?.archived === false ? 'Unarchived' : 'Archived';
+  return { move: 'Moved', tag: 'Tagged', trash: 'Moved to trash' }[action] || 'Done';
 };
+const singleAction = (proposal) => (proposal.changes?.length === 1 ? proposal.changes[0].action : null);
 
 // Opening a split choice may run the AI check for that part (up to ~45 s).
 const OPEN_PART_TIMEOUT_MS = 60_000;
@@ -145,7 +190,8 @@ export const useAgentStore = create((set, get) => ({
         citations: t.citations || [],
         proposal: withReviewState(t.proposal),
         splitChoices: withChoiceState(t.splitChoices),
-        groupSuggestions: withGroupState(t.groupSuggestions),
+        // Group cards from before grouping made review lists.
+        oldGroupCards: Boolean(t.groupSuggestions),
       }));
       // Review lists already applied (or undone) show their result, not
       // fresh tick boxes: match them to the user's receipts.
@@ -274,7 +320,7 @@ export const useAgentStore = create((set, get) => ({
 
       set({
         messages: [
-          ...get().messages,
+          ...(data.proposal?.status === 'open' ? markMoved(get().messages, data.proposal.proposalId) : get().messages),
           makeMessage({
             role: 'assistant',
             text: data.message || '',
@@ -283,7 +329,6 @@ export const useAgentStore = create((set, get) => ({
             pendingEdits: pending,
             proposal: withReviewState(data.proposal),
             splitChoices: withChoiceState(data.splitChoices),
-            groupSuggestions: withGroupState(data.groupSuggestions),
           }),
         ],
         workingSet: data.workingSet || get().workingSet,
@@ -367,40 +412,128 @@ export const useAgentStore = create((set, get) => ({
   },
 
   // ── Review lists ──
-  toggleReviewNote: (messageId, noteId) => {
+  // Ticking an item unticks the items it clashes with on that note.
+  toggleReviewItem: (messageId, noteId, change) => {
     set({
       messages: get().messages.map((m) => {
         if (m.id !== messageId || m.proposal?.status !== 'open') return m;
-        const ticked = m.proposal.ticked.includes(noteId)
-          ? m.proposal.ticked.filter((id) => id !== noteId)
-          : [...m.proposal.ticked, noteId];
-        return { ...m, proposal: { ...m.proposal, ticked } };
+        const key = itemKey(noteId, change);
+        if (m.proposal.ticked.includes(key)) {
+          return { ...m, proposal: { ...m.proposal, ticked: m.proposal.ticked.filter((k) => k !== key) } };
+        }
+        const item = m.proposal.candidates.find((c) => c.noteId === noteId)?.items.find((i) => i.change === change);
+        const clashing = (item?.clashesWith || []).map((other) => itemKey(noteId, other));
+        return { ...m, proposal: { ...m.proposal, ticked: [...m.proposal.ticked.filter((k) => !clashing.includes(k)), key] } };
       }),
     });
   },
 
-  // One Apply for every ticked note: one server transaction, one receipt.
+  // One Apply for every ticked item: one server transaction, one receipt.
   applyReviewList: async (messageId) => {
     const proposal = get().messages.find((m) => m.id === messageId)?.proposal;
-    if (!proposal || proposal.status !== 'open' || proposal.ticked.length === 0) return;
+    const picks = proposal && reviewPicks(proposal);
+    if (!proposal || proposal.status !== 'open' || picks.length === 0) return;
     const patch = (fields) => set({
       messages: get().messages.map((m) => (m.id === messageId ? { ...m, proposal: { ...m.proposal, ...fields } } : m)),
     });
     patch({ status: 'applying', error: null });
     try {
-      const response = await axiosInstance.post(`/agent/proposals/${proposal.proposalId}/apply`, { noteIds: proposal.ticked });
+      const response = await axiosInstance.post(`/agent/proposals/${proposal.proposalId}/apply`, { picks, version: proposal.version });
       const receipt = response.data.receipt;
       patch({ status: 'applied', receipt });
       refreshNoteLists();
       const count = receipt.counts.applied;
+      const action = singleAction(proposal);
       useToastStore.getState().showToast({
         label: bulkDoneLabel(proposal),
         message: `${count} note${count === 1 ? '' : 's'}`,
-        type: proposal.action === 'trash' ? 'delete' : proposal.action === 'archive' ? 'archive' : 'success',
+        type: action === 'trash' ? 'delete' : action === 'archive' ? 'archive' : 'success',
         onUndo: () => get().undoReviewList(messageId),
       });
     } catch (error) {
-      patch({ status: 'open', error: error?.response?.data?.message || 'Could not apply — nothing was changed. Try again.' });
+      const data = error?.response?.data;
+      // Replaced or discarded meanwhile (another tab): show that instead.
+      const closed = /replaced/.test(data?.message || '') ? 'replaced' : /discarded/.test(data?.message || '') ? 'discarded' : null;
+      patch(closed ? { status: closed } : { status: 'open', error: data?.message || 'Could not apply — nothing was changed. Try again.' });
+    }
+  },
+
+  // Grouping lists: a group's change ("move to a new folder" / "tag") on or
+  // off for the group's notes that aren't left out.
+  toggleGroupChange: (messageId, groupIndex, change) => {
+    set({
+      messages: get().messages.map((m) => {
+        if (m.id !== messageId || m.proposal?.status !== 'open') return m;
+        const group = m.proposal.groups[groupIndex];
+        const keys = group.noteIds.map((noteId) => itemKey(noteId, change));
+        const on = m.proposal.ticked.some((k) => keys.includes(k));
+        const ticked = on
+          ? m.proposal.ticked.filter((k) => !keys.includes(k))
+          : [...m.proposal.ticked, ...group.noteIds.filter((id) => !m.proposal.excluded.includes(id)).map((id) => itemKey(id, change))];
+        return { ...m, proposal: { ...m.proposal, ticked } };
+      }),
+    });
+  },
+
+  // A note in a group in or out (its group's ticked changes follow).
+  toggleGroupNote: (messageId, groupIndex, noteId) => {
+    set({
+      messages: get().messages.map((m) => {
+        if (m.id !== messageId || m.proposal?.status !== 'open') return m;
+        const group = m.proposal.groups[groupIndex];
+        const out = m.proposal.excluded.includes(noteId);
+        const onChanges = group.changes.filter((change) => m.proposal.ticked.some((k) => group.noteIds.some((id) => k === itemKey(id, change))));
+        const own = group.changes.map((change) => itemKey(noteId, change));
+        return {
+          ...m,
+          proposal: {
+            ...m.proposal,
+            excluded: out ? m.proposal.excluded.filter((id) => id !== noteId) : [...m.proposal.excluded, noteId],
+            ticked: out
+              ? [...m.proposal.ticked, ...onChanges.map((change) => itemKey(noteId, change))]
+              : m.proposal.ticked.filter((k) => !own.includes(k)),
+          },
+        };
+      }),
+    });
+  },
+
+  // Held changes → into the pending list ('add') or, once nothing else is
+  // pending, shown as the pending list ('show'). The list then lives in this
+  // message; older messages showing it point here.
+  releaseHeld: async (messageId, how) => {
+    const proposal = get().messages.find((m) => m.id === messageId)?.proposal;
+    if (!proposal || proposal.status !== 'held' || proposal.releasing) return;
+    const patch = (fields) => set({
+      messages: get().messages.map((m) => (m.id === messageId ? { ...m, proposal: { ...m.proposal, ...fields } } : m)),
+    });
+    patch({ releasing: how, error: null });
+    try {
+      const data = (await axiosInstance.post(`/agent/proposals/${proposal.proposalId}/${how}`)).data;
+      if (data.empty) return patch({ releasing: null, status: 'discarded', error: data.message });
+      set({
+        messages: markMoved(get().messages, data.proposalId).map((m) => (m.id === messageId ? { ...m, proposal: withReviewState(data) } : m)),
+        scrollTarget: { messageId, at: Date.now() },
+      });
+    } catch (error) {
+      patch({ releasing: null, error: error?.response?.data?.message || 'Could not do that. Try again.' });
+    }
+  },
+
+  // Close a pending list or held changes without applying them.
+  discardReviewList: async (messageId) => {
+    const proposal = get().messages.find((m) => m.id === messageId)?.proposal;
+    if (!proposal || (proposal.status !== 'open' && proposal.status !== 'held')) return;
+    const patch = (fields) => set({
+      messages: get().messages.map((m) => (m.id === messageId ? { ...m, proposal: { ...m.proposal, ...fields } } : m)),
+    });
+    try {
+      await axiosInstance.post(`/agent/proposals/${proposal.proposalId}/discard`);
+      patch({ status: 'discarded', error: null });
+    } catch (error) {
+      const data = error?.response?.data;
+      if (data?.status === 'replaced' || data?.status === 'discarded') patch({ status: data.status });
+      else patch({ error: data?.message || 'Could not discard. Try again.' });
     }
   },
 
@@ -442,51 +575,20 @@ export const useAgentStore = create((set, get) => ({
       );
       const data = response.data;
       patch({ opening: null });
+      if (data.empty) return showError(data.message || 'Nothing to change — these notes are already like that.');
       set({
-        messages: [...get().messages, makeMessage({
+        messages: [...markMoved(get().messages, data.proposalId), makeMessage({
           role: 'assistant',
-          text: `Opened “${data.partLabel}” — ${data.candidates.length} notes to review below.`,
+          text: data.extended
+            ? `Added “${data.partLabel}” to your pending list — review it below.`
+            : `Opened “${data.partLabel}” — ${data.candidates.length} notes to review below.`,
           citations: [],
-          proposal: withReviewState({
-            proposalId: data.proposalId, action: data.action, params: data.params, candidates: data.candidates, openedFrom: data.openedFrom,
-          }),
+          proposal: withReviewState(data),
         })],
       });
     } catch (error) {
       patch({ opening: null });
       useTabsStore.getState().showTabToast(error?.response?.data?.message || 'Could not open that part. Try again.', 'error');
-    }
-  },
-
-  // A suggested group → its own review list (move to a new folder, or tag),
-  // added to the chat as a new message.
-  openGroupAction: async (messageId, index, action) => {
-    const groups = get().messages.find((m) => m.id === messageId)?.groupSuggestions;
-    if (!groups || groups.opening !== null || groups.expired) return;
-    const key = `${index}:${action}`;
-    const existing = findOpenedList(get().messages, `group:${groups.groupingId}:${key}`);
-    if (existing) return set({ scrollTarget: { messageId: existing.id, at: Date.now() } });
-    const patch = (fields) => set({
-      messages: get().messages.map((m) => (m.id === messageId ? { ...m, groupSuggestions: { ...m.groupSuggestions, ...fields } } : m)),
-    });
-    patch({ opening: key });
-    try {
-      const response = await axiosInstance.post(`/agent/groupings/${groups.groupingId}/groups/${index}/propose`, { action });
-      const data = response.data;
-      patch({ opening: null });
-      set({
-        messages: [...get().messages, makeMessage({
-          role: 'assistant',
-          text: `Review list for “${data.groupName}” — ${data.candidates.length} notes below.`,
-          citations: [],
-          proposal: withReviewState({
-            proposalId: data.proposalId, action: data.action, params: data.params, candidates: data.candidates, openedFrom: data.openedFrom,
-          }),
-        })],
-      });
-    } catch (error) {
-      patch({ opening: null });
-      showError(error?.response?.data?.message || 'Could not prepare that review list. Try again.');
     }
   },
 

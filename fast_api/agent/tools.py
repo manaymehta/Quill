@@ -58,6 +58,14 @@ class ToolContext:
     note_vectors: Callable[..., Awaitable[dict[str, dict[str, Any]]]] | None = None
     # Permission toggle "destructive": may bulk changes send notes to trash?
     allow_trash: bool = False
+    # The chat this turn belongs to (None = new), for review lists.
+    chat_id: str | None = None
+    # The user's pending review list in brief (one per account), or None.
+    pending_list: dict[str, Any] | None = None
+    # What this reply did with review lists so far: "addedToPending" once it
+    # created or extended the pending list (later calls add to it too), or
+    # "heldId" — the held list it started (later separate calls extend it).
+    bulk_draft: dict[str, Any] = field(default_factory=dict)
 
 
 _UNSAVED_FIELDS = ("title", "content", "tags", "isChecklist", "checklist")
@@ -585,8 +593,9 @@ async def run_list_notes(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     # Filter on what the user sees: unsaved titles/tags count.
     notes = [with_unsaved(ctx, n)[0] for n in payload.get("notes", [])]
     if args.get("tag"):
-        wanted = str(args["tag"]).strip().lower()
-        notes = [n for n in notes if any(str(t).lower() == wanted for t in n.get("tags", []))]
+        # Tags match exactly, capitals included (as in the app).
+        wanted = str(args["tag"]).strip().lstrip("#")
+        notes = [n for n in notes if any(str(t) == wanted for t in n.get("tags", []))]
     if args.get("untitled"):
         notes = [n for n in notes if not str(n.get("title", "") or "").strip()]
 
@@ -835,8 +844,8 @@ async def run_list_tags(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
     Reads /v1/get-graph-notes (every non-trashed note's title + tags, no
     limit), so the list is complete — list_notes and search only ever see a
-    capped sample. Tags differing only in letter case count as one, shown in
-    their most common spelling.
+    capped sample. Tags are exact: "Docker" and "docker" are two tags (as in
+    the app).
     """
     include_archived = args.get("includeArchived", True) is not False
     summary = "list_tags()"
@@ -849,26 +858,16 @@ async def run_list_tags(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
     notes = payload.get("notes", [])
     counts: dict[str, int] = {}
-    spellings: dict[str, dict[str, int]] = {}
     untagged = 0
     for note in notes:
         tags = {str(t).strip() for t in note.get("tags") or [] if str(t).strip()}
         if not tags:
             untagged += 1
-        seen: set[str] = set()
         for tag in tags:
-            key = tag.casefold()
-            spellings.setdefault(key, {}).setdefault(tag, 0)
-            spellings[key][tag] += 1
-            if key not in seen:
-                seen.add(key)
-                counts[key] = counts.get(key, 0) + 1
+            counts[tag] = counts.get(tag, 0) + 1
 
     ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-    tags_out = [
-        {"tag": max(spellings[key].items(), key=lambda kv: kv[1])[0], "notes": count}
-        for key, count in ranked[:MAX_TAGS_RETURNED]
-    ]
+    tags_out = [{"tag": tag, "notes": count} for tag, count in ranked[:MAX_TAGS_RETURNED]]
     data: dict[str, Any] = {
         "tags": tags_out,
         "totalTags": len(ranked),
@@ -902,13 +901,13 @@ TOOLS: dict[str, ToolSpec] = {
     "search_notes": ToolSpec(
         name="search_notes",
         description=(
-            "Search the user's notes by meaning, plus optional exact keywords. "
-            "Returns the best-matching notes with the passages that matched, "
-            "labelled match: strong or partial (partial = loosely related; say "
-            "so or leave it out) and how they matched. This is the ONLY way to "
-            "learn what is in the notes — call it before claiming anything "
-            "about their contents. Use get_note when the excerpts aren't "
-            "enough or moreNotShown says passages were left out."
+            "Search the user's notes by meaning, plus keywords for exact words "
+            "(names, codes, tags, rare terms). Returns the best-matching notes "
+            "with the passages that matched, labelled match: strong or partial. "
+            "Build answers on strong matches; use partial ones (loosely "
+            "related) only when nothing strong answers, and say so. This is "
+            "the ONLY way to learn what is in the notes. Use get_note when the "
+            "excerpts aren't enough or moreNotShown says passages were left out."
         ),
         parameters=SEARCH_NOTES_SCHEMA,
         executor=run_search_notes,
@@ -981,8 +980,10 @@ TOOLS: dict[str, ToolSpec] = {
             "result), staged in the user's dock as an unsaved draft with the "
             "changes highlighted. Never saves on its own. To change the "
             "content or checklist, first read the note with get_note in the "
-            "same turn and build on its current text. To move a note to "
-            "another folder, say you cannot — that is not a draft action."
+            "same turn, build on its current text and keep everything the user "
+            "didn't ask to change — never rewrite it from memory of earlier "
+            "turns. Moving, tagging or archiving notes is propose_bulk_change, "
+            "not an edit."
         ),
         parameters=STAGE_NOTE_EDIT_SCHEMA,
         executor=run_stage_note_edit,

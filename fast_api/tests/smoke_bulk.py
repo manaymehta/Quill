@@ -1,7 +1,9 @@
-"""Offline check of step 3b (no network): split choices, the borderline
-checker's validation (unknown/duplicate labels, re-ask, unjudged), the
+"""Offline check of step 3b (no network): the borderline checker's
+validation (unknown/duplicate labels, re-ask, unjudged), the
 likely/borderline sorting, and propose_bulk_change end to end with a fake
-Express and a fake Gemini."""
+Express and a fake Gemini: several changes per call, one list per reply
+(`replaces`), the chat passed on, exact tags, split choices from Express.
+(Combining per note and splitting are Express's: test-agent-multi-change.js.)"""
 import asyncio
 import os
 import sys
@@ -58,25 +60,6 @@ async def main():
         results.append(ok)
         print(f"{'PASS' if ok else 'FAIL'}  {name}{('  — ' + detail) if detail else ''}")
 
-    # Split choices.
-    notes = ([{"noteId": nid(i), "folder": "College", "tags": ["react"] if i < 40 else ["vue"], "lastEdited": "2026-01-01"} for i in range(70)]
-             + [{"noteId": nid(100 + i), "folder": None, "tags": [], "lastEdited": "2025-03-01"} for i in range(30)])
-    parts = bulk.split_parts(notes)
-    ids = [x for p in parts for x in p["noteIds"]]
-    check("split: every note in exactly one part, none over 50",
-          len(ids) == 100 and len(set(ids)) == 100 and all(len(p["noteIds"]) <= 50 for p in parts),
-          str([(p["label"], len(p["noteIds"])) for p in parts]))
-    check("split: by folder first, then by tag inside a big folder",
-          [p["label"] for p in parts] == ["College · #react", "College · #vue", "No folder"])
-    flat = [{"noteId": nid(i), "folder": None, "tags": [], "lastEdited": f"{2020 + i % 2}-06-01"} for i in range(80)]
-    years = bulk.split_parts(flat)
-    check("split: no folders/tags → by year", sorted(p["label"] for p in years) == ["Edited 2020", "Edited 2021"])
-    same = [{"noteId": nid(i), "folder": None, "tags": [], "lastEdited": "2026-01-01"} for i in range(120)]
-    rel = bulk.split_parts(same)
-    check("split: nothing distinguishes them → by relevance, in order",
-          [(p["label"], len(p["noteIds"])) for p in rel] == [("Most relevant 50", 50), ("Next 50", 50), ("Remaining 20", 20)]
-          and rel[0]["noteIds"][0] == nid(0))
-
     # The checker's validation.
     items = [{"noteId": nid(i), "title": t, "texts": ["text"], "strong": False, "keywordHit": False}
              for i, t in enumerate(["Docker deploy", "Groceries", "Docker swarm", "Recipes"])]
@@ -105,41 +88,91 @@ async def main():
 
     # propose_bulk_change end to end (fake Express).
     calls = []
-    exact_notes = [{"noteId": nid(i), "title": f"Old {i}", "folderId": None, "folder": None, "tags": [], "isArchived": False,
+    exact_notes = [{"noteId": nid(i), "title": f"Old {i}", "folderId": None, "folder": None, "tags": ["old"], "isArchived": False,
                     "lastEdited": "2025-01-01"} for i in range(3)]
+    express_split = {"on": False}
 
     async def fake_express(ctx, method, path, summary, **kwargs):
         body = kwargs.get("json", {})
         calls.append((path, body))
         if path == "/v1/agent/select-notes":
-            n = 3 if body["filters"].get("untitled") else 75
-            return {"notes": exact_notes if n == 3 else [dict(exact_notes[0], noteId=nid(i), folder="F" if i < 40 else None) for i in range(n)],
-                    "truncated": False}, None
+            if body["filters"].get("tag") == "Old":     # exact tags: no note has "Old"
+                return {"notes": [], "truncated": False}, None
+            return {"notes": exact_notes, "truncated": False}, None
         if path == "/v1/agent/proposals":
-            return {"proposalId": "p1", "action": body["action"], "params": body["params"],
-                    "candidates": [{"noteId": c["noteId"], "title": "t", "folder": None, "verdict": c["verdict"], "reason": c["reason"]} for c in body["candidates"]]}, None
-        if path == "/v1/agent/selections":
-            return {"selectionId": "s1", "params": body["params"], "parts": [{"index": i, "label": p["label"], "count": len(p["noteIds"])} for i, p in enumerate(body["parts"])]}, None
+            if express_split["on"]:
+                return {"splitChoices": {"selectionId": "s1", "total": 75, "changes": [], "parts": [{"index": 0, "label": "A", "count": 50},
+                        {"index": 1, "label": "B", "count": 25}]}}, None
+            changes = [{"key": f"c{i + 1}", "action": c["action"], "params": c["params"], "title": f"change {i + 1}"} for i, c in enumerate(body["changes"])]
+            note_ids = list(dict.fromkeys(cand["noteId"] for c in body["changes"] for cand in c["candidates"]))
+            candidates = [{"noteId": n, "title": "t", "folder": None, "items": [
+                {"change": f"c{i + 1}", "verdict": cand["verdict"], "reason": cand["reason"], "label": f"label {i + 1}", "clashesWith": []}
+                for i, c in enumerate(body["changes"]) for cand in c["candidates"] if cand["noteId"] == n]} for n in note_ids]
+            held = body["mode"] == "separate"
+            return {"proposalId": body.get("heldId") or ("h1" if held else "p1"), "status": "held" if held else "open", "version": 1,
+                    "heldReason": "separate" if held else None, "changes": changes, "candidates": candidates, "groups": [],
+                    "openedFrom": [], "clashCount": 0, "extended": False}, None
         return None, tools.error_result("x", "unexpected", recoverable=False, summary=summary)
 
     bulk._call_express = fake_express
     ctx2 = ToolContext(user_id="u", auth_header="Bearer x", express_base_url="http://x")
-    r = await bulk.run_propose_bulk_change(ctx2, {"action": "archive", "filters": {"untitled": True, "notEditedForDays": 180}})
+    r = await bulk.run_propose_bulk_change(ctx2, {"changes": [{"action": "archive", "filters": {"untitled": True, "notEditedForDays": 180}}]})
+    sent = next(b for p, b in calls if p == "/v1/agent/proposals")
     check("tool: exact filters → complete list, all likely, reason from the filters, no AI",
           r.ok and r.proposal["proposalId"] == "p1" and len(r.proposal["candidates"]) == 3
-          and r.proposal["candidates"][0]["reason"] == "untitled · not edited for 180+ days" and calls[0][0] == "/v1/agent/select-notes",
-          r.proposal["candidates"][0]["reason"])
-    check("tool: the model sees titles + verdicts only", "reviewList" in r.data and "texts" not in str(r.data) and "noteId" not in str(r.data))
+          and sent["changes"][0]["candidates"][0]["reason"] == "untitled · not edited for 180+ days" and calls[0][0] == "/v1/agent/select-notes",
+          str(sent["changes"][0]["candidates"][0]))
+    check("tool: the model sees titles + change labels only", "reviewList" in r.data and "texts" not in str(r.data)
+          and "noteId" not in str(r.data) and "label 1" in str(r.data))
+    check("tool: nothing pending → the changes start the list", sent["mode"] == "add" and sent["split"] is True
+          and ctx2.bulk_draft == {"addedToPending": True})
+
     calls.clear()
-    r2 = await bulk.run_propose_bulk_change(ctx2, {"action": "move", "targetFolderId": "none", "filters": {"tag": "old"}})
-    sel = next(b for p, b in calls if p == "/v1/agent/selections")
-    check("tool: >50 matches → split choices saved, no review list yet",
-          r2.ok and r2.splitChoices["selectionId"] == "s1" and r2.proposal is None and r2.splitChoices["total"] == 75
-          and [p["label"] for p in sel["parts"]] == ["F", "No folder"], str([p["label"] for p in sel["parts"]]))
-    r3 = await bulk.run_propose_bulk_change(ctx2, {"action": "tag"})
-    check("tool: tag without tags, or no filters/topic → recoverable error", not r3.ok and r3.error.recoverable)
-    r4 = await bulk.run_propose_bulk_change(ctx2, {"action": "delete", "filters": {"tag": "x"}})
-    check("tool: no delete action", not r4.ok)
+    r2 = await bulk.run_propose_bulk_change(ctx2, {"changes": [
+        {"action": "tag", "removeTags": ["old"], "addTags": ["oldz"], "filters": {"tag": "old"}},
+        {"action": "tag", "removeTags": ["Old"], "addTags": ["Oldz"], "filters": {"tag": "Old"}},
+    ]})
+    sent2 = next(b for p, b in calls if p == "/v1/agent/proposals")
+    check("tool: several changes in one call", r2.ok and len(sent2["changes"]) == 1 and sent2["mode"] == "add")
+    check("tool: a tag no note has exactly is reported, the other changes go ahead",
+          "Old" in str(r2.data.get("problems")) and "exactly" in str(r2.data.get("problems")), str(r2.data.get("problems")))
+
+    # A list is already waiting (one per account): add-on or separate task.
+    pending = {"proposalId": "p0", "changes": ["#a → #b"], "notes": 2}
+    ctx3 = ToolContext(user_id="u", auth_header="Bearer x", express_base_url="http://x", chat_id="a" * 24, pending_list=pending)
+    calls.clear()
+    r3 = await bulk.run_propose_bulk_change(ctx3, {"changes": [{"action": "archive", "filters": {"tag": "old"}}], "addToPending": False})
+    sent3 = next(b for p, b in calls if p == "/v1/agent/proposals")
+    check("tool: a separate task while a list waits → held; the chat is passed on",
+          sent3["mode"] == "separate" and sent3["chatId"] == "a" * 24 and r3.proposal["status"] == "held"
+          and ctx3.bulk_draft == {"heldId": "h1"} and "held" in r3.data["note"].lower())
+    calls.clear()
+    await bulk.run_propose_bulk_change(ctx3, {"changes": [{"action": "tag", "addTags": ["x"], "filters": {"tag": "old"}}]})
+    sent4 = next(b for p, b in calls if p == "/v1/agent/proposals")
+    check("tool: the reply's next separate change extends its held list", sent4["mode"] == "separate" and sent4["heldId"] == "h1")
+    ctx4 = ToolContext(user_id="u", auth_header="Bearer x", express_base_url="http://x", pending_list=pending)
+    calls.clear()
+    await bulk.run_propose_bulk_change(ctx4, {"changes": [{"action": "archive", "filters": {"tag": "old"}}], "addToPending": True})
+    await bulk.run_propose_bulk_change(ctx4, {"changes": [{"action": "archive", "filters": {"tag": "old"}}], "addToPending": False})
+    modes = [b["mode"] for p, b in calls if p == "/v1/agent/proposals"]
+    check("tool: an add-on goes into the waiting list; once added, the reply keeps adding", modes == ["add", "add"], str(modes))
+    import agent.loop as loop_module
+    note = loop_module._pending_note(pending)
+    check("loop: the model is told about the waiting list and addToPending", "#a → #b" in note and "addToPending" in note
+          and "No review list is waiting" in loop_module._pending_note(None))
+
+    express_split["on"] = True
+    r4 = await bulk.run_propose_bulk_change(ctx2, {"changes": [{"action": "move", "targetFolderId": "none", "filters": {"tag": "old"}}]})
+    check("tool: Express says too many → split choices, no review list",
+          r4.ok and r4.splitChoices["selectionId"] == "s1" and r4.proposal is None)
+    express_split["on"] = False
+
+    r5 = await bulk.run_propose_bulk_change(ctx2, {"changes": [{"action": "tag"}]})
+    check("tool: tag without tags, or no filters/topic → recoverable error", not r5.ok and r5.error.recoverable)
+    r6 = await bulk.run_propose_bulk_change(ctx2, {"changes": [{"action": "delete", "filters": {"tag": "x"}}]})
+    check("tool: no delete action", not r6.ok)
+    r7 = await bulk.run_propose_bulk_change(ctx2, {"changes": [{"action": "tag", "addTags": ["x"], "filters": {"tag": "old"}}] * 11})
+    check("tool: at most 10 changes per call", not r7.ok)
 
     # Permission toggles (step 3d).
     import agent.loop as loop
@@ -150,11 +183,11 @@ async def main():
           {"draft_note", "stage_note_edit", "propose_bulk_change"} <= all_on
           and not ({"draft_note", "stage_note_edit", "propose_bulk_change"} & read_only) and "search_notes" in read_only)
     decl = {d.name: d for d in loop._function_declarations(all_on, allow_trash=False)}
-    enum = decl["propose_bulk_change"].parameters.properties["action"].enum
+    enum = decl["propose_bulk_change"].parameters.properties["changes"].items.properties["action"].enum
     check("scopes: trash off → not even offered as an action", "trash" not in enum and "archive" in enum, str(enum))
-    check("scopes: the registry's own schema is untouched", "trash" in bulk.PROPOSE_BULK_CHANGE_SCHEMA["properties"]["action"]["enum"])
-    r5 = await bulk.run_propose_bulk_change(ctx2, {"action": "trash", "filters": {"tag": "x"}})
-    check("scopes: the tool refuses trash when it's off (backstop)", not r5.ok and r5.error.code == "not_allowed")
+    check("scopes: the registry's own schema is untouched", "trash" in bulk.CHANGE_SCHEMA["properties"]["action"]["enum"])
+    r8 = await bulk.run_propose_bulk_change(ctx2, {"changes": [{"action": "trash", "filters": {"tag": "x"}}]})
+    check("scopes: the tool refuses trash when it's off (backstop)", not r8.ok and r8.error.code == "not_allowed")
     note = loop._scopes_note(AgentScopes(compose=False, organize=True, destructive=False))
     check("scopes: the model is told what's turned off", "drafting" in note and "trash" in note)
 

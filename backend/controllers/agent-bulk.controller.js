@@ -4,13 +4,17 @@ const Folder = require("../models/folder.model");
 const AgentProposal = require("../models/agent-proposal.model");
 const AgentReceipt = require("../models/agent-receipt.model");
 const AgentSelection = require("../models/agent-selection.model");
-const AgentGrouping = require("../models/agent-grouping.model");
+const AgentChat = require("../models/agent-chat.model");
 const { withRequiredTransaction, TransactionsUnavailableError } = require("../services/mongo-transaction.service");
 const { collectSubtreeFolderIds, getUserFolders } = require("../services/folder-tree.service");
 const {
     isValidFolderId, findLivingFolder, livingFolderId, moveToFolder, setArchived, trashFields, restoreFromTrash,
     createFolderRecord, trashFolderIfEmpty,
 } = require("../services/note-actions.service");
+const {
+    MAX_LIST, groupParts, planFromProposal, planFromSelection, restrictPlan, mergePlans, buildCandidates, applyChanges, changeTitle, splitParts,
+} = require("../services/bulk-plan.service");
+const { changesOf, pendingOf, pendingSummary, markMoved } = require("../services/pending-list.service");
 const { triggerEmbed, deleteEmbed } = require("./note.controller");
 const { appendTurns } = require("./agent.controller");
 const { allowsBulkAction, getAgentScopes } = require("../services/agent-scopes.service");
@@ -22,17 +26,22 @@ const SCOPE_OFF_MESSAGE = (action) => (action === "trash"
 // The agent's bulk changes (architecture plan §2.3, step 3a):
 // propose (a saved review list) → apply (one transaction, receipt in the same
 // transaction) → undo (one transaction, never over the user's newer edits).
-// Every query is scoped to req.user._id; there is no permanent-delete action.
+// A review list holds one or more changes, combined per note
+// (services/bulk-plan.service.js). Every query is scoped to req.user._id;
+// there is no permanent-delete action.
 
 const ACTIONS = new Set(["move", "tag", "archive", "trash"]);
 const VERDICTS = new Set(["likely", "rejected", "unjudged"]);
-const MAX_NOTES = 50;
+const MAX_NOTES = MAX_LIST;
+const MAX_CHANGES = 20;
+const MAX_SELECTION_NOTES = 2000;
 const MAX_TAGS_PER_ACTION = 10;
 const MAX_TAG_CHARS = 50;
 const MAX_REASON_CHARS = 300;
 const MAX_INSTRUCTION_CHARS = 500;
 const MAX_FOLDER_NAME_CHARS = 80;
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+const OVER_LIMIT_MESSAGE = `Your pending list would go over ${MAX_NOTES} notes with this — apply or discard it first.`;
 
 // The fields an action reads or writes; compared to detect a note changed by
 // the user since the review list was shown (apply) or since the agent changed
@@ -97,22 +106,9 @@ const normalizeParams = async (action, params, userId) => {
     return { params: {} };   // trash
 };
 
-// Mutates `note` per the action, using the same rules as the app's own routes
-// (services/note-actions.service.js). The move target was checked when the
-// review list was saved; Apply re-checks it inside the transaction.
-const applyAction = async (note, action, params, userId, session) => {
-    if (action === "move") {
-        moveToFolder(note, params.targetFolderId);
-    } else if (action === "tag") {
-        const tags = (note.tags || []).filter((t) => !params.remove.includes(t));
-        for (const t of params.add) if (!tags.includes(t)) tags.push(t);
-        note.tags = tags;
-    } else if (action === "archive") {
-        await setArchived(note, params.archived, userId, session);
-    } else if (action === "trash") {
-        Object.assign(note, trashFields());
-    }
-};
+const itemsOf = (candidate) => (Array.isArray(candidate.items) && candidate.items.length > 0
+    ? candidate.items
+    : [{ change: "c1", verdict: candidate.verdict || "likely", reason: candidate.reason || "", label: "", clashesWith: [] }]);
 
 const summarizeReceipt = (receipt) => {
     const counts = { applied: 0, skippedChanged: 0, skippedUnchanged: 0, undone: 0, undoSkipped: 0 };
@@ -128,6 +124,7 @@ const summarizeReceipt = (receipt) => {
         proposalId: receipt.proposalId,
         action: receipt.action,
         params: receipt.params,
+        changes: changesOf(receipt).map((c) => ({ key: c.key, action: c.action, params: c.params, title: changeTitle(c) })),
         instruction: receipt.instruction,
         status: receipt.status,
         createdAt: receipt.createdAt,
@@ -140,6 +137,10 @@ const summarizeReceipt = (receipt) => {
 // Search-index follow-ups after a commit (fire-and-forget, like note saves):
 // trashed notes lose their pieces; restored / re-tagged / (un)archived notes
 // are re-indexed. Moves need nothing (folders aren't indexed).
+const indexedChange = (before, after) => Boolean(before && after) && (
+    before.isDeleted !== after.isDeleted || before.isArchived !== after.isArchived
+    || [...before.tags].sort().join("\u0000") !== [...after.tags].sort().join("\u0000"));
+
 const syncSearchIndex = (changes, userId) => {
     for (const { noteId, wasDeleted, isDeleted } of changes) {
         const job = isDeleted && !wasDeleted
@@ -163,92 +164,367 @@ const transactionError = (res, req, error) => {
     return res.status(500).json({ error: true, message: "Internal Server Error" });
 };
 
-// Saves a review list for this user: validates the action, loads each note
-// (this user's, not trashed — anything else is refused), and stores the
-// snapshot Apply will compare against. Returns { status, body }.
-const saveProposal = async (userId, { action, params, instruction, candidates }, chatId = null) => {
-    if (!ACTIONS.has(action)) return { status: 400, body: { error: true, message: "action must be move, tag, archive or trash" } };
-    if (!Array.isArray(candidates) || candidates.length === 0 || candidates.length > MAX_NOTES) {
-        return { status: 400, body: { error: true, message: `candidates must hold 1-${MAX_NOTES} notes` } };
-    }
-    if (instruction !== undefined && (typeof instruction !== "string" || instruction.length > MAX_INSTRUCTION_CHARS)) {
-        return { status: 400, body: { error: true, message: "instruction is too long" } };
-    }
-    const seen = new Set();
-    for (const c of candidates) {
-        if (!c || typeof c.noteId !== "string" || !OBJECT_ID_RE.test(c.noteId) || seen.has(c.noteId)) {
-            return { status: 400, body: { error: true, message: "candidates must be distinct note IDs" } };
-        }
-        if (c.verdict !== undefined && !VERDICTS.has(c.verdict)) return { status: 400, body: { error: true, message: "Invalid verdict" } };
-        if (c.reason !== undefined && (typeof c.reason !== "string" || c.reason.length > MAX_REASON_CHARS)) {
-            return { status: 400, body: { error: true, message: "reason is too long" } };
-        }
-        seen.add(c.noteId);
-    }
-
-    // The permission toggles are enforced here too, not only in the tool menu.
-    if (!allowsBulkAction(await getAgentScopes(userId), action)) {
-        return { status: 403, body: { error: true, message: SCOPE_OFF_MESSAGE(action) } };
-    }
-    const normalized = await normalizeParams(action, params, userId);
-    if (normalized.error) return { status: 400, body: { error: true, message: normalized.error } };
-
-    const notes = await Note.find({ _id: { $in: [...seen] }, userId, isDeleted: { $ne: true } })
-        .select("_id title folderId showInHome tags isArchived isDeleted").lean();
-    const byId = new Map(notes.map((n) => [String(n._id), n]));
-    const missing = [...seen].filter((id) => !byId.has(id));
-    if (missing.length > 0) return { status: 400, body: { error: true, message: "Some notes were not found", missing } };
-    const folderNames = await folderNameMap(notes, userId);
-
-    const proposal = await AgentProposal.create({
-        proposalId: crypto.randomUUID(),
-        userId,
-        chatId,
-        action,
-        params: normalized.params,
-        instruction: instruction || "",
-        candidates: candidates.map((c) => {
-            const note = byId.get(c.noteId);
-            return { noteId: c.noteId, title: note.title || "", verdict: c.verdict || "likely", reason: c.reason || "", snapshot: stateOf(note) };
-        }),
-    });
-    return {
-        status: 201,
-        body: {
-            error: false,
-            proposalId: proposal.proposalId,
-            action,
-            params: normalized.params,
-            candidates: proposal.candidates.map((c) => {
-                const folderId = byId.get(c.noteId).folderId;
-                return { noteId: c.noteId, title: c.title, folder: folderId ? folderNames.get(String(folderId)) || null : null, verdict: c.verdict, reason: c.reason };
-            }),
-        },
-    };
-};
-
 const folderNameMap = async (notes, userId) => {
     const folderIds = [...new Set(notes.map((n) => n.folderId).filter(Boolean).map(String))];
     const folders = folderIds.length ? await Folder.find({ _id: { $in: folderIds }, userId }).select("_id name").lean() : [];
     return new Map(folders.map((f) => [String(f._id), f.name || ""]));
 };
 
-// POST /v1/agent/proposals — save a review list (called by the agent).
+// ── Saving a review list ──
+//
+// The user has at most ONE pending (open) list across the account, updated
+// in place: new changes are added to it, so two lists can never compete for
+// the same note. While one is pending, the agent's changes for a separate
+// task are "held" (not appliable) until the user adds them to the pending
+// list or shows them after finishing it. Buttons (split choices) always add.
+
+const MAX_GROUPS = 8;
+const MAX_GROUP_NAME_CHARS = 40;
+const GROUP_TAG_RE = /^[a-z0-9-]{1,30}$/;
+
+const parseCandidates = (list, key, items) => {
+    if (!Array.isArray(list) || list.length === 0 || list.length > MAX_SELECTION_NOTES) {
+        return `each change needs 1-${MAX_SELECTION_NOTES} notes`;
+    }
+    const seen = new Set();
+    for (const cand of list) {
+        if (!cand || typeof cand.noteId !== "string" || !OBJECT_ID_RE.test(cand.noteId) || seen.has(cand.noteId)) {
+            return "candidates must be distinct note IDs";
+        }
+        if (cand.verdict !== undefined && !VERDICTS.has(cand.verdict)) return "Invalid verdict";
+        if (cand.reason !== undefined && (typeof cand.reason !== "string" || cand.reason.length > MAX_REASON_CHARS)) return "reason is too long";
+        seen.add(cand.noteId);
+        items.set(cand.noteId, [...(items.get(cand.noteId) || []), {
+            change: key, verdict: cand.verdict || "likely", reason: cand.reason || "", pending: cand.pending === true,
+        }]);
+    }
+    return null;
+};
+
+// The request's changes as a plan. Accepts { changes: [{ action, params,
+// instruction, topic, keywords, candidates: [{ noteId, verdict, reason,
+// pending }] }] }, the single-change form { action, params, instruction,
+// candidates }, or grouping's { groups: [{ name, tag, noteIds, misfits }] }
+// (each group → "move to new folder <name>" + "tag #<tag>"). Returns
+// { plan } or { error }.
+const planFromInput = async (body, userId) => {
+    if (Array.isArray(body.groups)) return planFromGroups(body.groups);
+    const raw = Array.isArray(body.changes)
+        ? body.changes
+        : [{ action: body.action, params: body.params, instruction: body.instruction, candidates: body.candidates }];
+    if (raw.length === 0 || raw.length > MAX_CHANGES) return { error: `changes must hold 1-${MAX_CHANGES} changes` };
+    const changes = [];
+    const items = new Map();
+    for (const [index, c] of raw.entries()) {
+        if (!c || typeof c !== "object") return { error: "Invalid change" };
+        if (!ACTIONS.has(c.action)) return { error: "action must be move, tag, archive or trash" };
+        if (c.instruction !== undefined && (typeof c.instruction !== "string" || c.instruction.length > MAX_INSTRUCTION_CHARS)) {
+            return { error: "instruction is too long" };
+        }
+        if (c.topic !== undefined && (typeof c.topic !== "string" || c.topic.length > MAX_INSTRUCTION_CHARS)) return { error: "topic is too long" };
+        if (c.keywords !== undefined && !(Array.isArray(c.keywords) && c.keywords.length <= 5
+            && c.keywords.every((k) => typeof k === "string" && k.length <= 100))) return { error: "Invalid keywords" };
+        const normalized = await normalizeParams(c.action, c.params, userId);
+        if (normalized.error) return { error: normalized.error };
+        const key = `c${index + 1}`;
+        changes.push({
+            key, action: c.action, params: normalized.params, instruction: c.instruction || "", topic: c.topic || "", keywords: c.keywords || [],
+        });
+        const problem = parseCandidates(c.candidates, key, items);
+        if (problem) return { error: problem };
+    }
+    if (items.size > MAX_SELECTION_NOTES) return { error: "Too many notes" };
+    return { plan: { changes, items, groups: [] } };
+};
+
+const planFromGroups = (groups) => {
+    if (groups.length === 0 || groups.length > MAX_GROUPS) return { error: `groups must hold 1-${MAX_GROUPS} groups` };
+    const changes = [];
+    const items = new Map();
+    const meta = [];
+    for (const g of groups) {
+        if (!g || typeof g.name !== "string" || !g.name.trim() || g.name.length > MAX_GROUP_NAME_CHARS
+            || typeof g.tag !== "string" || !GROUP_TAG_RE.test(g.tag)
+            || !Array.isArray(g.noteIds) || g.noteIds.length < 2 || !Array.isArray(g.misfits || [])) {
+            return { error: "each group needs a name, a tag and 2+ notes" };
+        }
+        if (g.noteIds.some((id) => typeof id !== "string" || !OBJECT_ID_RE.test(id) || items.has(id))) {
+            return { error: "groups must not share notes" };
+        }
+        const misfits = new Map();
+        for (const m of g.misfits || []) {
+            if (!m || !g.noteIds.includes(m.noteId) || (m.reason !== undefined && (typeof m.reason !== "string" || m.reason.length > MAX_REASON_CHARS))) {
+                return { error: "misfits must be notes of their group" };
+            }
+            misfits.set(m.noteId, m.reason || "may not fit this group");
+        }
+        const name = g.name.trim();
+        const moveKey = `c${changes.length + 1}`;
+        const tagKey = `c${changes.length + 2}`;
+        changes.push({ key: moveKey, action: "move", params: { targetFolderId: null, newFolderName: name, targetFolderName: name }, instruction: `move “${name}” group to a new folder` });
+        changes.push({ key: tagKey, action: "tag", params: { add: [g.tag], remove: [] }, instruction: `tag “${name}” group #${g.tag}` });
+        for (const noteId of g.noteIds) {
+            const item = misfits.has(noteId)
+                ? { verdict: "rejected", reason: misfits.get(noteId) }
+                : { verdict: "likely", reason: `grouped as “${name}”` };
+            items.set(noteId, [{ change: moveKey, ...item, pending: false }, { change: tagKey, ...item, pending: false }]);
+        }
+        meta.push({ name, tag: g.tag, noteIds: [...g.noteIds], changes: [moveKey, tagKey] });
+    }
+    return { plan: { changes, items, groups: meta } };
+};
+
+// The plan worked out against the notes' current state.
+const buildList = async (userId, plan) => {
+    const notes = await Note.find({ _id: { $in: [...plan.items.keys()] }, userId })
+        .select("_id title folderId showInHome tags isArchived isDeleted updatedAt").lean();
+    const notesById = new Map(notes.map((n) => [String(n._id), n]));
+    const built = buildCandidates(plan, notesById, stateOf);
+    const usedChanges = new Set(built.candidates.flatMap((c) => c.items.map((i) => i.change)));
+    const listed = new Set(built.candidates.map((c) => c.noteId));
+    const groups = (plan.groups || [])
+        .map((g) => ({ ...g, noteIds: g.noteIds.filter((id) => listed.has(id)), changes: g.changes.filter((k) => usedChanges.has(k)) }))
+        .filter((g) => g.noteIds.length > 0 && g.changes.length > 0);
+    return {
+        ...built,
+        notesById,
+        folderNames: await folderNameMap(notes, userId),
+        changes: plan.changes.filter((c) => usedChanges.has(c.key)),
+        groups,
+        clashCount: built.candidates.filter((c) => c.items.some((i) => i.clashesWith.length > 0)).length,
+    };
+};
+
+const proposalBody = (doc, folderNames, notesById, extra = {}) => {
+    const changes = changesOf(doc);
+    return {
+        error: false,
+        proposalId: doc.proposalId,
+        status: doc.status === "held" ? "held" : "open",
+        version: doc.version || 1,
+        heldReason: doc.heldReason || null,
+        changes: changes.map((c) => ({ key: c.key, action: c.action, params: c.params, instruction: c.instruction || "", title: changeTitle(c) })),
+        // The single-change form, for callers that only know one change.
+        ...(changes.length === 1 ? { action: changes[0].action, params: changes[0].params } : {}),
+        groups: (doc.groups || []).map((g) => ({ name: g.name, tag: g.tag, noteIds: g.noteIds, changes: g.changes })),
+        candidates: doc.candidates.map((c) => {
+            const folderId = notesById.get(c.noteId)?.folderId;
+            const items = itemsOf(c).map((i) => ({
+                change: i.change, verdict: i.verdict, reason: i.reason, label: i.label || "", clashesWith: i.clashesWith || [],
+            }));
+            return {
+                noteId: c.noteId, title: c.title, folder: folderId ? folderNames.get(String(folderId)) || null : null, items,
+                verdict: items[0].verdict, reason: items[0].reason,
+            };
+        }),
+        openedFrom: doc.openedFrom || [],
+        ...extra,
+    };
+};
+
+// Writes a built list into `doc` (an existing pending / held list, updated in
+// place) or a new one. Returns the saved document.
+const writeList = async (userId, built, { doc = null, status, chatId = null, openedFrom = [], heldReason = null }) => {
+    const fields = {
+        changes: built.changes,
+        candidates: built.candidates,
+        groups: built.groups.length > 0 ? built.groups : undefined,
+        instruction: built.changes.map((c) => c.instruction).filter(Boolean).join(" · ").slice(0, MAX_INSTRUCTION_CHARS),
+        status,
+        heldReason: status === "held" ? heldReason : null,
+    };
+    if (doc) {
+        Object.assign(doc, fields);
+        doc.openedFrom = [...new Set([...(doc.openedFrom || []), ...openedFrom])];
+        doc.version = (doc.version || 1) + 1;
+        if (chatId) doc.chatId = chatId;
+        doc.markModified("changes");
+        doc.markModified("candidates");
+        doc.markModified("groups");
+        return doc.save();
+    }
+    return AgentProposal.create({ proposalId: crypto.randomUUID(), userId, chatId, openedFrom, ...fields });
+};
+
+const splitSelection = async (userId, plan, built, chatId) => {
+    const noteItems = Object.fromEntries(built.candidates.map((c) => [c.noteId, c.items.map((i) => ({
+        change: i.change, verdict: i.verdict, reason: i.reason, pending: i.pending,
+    }))]));
+    const parts = built.groups.length > 0
+        ? groupParts(built.groups)
+        : splitParts(built.candidates.map((c) => {
+            const note = built.notesById.get(c.noteId);
+            return { noteId: c.noteId, folder: note.folderId ? built.folderNames.get(String(note.folderId)) || null : null, tags: note.tags || [], lastEdited: note.updatedAt };
+        }));
+    if (parts.length === 0) return null;
+    const selection = await AgentSelection.create({
+        selectionId: crypto.randomUUID(), userId, chatId, changes: built.changes, noteItems,
+        groups: built.groups.length > 0 ? built.groups : undefined, parts,
+    });
+    return {
+        selectionId: selection.selectionId,
+        total: built.candidates.length,
+        changes: built.changes.map((c) => ({ key: c.key, action: c.action, params: c.params, title: changeTitle(c) })),
+        parts: selection.parts.map((p, index) => ({ index, label: p.label, count: p.noteIds.length })),
+    };
+};
+
+// Saves new changes. `mode`: "add" (into the pending list, or a new one when
+// none is pending) or "separate" (held when a list is pending — the agent
+// judged it a different task). `source`: "agent" holds what doesn't fit
+// under 50 with the pending list; "button" refuses it. `heldId`: the held
+// list this reply already started (extended in place).
+const savePlan = async (userId, plan, {
+    mode = "add", source = "agent", heldId = null, chatId = null, openedFrom = [], allowSplit = false, requiredNoteIds = [],
+} = {}) => {
+    const required = [...new Set(requiredNoteIds)];
+    if (required.length > 0) {
+        const owned = await Note.countDocuments({ _id: { $in: required }, userId, isDeleted: { $ne: true } });
+        if (owned !== required.length) return { status: 400, body: { error: true, message: "Some notes were not found" } };
+    }
+    const scopes = await getAgentScopes(userId);
+    const refused = plan.changes.find((c) => !allowsBulkAction(scopes, c.action));
+    if (refused) return { status: 403, body: { error: true, message: SCOPE_OFF_MESSAGE(refused.action) } };
+
+    const alone = await buildList(userId, plan);
+    if (alone.candidates.length === 0) {
+        return { status: 200, body: { error: false, empty: true, alreadyCount: alone.alreadyCount, goneCount: alone.goneCount, message: "Nothing to change — every note is already like that." } };
+    }
+    const counts = { alreadyCount: alone.alreadyCount, goneCount: alone.goneCount };
+    if (alone.candidates.length > MAX_NOTES) {
+        if (!allowSplit) return { status: 400, body: { error: true, message: `candidates must hold 1-${MAX_NOTES} notes` } };
+        const splitChoices = await splitSelection(userId, plan, alone, chatId);
+        if (!splitChoices) return { status: 400, body: { error: true, message: `Every group has more than ${MAX_NOTES} notes — ask for a smaller set.` } };
+        return { status: 201, body: { error: false, splitChoices, ...counts } };
+    }
+
+    const pending = await pendingOf(userId);
+    const hold = async (heldReason) => {
+        const held = heldId ? await AgentProposal.findOne({ proposalId: heldId, userId, status: "held" }) : null;
+        const built = held ? await buildList(userId, mergePlans([planFromProposal(held), plan])) : alone;
+        const doc = await writeList(userId, built, { doc: held, status: "held", chatId, openedFrom, heldReason });
+        return { status: 201, body: proposalBody(doc.toObject(), built.folderNames, built.notesById, { ...counts, clashCount: built.clashCount, pending: pendingSummary(pending) }) };
+    };
+    if (pending && mode === "separate") return hold("separate");
+
+    const built = pending ? await buildList(userId, mergePlans([planFromProposal(pending), plan])) : alone;
+    if (built.candidates.length > MAX_NOTES) {
+        if (source === "agent") return hold("too-many");
+        return { status: 409, body: { error: true, message: OVER_LIMIT_MESSAGE } };
+    }
+    const doc = await writeList(userId, built, { doc: pending, status: "open", chatId, openedFrom });
+    return {
+        status: 201,
+        body: proposalBody(doc.toObject(), built.folderNames, built.notesById, { ...counts, clashCount: built.clashCount, extended: Boolean(pending) }),
+    };
+};
+
+// The list as stored in a chat turn (shown again after a refresh).
+const chatProposal = (body) => ({
+    proposalId: body.proposalId, status: body.status, version: body.version, heldReason: body.heldReason,
+    changes: body.changes, groups: body.groups, candidates: body.candidates, openedFrom: body.openedFrom || [],
+});
+
+// Puts `body` (a list) into the chat turn that holds `turnProposalId` (a held
+// list being added / shown), after pointing older turns at it.
+const hostInTurn = async (userId, turnProposalId, body) => {
+    await markMoved(userId, body.proposalId);
+    await AgentChat.collection.updateOne(
+        { userId: String(userId), "turns.proposal.proposalId": turnProposalId },
+        { $set: { "turns.$.proposal": chatProposal(body) } },
+    );
+};
+
+// POST /v1/agent/proposals — save changes (called by the agent).
+// { changes | action+params+candidates | groups, chatId?, mode?, heldId?, split? }
 const createProposal = async (req, res) => {
+    const userId = req.user._id;
+    const body = req.body || {};
     try {
-        const { status, body } = await saveProposal(req.user._id, req.body || {});
-        return res.status(status).json(body);
+        const parsed = await planFromInput(body, userId);
+        if (parsed.error) return res.status(400).json({ error: true, message: parsed.error });
+        const chatId = typeof body.chatId === "string" && OBJECT_ID_RE.test(body.chatId) ? body.chatId : null;
+        const { status, body: out } = await savePlan(userId, parsed.plan, {
+            mode: body.mode === "separate" ? "separate" : "add",
+            heldId: typeof body.heldId === "string" ? body.heldId : null,
+            chatId,
+            allowSplit: body.split === true,
+            requiredNoteIds: [...parsed.plan.items.keys()],
+        });
+        return res.status(status).json(out);
     } catch (error) {
         console.error(`[${req.id}] Agent proposal failed:`, error.message);
         return res.status(500).json({ error: true, message: "Internal Server Error" });
     }
 };
 
+// GET /v1/agent/proposals/pending — the user's pending list in brief (for
+// the agent's context), or null.
+const getPending = async (req, res) => {
+    try {
+        return res.json({ error: false, pending: pendingSummary(await pendingOf(req.user._id)) });
+    } catch (error) {
+        console.error(`[${req.id}] Agent pending lookup failed:`, error.message);
+        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
+// POST /v1/agent/proposals/:proposalId/add — a held list's changes go into
+// the pending list (or it becomes the pending list when none is).
+// POST /v1/agent/proposals/:proposalId/show — "show it after": a held list
+// becomes the pending list once nothing else is pending.
+const releaseHeld = (into) => async (req, res) => {
+    const userId = req.user._id;
+    try {
+        const held = await AgentProposal.findOne({ proposalId: req.params.proposalId, userId });
+        if (!held) return res.status(404).json({ error: true, message: "These changes expired — ask again" });
+        if (held.status !== "held") return res.status(409).json({ error: true, message: `These changes were already ${held.status === "open" ? "shown" : held.status}`, status: held.status });
+        const pending = await pendingOf(userId);
+        if (pending && into === "show") {
+            return res.status(409).json({ error: true, message: "Apply or discard your pending list first", pendingChatId: pending.chatId });
+        }
+        const built = await buildList(userId, pending ? mergePlans([planFromProposal(pending), planFromProposal(held)]) : planFromProposal(held));
+        if (built.candidates.length === 0) {
+            held.status = "discarded";
+            await held.save();
+            return res.json({ error: false, empty: true, message: "Nothing to change any more — those notes are already like that." });
+        }
+        if (built.candidates.length > MAX_NOTES) return res.status(409).json({ error: true, message: OVER_LIMIT_MESSAGE });
+        const doc = await writeList(userId, built, { doc: pending || held, status: "open", chatId: held.chatId });
+        if (pending) await AgentProposal.deleteOne({ proposalId: held.proposalId, userId });
+        const out = proposalBody(doc.toObject(), built.folderNames, built.notesById, { clashCount: built.clashCount, extended: Boolean(pending) });
+        await hostInTurn(userId, held.proposalId, out);
+        return res.json({ ...out, releasedFrom: held.proposalId });
+    } catch (error) {
+        console.error(`[${req.id}] Agent release-held failed:`, error.message);
+        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
+// POST /v1/agent/proposals/:proposalId/discard — close a pending or held
+// list unapplied.
+const discardProposal = async (req, res) => {
+    try {
+        const doc = await AgentProposal.findOneAndUpdate(
+            { proposalId: req.params.proposalId, userId: req.user._id, status: { $in: ["open", "held"] } },
+            { $set: { status: "discarded" } },
+            { new: true },
+        ).lean();
+        if (doc) return res.json({ error: false, status: "discarded" });
+        const existing = await AgentProposal.findOne({ proposalId: req.params.proposalId, userId: req.user._id }).select("status").lean();
+        if (!existing) return res.status(404).json({ error: true, message: "This list expired" });
+        return res.status(409).json({ error: true, message: `This list was already ${existing.status}`, status: existing.status });
+    } catch (error) {
+        console.error(`[${req.id}] Agent discard failed:`, error.message);
+        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
 // POST /v1/agent/select-notes — the complete list of this user's notes
 // matching exact filters (architecture plan §2.5 step 1; no AI). Archived
-// notes are left out unless `archived: true` asks for them.
+// notes are left out unless `archived: true` asks for them. Tags match
+// exactly, capitals included (as in the app).
 const MAX_SELECT_NOTES = 2000;
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const selectNotes = async (req, res) => {
     const userId = req.user._id;
@@ -260,7 +536,7 @@ const selectNotes = async (req, res) => {
     try {
         if (f.tag !== undefined) {
             if (typeof f.tag !== "string" || !f.tag.trim() || f.tag.length > MAX_TAG_CHARS) return res.status(400).json({ error: true, message: "Invalid tag" });
-            query.tags = { $regex: new RegExp(`^${escapeRegex(f.tag.trim().replace(/^#+/, ""))}$`, "i") };
+            query.tags = f.tag.trim().replace(/^#+/, "");
         }
         if (f.folderId !== undefined) {
             if (f.folderId === "none") {
@@ -313,71 +589,34 @@ const selectNotes = async (req, res) => {
     }
 };
 
-// POST /v1/agent/selections — save split choices for a selection of more than
-// 50 notes (called by the agent). Every note must be this user's.
-const MAX_SELECTION_NOTES = 2000;
-const MAX_PARTS = 40;
-
-const createSelection = async (req, res) => {
-    const userId = req.user._id;
-    const { action, params, instruction, topic, keywords, filterReason, parts } = req.body || {};
-    if (!ACTIONS.has(action)) return res.status(400).json({ error: true, message: "Invalid action" });
-    if (!Array.isArray(parts) || parts.length < 2 || parts.length > MAX_PARTS) {
-        return res.status(400).json({ error: true, message: `parts must hold 2-${MAX_PARTS} choices` });
-    }
-    const all = new Set();
-    for (const part of parts) {
-        if (!part || typeof part.label !== "string" || !part.label.trim() || part.label.length > 120
-            || !Array.isArray(part.noteIds) || part.noteIds.length === 0 || part.noteIds.length > MAX_NOTES) {
-            return res.status(400).json({ error: true, message: `each part needs a label and 1-${MAX_NOTES} notes` });
-        }
-        for (const id of part.noteIds) {
-            if (typeof id !== "string" || !OBJECT_ID_RE.test(id) || all.has(id)) {
-                return res.status(400).json({ error: true, message: "parts must not share notes" });
-            }
-            all.add(id);
-        }
-    }
-    if (all.size > MAX_SELECTION_NOTES) return res.status(400).json({ error: true, message: "Selection too large" });
-    const strings = (v, max, n) => Array.isArray(v) && v.length <= n && v.every((s) => typeof s === "string" && s.length <= max);
-    if ((topic !== undefined && (typeof topic !== "string" || topic.length > 500))
-        || (keywords !== undefined && !strings(keywords, 100, 5))
-        || (filterReason !== undefined && (typeof filterReason !== "string" || filterReason.length > MAX_REASON_CHARS))
-        || (instruction !== undefined && (typeof instruction !== "string" || instruction.length > MAX_INSTRUCTION_CHARS))) {
-        return res.status(400).json({ error: true, message: "Invalid selection details" });
-    }
-
-    try {
-        if (!allowsBulkAction(await getAgentScopes(userId), action)) {
-            return res.status(403).json({ error: true, message: SCOPE_OFF_MESSAGE(action) });
-        }
-        const normalized = await normalizeParams(action, params, userId);
-        if (normalized.error) return res.status(400).json({ error: true, message: normalized.error });
-        const owned = await Note.countDocuments({ _id: { $in: [...all] }, userId, isDeleted: { $ne: true } });
-        if (owned !== all.size) return res.status(400).json({ error: true, message: "Some notes were not found" });
-
-        const selection = await AgentSelection.create({
-            selectionId: crypto.randomUUID(),
-            userId, action, params: normalized.params,
-            instruction: instruction || "", topic: topic || "", keywords: keywords || [], filterReason: filterReason || "",
-            parts: parts.map((p) => ({ label: p.label.trim(), noteIds: p.noteIds })),
-        });
-        return res.status(201).json({
-            error: false,
-            selectionId: selection.selectionId,
-            action, params: normalized.params,
-            parts: selection.parts.map((p, index) => ({ index, label: p.label, count: p.noteIds.length })),
-        });
-    } catch (error) {
-        console.error(`[${req.id}] Agent selection failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
-};
-
-// POST /v1/agent/selections/:selectionId/parts/:index/open — turn one split
-// choice into a review list. With a topic, FastAPI's borderline check judges
-// just this part's notes first.
+// POST /v1/agent/selections/:selectionId/parts/:index/open — one split
+// choice's notes go into the pending list (or start one). Topic changes'
+// notes not judged yet go to FastAPI's borderline check first, for just
+// this part.
 const JUDGE_TIMEOUT_MS = 45_000;
+
+const judgeNotes = async (req, userId, topic, keywords, noteIds) => {
+    const url = process.env.FASTAPI_SUMMARIZE_URL;
+    if (!url) throw new Error("AI service is not configured");
+    const key = process.env.FASTAPI_INTERNAL_KEY;
+    const response = await fetch(`${url}/agent/judge-part`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: req.headers["authorization"],
+            "x-user-id": String(userId),
+            ...(key ? { "x-api-key": key } : {}),
+        },
+        body: JSON.stringify({ topic, keywords, noteIds }),
+        signal: AbortSignal.timeout(JUDGE_TIMEOUT_MS),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(data?.candidates)) {
+        console.error(`[${req.id}] judge-part failed (${response.status}):`, JSON.stringify(data).slice(0, 300));
+        throw new Error(data?.detail || "judge failed");
+    }
+    return new Map(data.candidates.map((c) => [c.noteId, c]));
+};
 
 const openSelectionPart = async (req, res) => {
     const userId = req.user._id;
@@ -388,201 +627,59 @@ const openSelectionPart = async (req, res) => {
         const part = Number.isInteger(index) ? selection.parts[index] : null;
         if (!part) return res.status(404).json({ error: true, message: "Choice not found" });
 
-        let candidates = part.noteIds.map((noteId) => ({ noteId, verdict: "likely", reason: selection.filterReason }));
-        if (selection.topic) {
-            const url = process.env.FASTAPI_SUMMARIZE_URL;
-            if (!url) return res.status(500).json({ error: true, message: "AI service is not configured" });
-            const key = process.env.FASTAPI_INTERNAL_KEY;
-            const response = await fetch(`${url}/agent/judge-part`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: req.headers["authorization"],
-                    "x-user-id": String(userId),
-                    ...(key ? { "x-api-key": key } : {}),
-                },
-                body: JSON.stringify({ topic: selection.topic, keywords: selection.keywords, noteIds: part.noteIds }),
-                signal: AbortSignal.timeout(JUDGE_TIMEOUT_MS),
-            });
-            const data = await response.json().catch(() => null);
-            if (!response.ok || !Array.isArray(data?.candidates)) {
-                console.error(`[${req.id}] judge-part failed (${response.status}):`, JSON.stringify(data).slice(0, 300));
-                return res.status(502).json({ error: true, message: data?.detail || "The assistant couldn't check these notes right now. Try again shortly." });
+        const plan = restrictPlan(planFromSelection(selection), part.noteIds);
+        for (const change of plan.changes) {
+            if (!change.topic) continue;
+            const pending = [...plan.items].filter(([, list]) => list.some((i) => i.change === change.key && i.pending)).map(([noteId]) => noteId);
+            if (pending.length === 0) continue;
+            let verdicts;
+            try {
+                verdicts = await judgeNotes(req, userId, change.topic, change.keywords || [], pending);
+            } catch {
+                return res.status(502).json({ error: true, message: "The assistant couldn't check these notes right now. Try again shortly." });
             }
-            candidates = data.candidates;
+            for (const noteId of pending) {
+                const v = verdicts.get(noteId);
+                plan.items.set(noteId, plan.items.get(noteId).map((i) => (i.change === change.key
+                    ? { ...i, pending: false, verdict: v?.verdict || "unjudged", reason: v?.reason || "couldn't judge — check it yourself" }
+                    : i)));
+            }
         }
 
-        const { status, body } = await saveProposal(userId, {
-            action: selection.action, params: selection.params, instruction: selection.instruction, candidates,
-        }, selection.chatId || null);
-        // Which button opened the list, so the chat can scroll to it instead of
-        // opening a duplicate (kept after a refresh too).
         const openedFrom = `part:${selection.selectionId}:${index}`;
+        const { status, body } = await savePlan(userId, plan, { source: "button", chatId: selection.chatId || null, openedFrom: [openedFrom] });
         if (status === 201 && selection.chatId) {
-            // Keep the opened list in its chat, so it's still there after a refresh.
-            const proposal = { proposalId: body.proposalId, action: body.action, params: body.params, candidates: body.candidates, openedFrom };
+            // The list now lives in a new turn of this chat (older turns
+            // showing it point here), so it's still there after a refresh.
             try {
+                await markMoved(userId, body.proposalId);
                 await appendTurns(userId, selection.chatId, [{
                     role: "assistant",
-                    text: `Opened “${part.label}” — ${body.candidates.length} notes to review below.`,
+                    text: body.extended
+                        ? `Added “${part.label}” to your pending list — review it below.`
+                        : `Opened “${part.label}” — ${body.candidates.length} notes to review below.`,
                     citations: [],
-                    proposal,
+                    proposal: chatProposal(body),
                 }]);
             } catch (persistError) {
                 console.error(`[${req.id}] Saving the opened part to the chat failed:`, persistError.message);
             }
         }
-        return res.status(status).json({ ...body, partLabel: part.label, openedFrom });
+        return res.status(status).json({ ...body, partLabel: part.label });
     } catch (error) {
         console.error(`[${req.id}] Agent open-part failed:`, error.message);
         return res.status(500).json({ error: true, message: "Internal Server Error" });
     }
 };
 
-// ── Groupings (suggest_groups): groups of related notes → review lists ──
-const MAX_GROUPS = 8;
-const MAX_GROUP_NOTES = 200;
-const MAX_GROUP_NAME_CHARS = 40;
-const GROUP_TAG_RE = /^[a-z0-9-]{1,30}$/;
-const SAMPLE_TITLES = 3;
+// ── Apply / Undo ──
 
-const groupSummary = (group, index, titles) => ({
-    index,
-    name: group.name,
-    tag: group.tag,
-    count: group.noteIds.length,
-    misfitCount: group.misfits.length,
-    sampleTitles: group.noteIds.filter((id) => !group.misfits.some((m) => m.noteId === id)).slice(0, SAMPLE_TITLES)
-        .map((id) => titles.get(id) || "Untitled"),
-});
-
-// POST /v1/agent/groupings — save suggested groups (called by the agent).
-const createGrouping = async (req, res) => {
-    const userId = req.user._id;
-    const { instruction, groups, ungroupedCount, notIndexedCount, scannedCount, totalCount } = req.body || {};
-    if (!Array.isArray(groups) || groups.length === 0 || groups.length > MAX_GROUPS) {
-        return res.status(400).json({ error: true, message: `groups must hold 1-${MAX_GROUPS} groups` });
-    }
-    if (instruction !== undefined && (typeof instruction !== "string" || instruction.length > MAX_INSTRUCTION_CHARS)) {
-        return res.status(400).json({ error: true, message: "instruction is too long" });
-    }
-    const all = new Set();
-    for (const g of groups) {
-        if (!g || typeof g.name !== "string" || !g.name.trim() || g.name.length > MAX_GROUP_NAME_CHARS
-            || typeof g.tag !== "string" || !GROUP_TAG_RE.test(g.tag)
-            || !Array.isArray(g.noteIds) || g.noteIds.length < 2 || !Array.isArray(g.misfits || [])) {
-            return res.status(400).json({ error: true, message: "each group needs a name, a tag and 2+ notes" });
-        }
-        for (const id of g.noteIds) {
-            if (typeof id !== "string" || !OBJECT_ID_RE.test(id) || all.has(id)) {
-                return res.status(400).json({ error: true, message: "groups must not share notes" });
-            }
-            all.add(id);
-        }
-        for (const m of g.misfits || []) {
-            if (!m || !g.noteIds.includes(m.noteId) || (m.reason !== undefined && (typeof m.reason !== "string" || m.reason.length > MAX_REASON_CHARS))) {
-                return res.status(400).json({ error: true, message: "misfits must be notes of their group" });
-            }
-        }
-    }
-    if (all.size > MAX_GROUP_NOTES) return res.status(400).json({ error: true, message: "Too many notes" });
-    const count = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
-
-    try {
-        if (!allowsBulkAction(await getAgentScopes(userId), "move")) {
-            return res.status(403).json({ error: true, message: SCOPE_OFF_MESSAGE("move") });
-        }
-        const notes = await Note.find({ _id: { $in: [...all] }, userId, isDeleted: { $ne: true } }).select("_id title").lean();
-        if (notes.length !== all.size) return res.status(400).json({ error: true, message: "Some notes were not found" });
-        const titles = new Map(notes.map((n) => [String(n._id), (n.title || "").trim()]));
-        const grouping = await AgentGrouping.create({
-            groupingId: crypto.randomUUID(),
-            userId,
-            instruction: instruction || "",
-            groups: groups.map((g) => ({
-                name: g.name.trim(),
-                tag: g.tag,
-                noteIds: g.noteIds,
-                misfits: (g.misfits || []).map((m) => ({ noteId: m.noteId, reason: m.reason || "" })),
-            })),
-        });
-        return res.status(201).json({
-            error: false,
-            groupingId: grouping.groupingId,
-            groups: grouping.groups.map((g, i) => groupSummary(g, i, titles)),
-            ungroupedCount: count(ungroupedCount),
-            notIndexedCount: count(notIndexedCount),
-            scannedCount: count(scannedCount),
-            totalCount: count(totalCount),
-        });
-    } catch (error) {
-        console.error(`[${req.id}] Agent grouping failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
-};
-
-// POST /v1/agent/groupings/:groupingId/groups/:index/propose — { action:
-// "new-folder" | "tag" } → a review list for that group: its notes ticked,
-// the ones that may not fit unticked with the AI's reason.
-const GROUP_ACTIONS = new Set(["new-folder", "tag"]);
-
-const proposeGroup = async (req, res) => {
-    const userId = req.user._id;
-    const index = Number(req.params.index);
-    const { action } = req.body || {};
-    if (!GROUP_ACTIONS.has(action)) return res.status(400).json({ error: true, message: "action must be new-folder or tag" });
-    try {
-        const grouping = await AgentGrouping.findOne({ groupingId: req.params.groupingId, userId }).lean();
-        if (!grouping) return res.status(404).json({ error: true, message: "These groups expired — ask again" });
-        const group = Number.isInteger(index) ? grouping.groups[index] : null;
-        if (!group) return res.status(404).json({ error: true, message: "Group not found" });
-        if (group.noteIds.length > MAX_NOTES) {
-            return res.status(400).json({ error: true, message: `This group has ${group.noteIds.length} notes — more than ${MAX_NOTES} for one review list. Ask the agent to group a smaller set.` });
-        }
-        // Notes trashed since the groups were made are left out.
-        const living = new Set((await Note.find({ _id: { $in: group.noteIds }, userId, isDeleted: { $ne: true } }).select("_id").lean())
-            .map((n) => String(n._id)));
-        const misfits = new Map(group.misfits.map((m) => [m.noteId, m.reason]));
-        const candidates = group.noteIds.filter((id) => living.has(id)).map((noteId) => (misfits.has(noteId)
-            ? { noteId, verdict: "rejected", reason: misfits.get(noteId) || "may not fit this group" }
-            : { noteId, verdict: "likely", reason: `grouped as “${group.name}”` }));
-        if (candidates.length === 0) return res.status(400).json({ error: true, message: "None of these notes exist any more" });
-
-        const proposalInput = action === "new-folder"
-            ? { action: "move", params: { newFolderName: group.name }, instruction: `move “${group.name}” group to a new folder` }
-            : { action: "tag", params: { add: [group.tag] }, instruction: `tag “${group.name}” group #${group.tag}` };
-        const { status, body } = await saveProposal(userId, { ...proposalInput, candidates }, grouping.chatId || null);
-        const openedFrom = `group:${grouping.groupingId}:${index}:${action}`;
-        if (status === 201 && grouping.chatId) {
-            const proposal = { proposalId: body.proposalId, action: body.action, params: body.params, candidates: body.candidates, openedFrom };
-            try {
-                await appendTurns(userId, grouping.chatId, [{
-                    role: "assistant",
-                    text: `Review list for “${group.name}” — ${body.candidates.length} notes below.`,
-                    citations: [],
-                    proposal,
-                }]);
-            } catch (persistError) {
-                console.error(`[${req.id}] Saving the group's review list to the chat failed:`, persistError.message);
-            }
-        }
-        return res.status(status).json({ ...body, groupName: group.name, openedFrom });
-    } catch (error) {
-        console.error(`[${req.id}] Agent group proposal failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
-};
-
-// POST /v1/agent/proposals/:proposalId/apply — { noteIds } (the ticked rows).
+// POST /v1/agent/proposals/:proposalId/apply — { picks: [{ noteId, changes:
+// [keys] }] } (the ticked items), or { noteIds } = every item of those notes.
 const applyProposal = async (req, res) => {
     const userId = req.user._id;
     const { proposalId } = req.params;
-    const { noteIds } = req.body || {};
-    if (!Array.isArray(noteIds) || noteIds.length === 0 || noteIds.length > MAX_NOTES
-        || !noteIds.every((id) => typeof id === "string" && OBJECT_ID_RE.test(id))
-        || new Set(noteIds).size !== noteIds.length) {
-        return res.status(400).json({ error: true, message: `noteIds must be 1-${MAX_NOTES} distinct note IDs` });
-    }
+    const { picks, noteIds, version } = req.body || {};
 
     try {
         const proposal = await AgentProposal.findOne({ proposalId, userId }).lean();
@@ -590,53 +687,96 @@ const applyProposal = async (req, res) => {
 
         const existing = await AgentReceipt.findOne({ proposalId, userId }).lean();
         if (existing) return res.json({ error: false, alreadyApplied: true, receipt: summarizeReceipt(existing) });
-
-        const candidates = new Map(proposal.candidates.map((c) => [c.noteId, c]));
-        if (noteIds.some((id) => !candidates.has(id))) {
-            return res.status(400).json({ error: true, message: "Only notes from the review list can be applied" });
+        if (proposal.status === "replaced") return res.status(409).json({ error: true, message: "This list was replaced by a newer one below — use that one" });
+        if (proposal.status === "discarded") return res.status(409).json({ error: true, message: "This list was discarded" });
+        if (proposal.status === "held") return res.status(409).json({ error: true, message: "Add these changes to your pending list (or show them after it) first" });
+        // Changes were added since the user looked: they review the new version.
+        if (version !== undefined && version !== (proposal.version || 1)) {
+            return res.status(409).json({ error: true, code: "list-updated", message: "This list was just updated — review it again below", version: proposal.version || 1 });
         }
 
-        let changes = [];
+        const changes = new Map(changesOf(proposal).map((c) => [c.key, c]));
+        const candidates = new Map(proposal.candidates.map((c) => [c.noteId, c]));
+        const chosen = Array.isArray(picks)
+            ? picks
+            : Array.isArray(noteIds) ? noteIds.map((id) => ({ noteId: id, changes: candidates.has(id) ? itemsOf(candidates.get(id)).map((i) => i.change) : [] })) : null;
+        if (!chosen || chosen.length === 0 || chosen.length > MAX_NOTES
+            || !chosen.every((p) => p && typeof p.noteId === "string" && OBJECT_ID_RE.test(p.noteId) && Array.isArray(p.changes) && p.changes.length > 0)
+            || new Set(chosen.map((p) => p.noteId)).size !== chosen.length) {
+            return res.status(400).json({ error: true, message: `Pick 1-${MAX_NOTES} distinct notes from the review list` });
+        }
+        for (const pick of chosen) {
+            const candidate = candidates.get(pick.noteId);
+            if (!candidate) return res.status(400).json({ error: true, message: "Only notes from the review list can be applied" });
+            const items = new Map(itemsOf(candidate).map((i) => [i.change, i]));
+            if (!pick.changes.every((k) => items.has(k))) return res.status(400).json({ error: true, message: "Only changes from the review list can be applied" });
+            if (pick.changes.some((k) => (items.get(k).clashesWith || []).some((other) => pick.changes.includes(other)))) {
+                return res.status(400).json({ error: true, message: "Two of the ticked changes on a note contradict each other — untick one" });
+            }
+        }
+
+        let indexChanges = [];
         let receipt;
         try {
             receipt = await withRequiredTransaction(async (session) => {
-                changes = [];   // the transaction callback may be retried
-                // The target folder may have gone to Trash since the list was made.
-                if (proposal.action === "move" && proposal.params.targetFolderId
-                    && !(await findLivingFolder(proposal.params.targetFolderId, userId, session))) {
-                    throw new TargetFolderGoneError();
+                indexChanges = [];   // the transaction callback may be retried
+                const usedKeys = new Set(chosen.flatMap((p) => p.changes));
+                // A target folder may have gone to Trash since the list was made.
+                for (const key of usedKeys) {
+                    const c = changes.get(key);
+                    if (c.action === "move" && c.params.targetFolderId && !(await findLivingFolder(c.params.targetFolderId, userId, session))) {
+                        throw new TargetFolderGoneError();
+                    }
                 }
-                const notes = await Note.find({ _id: { $in: noteIds }, userId }).session(session);
+                const notes = await Note.find({ _id: { $in: chosen.map((p) => p.noteId) }, userId }).session(session);
                 const byId = new Map(notes.map((n) => [String(n._id), n]));
-                const ops = [];
-                // "Move to a new folder": the folder is made, in this same
+                // "Move to a new folder": each folder is made, in this same
                 // transaction, only once a note is actually going to move.
-                const params = { ...proposal.params };
-                for (const noteId of noteIds) {
-                    const candidate = candidates.get(noteId);
-                    const note = byId.get(noteId);
+                const newFolders = new Map();
+                const helpers = {
+                    moveTo: async (note, params) => {
+                        let target = params.targetFolderId || null;
+                        if (params.newFolderName) {
+                            if (!newFolders.has(params.newFolderName)) {
+                                const folder = await createFolderRecord({ userId, name: params.newFolderName }, session);
+                                newFolders.set(params.newFolderName, String(folder._id));
+                            }
+                            target = newFolders.get(params.newFolderName);
+                        }
+                        moveToFolder(note, target);
+                    },
+                    archive: (note, archived) => setArchived(note, archived, userId, session),
+                    trash: (note) => Object.assign(note, trashFields()),
+                };
+                const ops = [];
+                for (const pick of chosen) {
+                    const candidate = candidates.get(pick.noteId);
+                    const note = byId.get(pick.noteId);
                     if (!note || !sameState(stateOf(note), candidate.snapshot)) {
-                        ops.push({ noteId, title: note?.title || candidate.title, before: note ? stateOf(note) : null, after: null, status: "skipped-changed" });
+                        ops.push({ noteId: pick.noteId, title: note?.title || candidate.title, before: note ? stateOf(note) : null, after: null, status: "skipped-changed" });
                         continue;
                     }
-                    if (params.newFolderName && !params.targetFolderId) {
-                        const folder = await createFolderRecord({ userId, name: params.newFolderName }, session);
-                        params.targetFolderId = String(folder._id);
-                        params.createdFolderId = String(folder._id);
-                    }
                     const before = stateOf(note);
-                    await applyAction(note, proposal.action, params, userId, session);
+                    const applied = await applyChanges(note, pick.changes.map((k) => changes.get(k)), before, helpers);
                     const after = stateOf(note);
                     if (sameState(before, after)) {
-                        ops.push({ noteId, title: note.title, before, after, status: "skipped-unchanged" });
+                        ops.push({ noteId: pick.noteId, title: note.title, before, after, status: "skipped-unchanged" });
                         continue;
                     }
                     await note.save({ session });
-                    ops.push({ noteId, title: note.title, before, after, status: "applied" });
-                    changes.push({ noteId, wasDeleted: before.isDeleted, isDeleted: after.isDeleted });
+                    ops.push({ noteId: pick.noteId, title: note.title, before, after, status: "applied", changes: applied });
+                    if (indexedChange(before, after)) indexChanges.push({ noteId: pick.noteId, wasDeleted: before.isDeleted, isDeleted: after.isDeleted });
                 }
+                const allChanges = changesOf(proposal);
+                const createdFolderIds = [...newFolders.values()];
+                const single = allChanges.length === 1 ? allChanges[0] : null;
                 const [created] = await AgentReceipt.create([{
-                    proposalId, userId, instruction: proposal.instruction, action: proposal.action, params, ops,
+                    proposalId, userId, instruction: proposal.instruction || single?.instruction || "",
+                    changes: allChanges.map((c) => ({ key: c.key, action: c.action, params: c.params, instruction: c.instruction || "" })),
+                    createdFolderIds,
+                    action: single ? single.action : "multi",
+                    params: single ? { ...single.params, ...(createdFolderIds[0] ? { createdFolderId: createdFolderIds[0] } : {}) } : {},
+                    ops,
                 }], { session });
                 await AgentProposal.updateOne({ proposalId, userId }, { $set: { status: "applied", receiptId: String(created._id) } }, { session });
                 return created;
@@ -653,7 +793,7 @@ const applyProposal = async (req, res) => {
             return transactionError(res, req, error);
         }
 
-        if (proposal.action !== "move") syncSearchIndex(changes, userId);
+        syncSearchIndex(indexChanges, userId);
         return res.json({ error: false, receipt: summarizeReceipt(receipt) });
     } catch (error) {
         return transactionError(res, req, error);
@@ -673,11 +813,11 @@ const undoReceipt = async (req, res) => {
             return res.status(409).json({ error: true, message: "This change was already undone", receipt: summarizeReceipt(found) });
         }
 
-        let changes = [];
+        let indexChanges = [];
         let receipt;
         try {
             receipt = await withRequiredTransaction(async (session) => {
-                changes = [];
+                indexChanges = [];
                 const doc = await AgentReceipt.findOne({ _id: receiptId, userId }).session(session);
                 const appliedIds = doc.ops.filter((op) => op.status === "applied").map((op) => op.noteId);
                 const notes = await Note.find({ _id: { $in: appliedIds }, userId }).session(session);
@@ -709,11 +849,16 @@ const undoReceipt = async (req, res) => {
                     }
                     await note.save({ session });
                     op.status = "undone";
-                    changes.push({ noteId: op.noteId, wasDeleted, isDeleted: Boolean(note.isDeleted) });
+                    if (indexedChange(op.before, op.after)) indexChanges.push({ noteId: op.noteId, wasDeleted, isDeleted: Boolean(note.isDeleted) });
                 }
-                // A folder this change created goes to Trash once it's empty
-                // again (restorable); kept if anything else is in it now.
-                if (doc.params?.createdFolderId && await trashFolderIfEmpty(doc.params.createdFolderId, userId, session)) {
+                // Folders this change created go to Trash once empty again
+                // (restorable); kept if anything else is in them now.
+                const createdIds = [...new Set([...(doc.createdFolderIds || []), ...(doc.params?.createdFolderId ? [doc.params.createdFolderId] : [])])];
+                let trashedAny = false;
+                for (const folderId of createdIds) {
+                    if (await trashFolderIfEmpty(folderId, userId, session)) trashedAny = true;
+                }
+                if (trashedAny) {
                     doc.params = { ...doc.params, createdFolderTrashed: true };
                     doc.markModified("params");
                 }
@@ -727,7 +872,7 @@ const undoReceipt = async (req, res) => {
             return transactionError(res, req, error);
         }
 
-        if (receipt.action !== "move") syncSearchIndex(changes, userId);
+        syncSearchIndex(indexChanges, userId);
         return res.json({ error: false, receipt: summarizeReceipt(receipt) });
     } catch (error) {
         return transactionError(res, req, error);
@@ -746,6 +891,6 @@ const listReceipts = async (req, res) => {
 };
 
 module.exports = {
-    createProposal, applyProposal, undoReceipt, listReceipts, selectNotes, createSelection, openSelectionPart, stateOf, sameState,
-    createGrouping, proposeGroup,
+    createProposal, getPending, releaseHeld, discardProposal, applyProposal, undoReceipt, listReceipts, selectNotes, openSelectionPart,
+    stateOf, sameState,
 };

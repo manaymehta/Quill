@@ -6,7 +6,7 @@ import { MdDeleteOutline, MdHistory, MdOutlineEdit } from 'react-icons/md';
 import { BsPinAngle, BsPinAngleFill } from 'react-icons/bs';
 import ReactMarkdown from 'react-markdown';
 import axiosInstance from '../../utils/axiosInstance';
-import { bulkDoneLabel, CHAT_LIMIT, useAgentStore } from '../../store/useAgentStore';
+import { bulkDoneLabel, CHAT_LIMIT, reviewPicks, useAgentStore } from '../../store/useAgentStore';
 import { useTabsStore } from '../../store/useTabsStore';
 
 const CHAT_TITLE_MAX = 80;
@@ -115,64 +115,216 @@ const PendingEditCard = ({ edit, onAction }) => {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-const reviewHeading = (p) => {
-    const found = `${plural(p.candidates.length, 'note')} found`;
-    if (p.action === 'move' && p.params?.newFolderName) return `Move to new folder “${p.params.newFolderName}” — ${found}`;
-    if (p.action === 'move') return `Move to “${p.params?.targetFolderName || 'No folder'}” — ${found}`;
-    if (p.action === 'tag') {
-        const changes = [...(p.params?.add || []).map((t) => `+#${t}`), ...(p.params?.remove || []).map((t) => `−#${t}`)];
-        return `Tags ${changes.join(' ')} — ${found}`;
-    }
-    if (p.action === 'archive') return `${p.params?.archived === false ? 'Unarchive' : 'Archive'} — ${found}`;
-    return `Send to trash (recoverable) — ${found}`;
+// A change in a few words (the server sends `title`; older lists don't).
+const changeTitle = (c) => {
+    if (c.title) return c.title;
+    if (c.action === 'move' && c.params?.newFolderName) return `Move to new folder “${c.params.newFolderName}”`;
+    if (c.action === 'move') return c.params?.targetFolderId ? `Move to “${c.params?.targetFolderName || 'that folder'}”` : 'Move out of folders';
+    if (c.action === 'tag') return `Tags ${[...(c.params?.add || []).map((t) => `+#${t}`), ...(c.params?.remove || []).map((t) => `−#${t}`)].join(' ')}`;
+    if (c.action === 'archive') return c.params?.archived === false ? 'Unarchive' : 'Archive';
+    return 'Send to trash (recoverable)';
 };
 
+const reviewHeading = (p, otherChanges) => {
+    const found = `${plural(p.candidates.length, 'note')}`;
+    if (p.groups.length > 0 && otherChanges.length === 0) return `${plural(p.groups.length, 'group')} of related notes — ${found}`;
+    if (p.changes.length === 1) return `${changeTitle(p.changes[0])} — ${found} found`;
+    return `${p.changes.length} changes — ${found}`;
+};
+
+// Grouping: one block per group — its two changes ("move to a new folder",
+// "tag") as tick boxes for the whole group, and its notes (each can be left
+// out; ones that may not fit start out).
+const GroupBlock = ({ group, proposal, editable, onToggleChange, onToggleNote, onOpenNote }) => {
+    const notes = new Map(proposal.candidates.map((c) => [c.noteId, c]));
+    const titles = new Map(proposal.changes.map((c) => [c.key, changeTitle(c)]));
+    const isOn = (change) => group.noteIds.some((id) => proposal.ticked.includes(`${id}|${change}`));
+    return (
+        <div className="rounded-lg border border-stone-200 bg-white/80 p-2.5 flex flex-col gap-1.5">
+            <p className="text-xs font-semibold">{group.name} <span className="font-normal text-stone-500">· {plural(group.noteIds.length, 'note')}</span></p>
+            <div className="flex flex-col gap-0.5">
+                {group.changes.map((change) => (
+                    <label key={change} className={`flex items-center gap-2 text-[11px] font-semibold ${editable ? 'cursor-pointer' : ''}`}>
+                        <input type="checkbox" className="accent-[#dd5e57]" checked={isOn(change)} disabled={!editable} onChange={() => onToggleChange(change)} />
+                        {titles.get(change)}
+                    </label>
+                ))}
+            </div>
+            <div className="flex flex-col gap-0.5 pl-1 border-l-2 border-stone-200">
+                {group.noteIds.map((noteId) => {
+                    const c = notes.get(noteId);
+                    if (!c) return null;
+                    const out = proposal.excluded.includes(noteId);
+                    const misfit = c.items.find((i) => i.verdict !== 'likely');
+                    return (
+                        <label key={noteId} className={`flex items-start gap-2 pl-1.5 text-[11px] ${editable ? 'cursor-pointer' : ''} ${out ? 'opacity-60' : ''}`}>
+                            <input type="checkbox" className="mt-0.5 accent-[#dd5e57]" checked={!out} disabled={!editable} onChange={() => onToggleNote(noteId)} />
+                            <span className="min-w-0 flex-1">
+                                <button type="button" onClick={(e) => { e.preventDefault(); onOpenNote(noteId); }}
+                                    className="font-semibold text-stone-700 hover:text-[#e85d56] hover:underline cursor-pointer text-left">
+                                    {c.title || 'Untitled note'}
+                                </button>
+                                {misfit && <span className="text-amber-700"> · may not fit: {misfit.reason}</span>}
+                            </span>
+                        </label>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
+// Changes prepared while another list was pending: kept aside (not appliable)
+// until the user adds them to that list or shows them after finishing it.
+const HeldCard = ({ proposal, onRelease, onDiscard }) => {
+    const busy = Boolean(proposal.releasing);
+    const tooMany = proposal.heldReason === 'too-many';
+    // Found by a topic search, some notes may be unlikely matches (they'd
+    // start unticked): count the likely ones.
+    const likely = proposal.candidates.filter((c) => c.items.some((i) => i.verdict === 'likely')).length;
+    const unlikely = proposal.candidates.length - likely;
+    return (
+        <div className="rounded-xl border border-amber-300 bg-amber-50/70 p-3 flex flex-col gap-2 text-[#5c4a2a]">
+            <p className="text-xs font-semibold">
+                Prepared: {proposal.changes.map(changeTitle).join(' · ')} — {plural(likely, 'note')}
+                {unlikely > 0 && <span className="font-normal"> (+{unlikely} unlikely, unticked)</span>}
+            </p>
+            <p className="text-[11px]">
+                {tooMany
+                    ? 'Adding these would take your pending list over 50 notes, so they wait until you apply or discard it.'
+                    : 'You have a review list waiting for Apply, so these are kept separate for now.'}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+                {!tooMany && (
+                    <button disabled={busy} onClick={() => onRelease('add')} className={`${pillButton} bg-[#dd5e57] text-white border-[#dd5e57] hover:bg-[#fb6d65]`}>
+                        {proposal.releasing === 'add' ? 'Adding…' : 'Add to the pending list'}
+                    </button>
+                )}
+                <button disabled={busy} onClick={() => onRelease('show')} className={`${pillButton} border-amber-400 hover:bg-amber-100`}>
+                    {proposal.releasing === 'show' ? 'Opening…' : 'Show it after'}
+                </button>
+                <button disabled={busy} onClick={onDiscard} className={`${pillButton} border-stone-300 text-stone-600 hover:bg-stone-100`}>Discard</button>
+            </div>
+            {proposal.error && <p className="text-[11px] text-red-700">{proposal.error}</p>}
+        </div>
+    );
+};
+
+// One change on one note: tick box, what it does to this note, why it's listed.
+const ReviewItem = ({ item, checked, editable, onToggle, titles, showLabel }) => (
+    <label className={`flex items-start gap-2 ${editable ? 'cursor-pointer' : ''}`}>
+        <input type="checkbox" className="mt-0.5 accent-[#dd5e57]" checked={checked} disabled={!editable} onChange={onToggle} />
+        <span className={`min-w-0 flex-1 text-[11px] ${item.verdict === 'rejected' && !checked ? 'opacity-60' : ''}`}>
+            {showLabel && item.label && <span className="font-semibold text-stone-700">{item.label} · </span>}
+            <span className={item.verdict === 'unjudged' ? 'text-amber-700' : 'text-stone-500'}>
+                {item.verdict === 'unjudged' ? '⚠ ' : ''}{item.reason}
+            </span>
+            {item.clashesWith?.length > 0 && (
+                <span className="block text-amber-700">
+                    Clashes with {item.clashesWith.map((k) => titles.get(k) || k).join(', ')} — tick one.
+                </span>
+            )}
+        </span>
+    </label>
+);
+
 // A bulk change waiting for approval (architecture plan §2.3): one row per
-// note with a tick box, one Apply for everything ticked, then Done · Undo.
-const ReviewList = ({ proposal, onToggle, onApply, onUndo, onOpenNote }) => {
+// note with a tick box per change, one Apply for everything ticked, then
+// Done · Undo.
+const ReviewList = ({ proposal, onToggle, onApply, onUndo, onDiscard, onOpenNote, onToggleGroupChange, onToggleGroupNote, onRelease }) => {
+    if (proposal.status === 'moved') {
+        return <p className="text-[11px] text-stone-500 italic">This list moved to a newer message — it's kept up to date there.</p>;
+    }
+    if (proposal.status === 'held') return <HeldCard proposal={proposal} onRelease={onRelease} onDiscard={onDiscard} />;
+    // Closed without applying: one line, no rows.
+    if (proposal.status === 'discarded' || proposal.status === 'replaced') {
+        return (
+            <p className="text-[11px] text-stone-500 italic">
+                {proposal.changes.map(changeTitle).join(' · ')} — {proposal.status === 'discarded' ? 'discarded, nothing was changed.' : 'replaced by a newer list.'}
+            </p>
+        );
+    }
     const { status, ticked, receipt } = proposal;
     const editable = status === 'open';
+    const titles = new Map(proposal.changes.map((c) => [c.key, changeTitle(c)]));
+    // Changes shown per group (grouping) vs per note (everything else).
+    const grouped = new Set(proposal.groups.flatMap((g) => g.changes));
+    const otherChanges = proposal.changes.filter((c) => !grouped.has(c.key));
+    const rows = proposal.candidates
+        .map((c) => ({ ...c, items: c.items.filter((i) => !grouped.has(i.change)) }))
+        .filter((c) => c.items.length > 0);
+    // Per-note labels say more than the heading when there are several
+    // changes, or for tags ("#Work → #work-z").
+    const showLabel = otherChanges.length > 1 || otherChanges[0]?.action === 'tag';
+    const noteCount = reviewPicks(proposal).length;
     return (
         <div className="rounded-xl border border-stone-300 bg-white/70 p-3 flex flex-col gap-2 text-[#494949]">
-            <p className="text-xs font-semibold">{reviewHeading(proposal)}</p>
+            <p className="text-xs font-semibold">{reviewHeading(proposal, otherChanges)}</p>
+            {otherChanges.length > 1 && (
+                <p className="text-[11px] text-stone-500 -mt-1">{otherChanges.map(changeTitle).join(' · ')}</p>
+            )}
             <div className="flex flex-col gap-1 max-h-72 overflow-y-auto editor-scrollbar">
-                {proposal.candidates.map((c) => (
-                    <label key={c.noteId} className={`flex items-start gap-2 rounded-lg px-1.5 py-1 ${editable ? 'hover:bg-stone-100 cursor-pointer' : ''}`}>
-                        <input
-                            type="checkbox"
-                            className="mt-0.5 accent-[#dd5e57]"
-                            checked={ticked.includes(c.noteId)}
-                            disabled={!editable}
-                            onChange={() => onToggle(c.noteId)}
-                        />
-                        <span className={`min-w-0 flex-1 ${c.verdict === 'rejected' && !ticked.includes(c.noteId) ? 'opacity-60' : ''}`}>
-                            <button
-                                type="button"
-                                onClick={(e) => { e.preventDefault(); onOpenNote(c.noteId); }}
-                                className="text-xs font-semibold truncate max-w-full text-left hover:text-[#e85d56] hover:underline cursor-pointer"
-                                title="Open this note"
-                            >
-                                {c.title || 'Untitled note'}
-                            </button>
-                            <span className={`block text-[11px] ${c.verdict === 'unjudged' ? 'text-amber-700' : 'text-stone-500'}`}>
-                                {c.folder || 'No folder'} · {c.verdict === 'unjudged' ? '⚠ ' : ''}{c.reason}
-                            </span>
-                        </span>
-                    </label>
+                {proposal.groups.map((group, index) => (
+                    <GroupBlock
+                        key={group.name}
+                        group={group}
+                        proposal={proposal}
+                        editable={editable}
+                        onToggleChange={(change) => onToggleGroupChange(index, change)}
+                        onToggleNote={(noteId) => onToggleGroupNote(index, noteId)}
+                        onOpenNote={onOpenNote}
+                    />
+                ))}
+                {rows.map((c) => (
+                    <div key={c.noteId} className={`flex flex-col gap-0.5 rounded-lg px-1.5 py-1 ${editable ? 'hover:bg-stone-100' : ''}`}>
+                        <button
+                            type="button"
+                            onClick={() => onOpenNote(c.noteId)}
+                            className="text-xs font-semibold truncate max-w-full text-left hover:text-[#e85d56] hover:underline cursor-pointer"
+                            title="Open this note"
+                        >
+                            {c.title || 'Untitled note'}
+                            <span className="font-normal text-stone-400"> · {c.folder || 'No folder'}</span>
+                        </button>
+                        {c.items.map((item) => (
+                            <ReviewItem
+                                key={item.change}
+                                item={item}
+                                checked={ticked.includes(`${c.noteId}|${item.change}`)}
+                                editable={editable}
+                                onToggle={() => onToggle(c.noteId, item.change)}
+                                titles={titles}
+                                showLabel={showLabel}
+                            />
+                        ))}
+                    </div>
                 ))}
             </div>
 
             {status === 'expired' && (
                 <p className="text-[11px] text-stone-600">This list expired — ask again to get a fresh one.</p>
             )}
+            {status === 'replaced' && (
+                <p className="text-[11px] text-stone-600">Replaced by a newer list below — it includes these changes.</p>
+            )}
+            {status === 'discarded' && (
+                <p className="text-[11px] text-stone-600">Discarded — nothing was changed.</p>
+            )}
             {(status === 'open' || status === 'applying') && (
-                <button
-                    onClick={onApply}
-                    disabled={status === 'applying' || ticked.length === 0}
-                    className="self-start text-xs font-semibold rounded-full px-4 py-1.5 bg-[#dd5e57] text-white hover:bg-[#fb6d65] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                >
-                    {status === 'applying' ? 'Applying…' : `Apply to ${plural(ticked.length, 'note')}`}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                    <button
+                        onClick={onApply}
+                        disabled={status === 'applying' || noteCount === 0}
+                        className="text-xs font-semibold rounded-full px-4 py-1.5 bg-[#dd5e57] text-white hover:bg-[#fb6d65] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                        {status === 'applying' ? 'Applying…' : `Apply to ${plural(noteCount, 'note')}`}
+                    </button>
+                    {status === 'open' && (
+                        <button onClick={onDiscard} className={`${pillButton} border-stone-300 text-stone-600 hover:bg-stone-100`}>
+                            Discard
+                        </button>
+                    )}
+                </div>
             )}
             {(status === 'applied' || status === 'undoing') && receipt && (
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
@@ -225,48 +377,6 @@ const SplitChoices = ({ choices, onOpen }) => (
         </div>
     </div>
 );
-
-// Suggested groups of related notes: each can become a review list.
-const GroupSuggestions = ({ groups, onAction }) => {
-    const extra = [
-        groups.ungroupedCount > 0 && `${plural(groups.ungroupedCount, 'note')} didn't fit any group`,
-        groups.notIndexedCount > 0 && `${plural(groups.notIndexedCount, 'note')} couldn't be grouped (not indexed yet)`,
-        groups.totalCount > groups.scannedCount && `grouped the ${groups.scannedCount} most recently edited of ${groups.totalCount}`,
-    ].filter(Boolean);
-    return (
-        <div className="rounded-xl border border-stone-300 bg-white/70 p-3 flex flex-col gap-2 text-[#494949]">
-            <p className="text-xs font-semibold">{plural(groups.groups.length, 'group')} of related notes</p>
-            {groups.expired && <p className="text-[11px] text-stone-600">These groups expired — ask again to get fresh ones.</p>}
-            {groups.groups.map((g) => (
-                <div key={g.index} className="rounded-lg border border-stone-200 bg-white/80 p-2.5 flex flex-col gap-1.5">
-                    <p className="text-xs font-semibold">
-                        {g.name} <span className="font-normal text-stone-500">· {plural(g.count, 'note')}{g.misfitCount > 0 ? ` · ${g.misfitCount} may not fit` : ''}</span>
-                    </p>
-                    {g.sampleTitles.length > 0 && (
-                        <p className="text-[11px] text-stone-500 truncate">{g.sampleTitles.join(' · ')}{g.count > g.sampleTitles.length ? ' …' : ''}</p>
-                    )}
-                    <div className="flex flex-wrap gap-1.5">
-                        {[['new-folder', `Move to new folder “${g.name}”`], ['tag', `Tag #${g.tag}`]].map(([action, label]) => {
-                            const key = `${g.index}:${action}`;
-                            return (
-                                <button
-                                    key={action}
-                                    onClick={() => onAction(g.index, action)}
-                                    disabled={groups.opening !== null || groups.expired}
-                                    className={`${pillButton} border-stone-300 hover:bg-stone-100`}
-                                >
-                                    {groups.opening === key ? 'Preparing…' : label}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            ))}
-            {extra.length > 0 && <p className="text-[11px] text-stone-500">{extra.join(' · ')}.</p>}
-            <p className="text-[11px] text-stone-500">A button opens a review list below; nothing changes until you press Apply.</p>
-        </div>
-    );
-};
 
 // ── Settings (permission toggles) ──
 const ScopeRow = ({ label, hint, checked, disabled, onToggle }) => (
@@ -413,9 +523,12 @@ const ActivityLog = ({ activity, error, onUndo }) => {
                             {bulkDoneLabel(r)} {plural(changedCount(r), 'note')}
                             {r.action === 'move' && r.params?.targetFolderName ? ` → “${r.params.targetFolderName}”` : ''}
                         </p>
+                        {r.changes?.length > 1 && (
+                            <p className="text-[11px] text-stone-600">{r.changes.map(changeTitle).join(' · ')}</p>
+                        )}
                         <p className="text-[11px] text-stone-500">
                             {created.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                            {r.instruction ? ` · “${r.instruction}”` : ''}
+                            {r.instruction && !(r.changes?.length > 1) ? ` · “${r.instruction}”` : ''}
                         </p>
                         {r.counts.skippedChanged > 0 && (
                             <p className="text-[11px] text-amber-700">{plural(r.counts.skippedChanged, 'note')} skipped (had changed before Apply).</p>
@@ -460,11 +573,14 @@ const AgentChatPanel = () => {
     const togglePin = useAgentStore((state) => state.togglePin);
     const deleteChat = useAgentStore((state) => state.deleteChat);
     const resolvePendingEdit = useAgentStore((state) => state.resolvePendingEdit);
-    const toggleReviewNote = useAgentStore((state) => state.toggleReviewNote);
+    const toggleReviewItem = useAgentStore((state) => state.toggleReviewItem);
+    const discardReviewList = useAgentStore((state) => state.discardReviewList);
     const applyReviewList = useAgentStore((state) => state.applyReviewList);
     const undoReviewList = useAgentStore((state) => state.undoReviewList);
     const openSplitChoice = useAgentStore((state) => state.openSplitChoice);
-    const openGroupAction = useAgentStore((state) => state.openGroupAction);
+    const toggleGroupChange = useAgentStore((state) => state.toggleGroupChange);
+    const toggleGroupNote = useAgentStore((state) => state.toggleGroupNote);
+    const releaseHeld = useAgentStore((state) => state.releaseHeld);
     const scopes = useAgentStore((state) => state.scopes);
     const activity = useAgentStore((state) => state.activity);
     const activityError = useAgentStore((state) => state.activityError);
@@ -672,10 +788,14 @@ const AgentChatPanel = () => {
                                     <div className="mt-2">
                                         <ReviewList
                                             proposal={message.proposal}
-                                            onToggle={(noteId) => toggleReviewNote(message.id, noteId)}
+                                            onToggle={(noteId, change) => toggleReviewItem(message.id, noteId, change)}
                                             onApply={() => applyReviewList(message.id)}
                                             onUndo={() => undoReviewList(message.id)}
+                                            onDiscard={() => discardReviewList(message.id)}
                                             onOpenNote={handleOpenCitation}
+                                            onToggleGroupChange={(index, change) => toggleGroupChange(message.id, index, change)}
+                                            onToggleGroupNote={(index, noteId) => toggleGroupNote(message.id, index, noteId)}
+                                            onRelease={(how) => releaseHeld(message.id, how)}
                                         />
                                     </div>
                                 )}
@@ -684,13 +804,8 @@ const AgentChatPanel = () => {
                                         <SplitChoices choices={message.splitChoices} onOpen={(index) => openSplitChoice(message.id, index)} />
                                     </div>
                                 )}
-                                {message.groupSuggestions && (
-                                    <div className="mt-2">
-                                        <GroupSuggestions
-                                            groups={message.groupSuggestions}
-                                            onAction={(index, action) => openGroupAction(message.id, index, action)}
-                                        />
-                                    </div>
+                                {message.oldGroupCards && (
+                                    <p className="mt-2 text-[11px] text-stone-500 italic">These group suggestions are from an older version — ask again to get them as a review list.</p>
                                 )}
                                 {message.pendingEdits?.length > 0 && (
                                     <div className="mt-2 flex flex-col gap-2">

@@ -11,7 +11,7 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env"), override: t
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 const AgentChat = require("../models/agent-chat.model");
-const AgentGrouping = require("../models/agent-grouping.model");
+const AgentProposal = require("../models/agent-proposal.model");
 const Note = require("../models/note.model");
 const User = require("../models/user.model");
 
@@ -60,19 +60,18 @@ const NOTES = [
         }
         const final = JSON.parse(finalBlock.split("\ndata: ")[1]);
         const titles = new Map(NOTES.map(([t], i) => [ids[i], t]));
-        const grouping = final.groupSuggestions && await AgentGrouping.findOne({ groupingId: final.groupSuggestions.groupingId }).lean();
+        const list = final.proposal?.groups?.length ? final.proposal : null;
         console.log("\nTools:", final.toolsUsed.map((t) => `${t.tool}${t.ok ? "" : " (failed)"}: ${t.summary}`).join(" | "));
         console.log("\nAnswer:\n" + final.message);
-        if (grouping) {
-            console.log("\nGroups saved:");
-            for (const g of grouping.groups) {
-                const misfits = new Set(g.misfits.map((m) => m.noteId));
+        if (list) {
+            console.log("\nGroups in the review list:");
+            const misfits = new Set(list.candidates.filter((c) => c.items.some((i) => i.verdict !== "likely")).map((c) => c.noteId));
+            for (const g of list.groups) {
                 console.log(` - ${g.name} (#${g.tag}): ${g.noteIds.map((id) => titles.get(id) + (misfits.has(id) ? " [may not fit]" : "")).join(", ")}`);
             }
-            console.log(` ungrouped: ${final.groupSuggestions.ungroupedCount}, not indexed: ${final.groupSuggestions.notIndexedCount}`);
-            ok = grouping.groups.length > 0 && Boolean(final.chatId);
+            ok = list.groups.length > 0 && Boolean(final.chatId);
         } else {
-            console.log("\nNo group suggestions in the reply.");
+            console.log("\nNo grouping list in the reply.");
         }
     } catch (error) {
         console.log("ERROR:", error.stack || error.message);
@@ -83,7 +82,7 @@ const NOTES = [
         }
         await Note.deleteMany({ userId: USER });
         await AgentChat.deleteMany({ userId: USER });
-        await AgentGrouping.deleteMany({ userId: USER });
+        await AgentProposal.deleteMany({ userId: USER });
         await User.deleteMany({ _id: USER });
         await mongoose.connection.close();
         console.log(`\n${ok ? "PASS" : "FAIL"}  live grouping turn; cleanup done`);

@@ -65,7 +65,7 @@ async def main():
     fake_notes = [
         {"title": "a", "tags": ["Docker", "devops"]},
         {"title": "b", "tags": ["docker"]},
-        {"title": "c", "tags": ["docker", "DOCKER"]},  # same tag twice on one note counts once
+        {"title": "c", "tags": ["docker", "DOCKER", "docker"]},  # exact: DOCKER is its own tag; a repeat counts once
         {"title": "d", "tags": []},
         {"title": "e", "tags": ["  ", "postgres"]},
     ]
@@ -83,11 +83,12 @@ async def main():
     finally:
         tools._call_express = real_call
     got = result.data["tags"]
-    check("list_tags counts per note, merges letter case, keeps the common spelling",
-          got == [{"tag": "docker", "notes": 3}, {"tag": "devops", "notes": 1}, {"tag": "postgres", "notes": 1}],
+    check("list_tags counts per note, tags exact (capitals make a different tag)",
+          got == [{"tag": "docker", "notes": 2}, {"tag": "DOCKER", "notes": 1}, {"tag": "Docker", "notes": 1},
+                  {"tag": "devops", "notes": 1}, {"tag": "postgres", "notes": 1}],
           str(got))
     check("list_tags reports totals and includes archived by default",
-          result.data["totalTags"] == 3 and result.data["notesWithoutTags"] == 1
+          result.data["totalTags"] == 5 and result.data["notesWithoutTags"] == 1
           and result.data["notesScanned"] == 5 and seen_params.get("includeArchived") == "true",
           result.summary)
 

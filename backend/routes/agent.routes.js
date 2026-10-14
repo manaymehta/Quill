@@ -7,8 +7,7 @@ const { agentChatLimiter } = require("../middleware/agent-rate-limit");
 const { validateObjectBody } = require("../middleware/request-validation");
 const { searchSupport } = require("../controllers/agent-search.controller");
 const {
-    createProposal, applyProposal, undoReceipt, listReceipts, selectNotes, createSelection, openSelectionPart,
-    createGrouping, proposeGroup,
+    createProposal, getPending, releaseHeld, discardProposal, applyProposal, undoReceipt, listReceipts, selectNotes, openSelectionPart,
 } = require("../controllers/agent-bulk.controller");
 
 const router = express.Router();
@@ -31,14 +30,15 @@ router.post("/agent/search-support", authenticateToken, validateObjectBody, sear
 // Bulk changes: saved review lists, one-transaction apply with a receipt, undo.
 router.post("/agent/proposals", authenticateToken, validateObjectBody, createProposal);
 router.post("/agent/proposals/:proposalId/apply", authenticateToken, validateObjectBody, applyProposal);
+router.post("/agent/proposals/:proposalId/discard", authenticateToken, discardProposal);
+// The one pending list per account; held changes added to it or shown after it.
+router.get("/agent/proposals/pending", authenticateToken, getPending);
+router.post("/agent/proposals/:proposalId/add", authenticateToken, releaseHeld("add"));
+router.post("/agent/proposals/:proposalId/show", authenticateToken, releaseHeld("show"));
 router.post("/agent/receipts/:receiptId/undo", authenticateToken, undoReceipt);
 router.get("/agent/receipts", authenticateToken, listReceipts);
-// Bulk selection (step 3b): complete exact-filter list, split choices, opening a choice.
+// Bulk selection (step 3b): complete exact-filter list; opening a split choice.
 router.post("/agent/select-notes", authenticateToken, validateObjectBody, selectNotes);
-router.post("/agent/selections", authenticateToken, validateObjectBody, createSelection);
 router.post("/agent/selections/:selectionId/parts/:index/open", authenticateToken, openSelectionPart);
-// Grouping: suggested groups of related notes; a group → a review list (new folder or tag).
-router.post("/agent/groupings", authenticateToken, validateObjectBody, createGrouping);
-router.post("/agent/groupings/:groupingId/groups/:index/propose", authenticateToken, validateObjectBody, proposeGroup);
 
 module.exports = router;

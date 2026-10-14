@@ -4,9 +4,9 @@ const AgentChat = require("../models/agent-chat.model");
 const AgentProposal = require("../models/agent-proposal.model");
 const AgentReceipt = require("../models/agent-receipt.model");
 const AgentSelection = require("../models/agent-selection.model");
-const AgentGrouping = require("../models/agent-grouping.model");
 const User = require("../models/user.model");
 const { DEFAULT_SCOPES, SCOPE_KEYS, getAgentScopes } = require("../services/agent-scopes.service");
+const { pendingOf, pendingSummary, markMoved } = require("../services/pending-list.service");
 
 const { MAX_STORED_TURNS, MAX_CHATS_PER_USER, CHAT_TITLE_MAX, expiryFor } = AgentChat;
 const CHAT_LIMIT_MESSAGE = `${MAX_CHATS_PER_USER} chats is the limit — delete one to start a new chat`;
@@ -151,46 +151,64 @@ const BULK_VERDICTS = new Set(["likely", "rejected", "unjudged"]);
 const isShortString = (v, max) => typeof v === "string" && v.length <= max;
 const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
+// A review list's changes: [{ key, action, params, title }].
+const sanitizeChanges = (list) => {
+    if (!Array.isArray(list) || list.length === 0 || list.length > 20) return null;
+    const out = [];
+    for (const c of list) {
+        if (!isPlainObject(c) || !isShortString(c.key, 8) || !BULK_ACTIONS.has(c.action) || !isPlainObject(c.params)
+            || !isShortString(c.title ?? "", 300)) return null;
+        out.push({ key: c.key, action: c.action, params: c.params, title: c.title ?? "" });
+    }
+    return out;
+};
+
+const sanitizeIdList = (list) => (Array.isArray(list) ? list.filter((id) => isShortString(id, 120)).slice(0, 20) : []);
+
 const sanitizeProposal = (p) => {
-    if (!isPlainObject(p) || !isShortString(p.proposalId, 64) || !BULK_ACTIONS.has(p.action)
-        || !isPlainObject(p.params) || !Array.isArray(p.candidates) || p.candidates.length === 0 || p.candidates.length > 50) return null;
+    if (!isPlainObject(p) || !isShortString(p.proposalId, 64) || !Array.isArray(p.candidates) || p.candidates.length === 0 || p.candidates.length > 50) return null;
+    const changes = sanitizeChanges(p.changes);
+    if (!changes) return null;
+    const keys = new Set(changes.map((c) => c.key));
     const candidates = [];
     for (const c of p.candidates) {
-        if (!isPlainObject(c) || typeof c.noteId !== "string" || !OBJECT_ID_RE.test(c.noteId)
-            || !isShortString(c.title, 500) || !BULK_VERDICTS.has(c.verdict) || !isShortString(c.reason ?? "", 300)
-            || !(c.folder === null || c.folder === undefined || isShortString(c.folder, 200))) return null;
-        candidates.push({ noteId: c.noteId, title: c.title, folder: c.folder ?? null, verdict: c.verdict, reason: c.reason ?? "" });
+        if (!isPlainObject(c) || typeof c.noteId !== "string" || !OBJECT_ID_RE.test(c.noteId) || !isShortString(c.title, 500)
+            || !(c.folder === null || c.folder === undefined || isShortString(c.folder, 200))
+            || !Array.isArray(c.items) || c.items.length === 0 || c.items.length > 20) return null;
+        const items = [];
+        for (const i of c.items) {
+            if (!isPlainObject(i) || !keys.has(i.change) || !BULK_VERDICTS.has(i.verdict) || !isShortString(i.reason ?? "", 300)
+                || !isShortString(i.label ?? "", 300)
+                || !(i.clashesWith === undefined || (Array.isArray(i.clashesWith) && i.clashesWith.every((k) => keys.has(k))))) return null;
+            items.push({ change: i.change, verdict: i.verdict, reason: i.reason ?? "", label: i.label ?? "", clashesWith: i.clashesWith || [] });
+        }
+        candidates.push({ noteId: c.noteId, title: c.title, folder: c.folder ?? null, items });
     }
-    return { proposalId: p.proposalId, action: p.action, params: p.params, candidates };
+    const groups = [];
+    for (const g of Array.isArray(p.groups) ? p.groups.slice(0, 8) : []) {
+        if (!isPlainObject(g) || !isShortString(g.name, 40) || !isShortString(g.tag, 30) || !Array.isArray(g.noteIds)
+            || !Array.isArray(g.changes) || !g.changes.every((k) => keys.has(k))) return null;
+        groups.push({ name: g.name, tag: g.tag, noteIds: g.noteIds.filter((id) => typeof id === "string" && OBJECT_ID_RE.test(id)), changes: g.changes });
+    }
+    return {
+        proposalId: p.proposalId, changes, candidates, groups, openedFrom: sanitizeIdList(p.openedFrom),
+        status: p.status === "held" ? "held" : "open",
+        version: Number.isInteger(p.version) ? p.version : 1,
+        heldReason: p.heldReason === "separate" || p.heldReason === "too-many" ? p.heldReason : null,
+    };
 };
 
 const sanitizeSplitChoices = (s) => {
-    if (!isPlainObject(s) || !isShortString(s.selectionId, 64) || !BULK_ACTIONS.has(s.action) || !isPlainObject(s.params)
-        || !Number.isInteger(s.total) || !Array.isArray(s.parts) || s.parts.length < 2 || s.parts.length > 40) return null;
+    if (!isPlainObject(s) || !isShortString(s.selectionId, 64) || !Number.isInteger(s.total)
+        || !Array.isArray(s.parts) || s.parts.length < 2 || s.parts.length > 40) return null;
+    const changes = sanitizeChanges(s.changes);
+    if (!changes) return null;
     const parts = [];
     for (const part of s.parts) {
         if (!isPlainObject(part) || !Number.isInteger(part.index) || !isShortString(part.label, 120) || !Number.isInteger(part.count)) return null;
         parts.push({ index: part.index, label: part.label, count: part.count });
     }
-    return { selectionId: s.selectionId, action: s.action, params: s.params, total: s.total, parts };
-};
-
-const sanitizeGroupSuggestions = (g) => {
-    if (!isPlainObject(g) || !isShortString(g.groupingId, 64) || !Array.isArray(g.groups) || g.groups.length === 0 || g.groups.length > 8) return null;
-    const groups = [];
-    for (const group of g.groups) {
-        if (!isPlainObject(group) || !Number.isInteger(group.index) || !isShortString(group.name, 40) || !isShortString(group.tag, 30)
-            || !Number.isInteger(group.count) || !Number.isInteger(group.misfitCount) || !Array.isArray(group.sampleTitles)) return null;
-        groups.push({
-            index: group.index, name: group.name, tag: group.tag, count: group.count, misfitCount: group.misfitCount,
-            sampleTitles: group.sampleTitles.filter((t) => typeof t === "string").slice(0, 3).map((t) => t.slice(0, 120)),
-        });
-    }
-    const count = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
-    return {
-        groupingId: g.groupingId, groups, ungroupedCount: count(g.ungroupedCount), notIndexedCount: count(g.notIndexedCount),
-        scannedCount: count(g.scannedCount), totalCount: count(g.totalCount),
-    };
+    return { selectionId: s.selectionId, changes, total: s.total, parts };
 };
 
 const validateAgentResponse = (data) => {
@@ -228,7 +246,6 @@ const validateAgentResponse = (data) => {
         drafts: drafts.slice(0, 5),
         proposal: data.proposal ? sanitizeProposal(data.proposal) : null,
         splitChoices: data.splitChoices ? sanitizeSplitChoices(data.splitChoices) : null,
-        groupSuggestions: data.groupSuggestions ? sanitizeGroupSuggestions(data.groupSuggestions) : null,
     };
 };
 
@@ -276,6 +293,15 @@ const chatWithAgent = async (req, res) => {
     } catch (chatError) {
         console.error(`[${req.id}] Agent chat lookup failed:`, chatError.message);
         return res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+
+    // The user's pending review list (one per account), so the agent can tell
+    // an add-on from a separate task.
+    let pendingList = null;
+    try {
+        pendingList = pendingSummary(await pendingOf(req.user._id));
+    } catch (pendingError) {
+        console.error(`[${req.id}] Pending list lookup failed:`, pendingError.message);
     }
 
     // The permission toggles decide which tools the agent is offered.
@@ -341,6 +367,8 @@ const chatWithAgent = async (req, res) => {
                 workingSet: sanitizedWorkingSet,
                 unsavedNotes: sanitizedUnsavedNotes,
                 scopes: agentScopes,
+                chatId,
+                pendingList,
             }),
             signal: upstream.signal,
         });
@@ -481,6 +509,9 @@ const wakeAgent = (req, res) => {
 // split choices to that chat. Returns the chat's ID (null if it was deleted
 // while the turn ran).
 const persistAgentTurn = async (userId, chatId, userMessage, validated) => {
+    // The pending list is shown only in its newest turn: older turns showing
+    // it (any chat) become a pointer.
+    if (validated.proposal?.status === "open") await markMoved(userId, validated.proposal.proposalId);
     const savedChatId = await appendTurns(userId, chatId, [
         { role: "user", text: userMessage },
         {
@@ -489,7 +520,6 @@ const persistAgentTurn = async (userId, chatId, userMessage, validated) => {
             citations: validated.citations,
             proposal: validated.proposal || null,
             splitChoices: validated.splitChoices || null,
-            groupSuggestions: validated.groupSuggestions || null,
         },
     ], { workingSet: validated.workingSet, newChatTitle: titleFromMessage(userMessage) });
     if (savedChatId && validated.proposal) {
@@ -497,9 +527,6 @@ const persistAgentTurn = async (userId, chatId, userMessage, validated) => {
     }
     if (savedChatId && validated.splitChoices) {
         await AgentSelection.updateOne({ selectionId: validated.splitChoices.selectionId, userId }, { $set: { chatId: savedChatId } });
-    }
-    if (savedChatId && validated.groupSuggestions) {
-        await AgentGrouping.updateOne({ groupingId: validated.groupSuggestions.groupingId, userId }, { $set: { chatId: savedChatId } });
     }
     return savedChatId;
 };
@@ -572,15 +599,16 @@ const getChat = async (req, res) => {
         const userId = String(req.user._id);
         const proposalIds = doc.turns.map((t) => t.proposal?.proposalId).filter(Boolean);
         const selectionIds = doc.turns.map((t) => t.splitChoices?.selectionId).filter(Boolean);
-        const groupingIds = doc.turns.map((t) => t.groupSuggestions?.groupingId).filter(Boolean);
-        const [liveProposals, receipts, liveSelections, liveGroupings] = await Promise.all([
-            proposalIds.length ? AgentProposal.find({ userId, proposalId: { $in: proposalIds } }).select("proposalId").lean() : [],
+        const [liveProposals, receipts, liveSelections] = await Promise.all([
+            proposalIds.length ? AgentProposal.find({ userId, proposalId: { $in: proposalIds } }).select("proposalId status").lean() : [],
             proposalIds.length ? AgentReceipt.find({ userId, proposalId: { $in: proposalIds } }).select("proposalId").lean() : [],
             selectionIds.length ? AgentSelection.find({ userId, selectionId: { $in: selectionIds } }).select("selectionId").lean() : [],
-            groupingIds.length ? AgentGrouping.find({ userId, groupingId: { $in: groupingIds } }).select("groupingId").lean() : [],
         ]);
-        const liveGroupingIds = new Set(liveGroupings.map((g) => g.groupingId));
         const usable = new Set([...liveProposals, ...receipts].map((p) => p.proposalId));
+        // replaced (older lists) / discarded (closed by the user); held = not
+        // added to the pending list yet.
+        const closed = new Map(liveProposals.filter((p) => p.status === "replaced" || p.status === "discarded").map((p) => [p.proposalId, p.status]));
+        const held = new Set(liveProposals.filter((p) => p.status === "held").map((p) => p.proposalId));
         const liveSelectionIds = new Set(liveSelections.map((s) => s.selectionId));
         return res.json({
             error: false,
@@ -589,11 +617,17 @@ const getChat = async (req, res) => {
                 role: t.role,
                 text: t.text,
                 citations: t.citations || [],
-                proposal: t.proposal ? { ...t.proposal, expired: !usable.has(t.proposal.proposalId) } : null,
-                splitChoices: t.splitChoices ? { ...t.splitChoices, expired: !liveSelectionIds.has(t.splitChoices.selectionId) } : null,
-                groupSuggestions: t.groupSuggestions
-                    ? { ...t.groupSuggestions, expired: !liveGroupingIds.has(t.groupSuggestions.groupingId) }
+                proposal: t.proposal
+                    ? {
+                        ...t.proposal,
+                        expired: !usable.has(t.proposal.proposalId),
+                        closed: closed.get(t.proposal.proposalId) || null,
+                        status: held.has(t.proposal.proposalId) ? "held" : t.proposal.status === "held" ? "open" : t.proposal.status,
+                    }
                     : null,
+                splitChoices: t.splitChoices ? { ...t.splitChoices, expired: !liveSelectionIds.has(t.splitChoices.selectionId) } : null,
+                // Group cards from before grouping made review lists.
+                groupSuggestions: t.groupSuggestions ? { ...t.groupSuggestions, expired: true } : null,
             })),
             workingSet: doc.workingSet || [],
         });
@@ -632,8 +666,8 @@ const updateChat = async (req, res) => {
     }
 };
 
-// DELETE /v1/agent/chats/:chatId — also removes the chat's open review lists,
-// split choices and group suggestions. Receipts stay: the activity log and Undo don't depend on
+// DELETE /v1/agent/chats/:chatId — also removes the pending / held lists
+// shown in it and its split choices. Receipts stay: the activity log and Undo don't depend on
 // the chat.
 const deleteChat = async (req, res) => {
     const filter = ownChatFilter(req);
@@ -643,9 +677,8 @@ const deleteChat = async (req, res) => {
         const userId = String(req.user._id);
         const chatId = String(doc._id);
         await Promise.all([
-            AgentProposal.deleteMany({ userId, chatId, status: "open" }),
+            AgentProposal.deleteMany({ userId, chatId, status: { $in: ["open", "held"] } }),
             AgentSelection.deleteMany({ userId, chatId }),
-            AgentGrouping.deleteMany({ userId, chatId }),
         ]);
         return res.json({ error: false, message: "Chat deleted" });
     } catch (error) {

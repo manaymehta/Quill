@@ -1,21 +1,26 @@
 """Bulk changes: the propose_bulk_change tool (architecture plan §2.3/§2.5,
-step 3b). The model states only the intent; code picks the notes; a small,
-separate AI check judges the borderline ones; the user approves on a review
-list (nothing changes until they press Apply).
+step 3b). The model states only the intent — one or more changes; code picks
+the notes for each; a small, separate AI check judges the borderline ones;
+the user approves on ONE review list per reply (nothing changes until they
+press Apply).
 
-Selection:
-- exact filters → Express returns the COMPLETE matching list (no AI);
+Selection, per change:
+- exact filters → Express returns the COMPLETE matching list (no AI); tags
+  match exactly, capitals included;
 - a topic → the agent's hybrid search with a large limit, limited to the
   exact-filter set when both are given;
-- more than 50 notes → split choices built by code (folder → tag → year →
-  relevance), saved in Express; the checker runs only when a part is opened;
-- 50 or fewer → sorted into likely / borderline; borderline notes go to the
-  checker (groups of ~10, labelled 1..N, structured output, temperature 0,
-  no tools, no chat history) → saved as a proposal in Express.
+- a topic change with 50 or fewer notes → sorted into likely / borderline;
+  borderline notes go to the checker (groups of ~10, labelled 1..N,
+  structured output, temperature 0, no tools, no chat history); above 50 the
+  notes stay "pending" and are judged when their split choice is opened.
+
+Express combines the changes per note (services/bulk-plan.service.js),
+flags clashes, extends this reply's earlier list (`replaces`), absorbs the
+chat's open lists sharing notes, and above 50 notes in total returns split
+choices instead.
 """
 import asyncio
 import time
-from collections import Counter
 from typing import Any
 
 from google.genai import types
@@ -34,7 +39,8 @@ KEYWORD_LIMIT = 500
 CHECK_SECONDS = 25.0
 CHECK_TEXT_CHARS = 1800
 REASON_CHARS = 120
-MAX_PARTS = 40
+MAX_CHANGES = 10
+MAX_ROWS_FOR_MODEL = 50
 ACTIONS = ("move", "tag", "archive", "trash")
 
 
@@ -149,66 +155,6 @@ async def _topic_notes(ctx: ToolContext, topic: str, keywords: list[str],
             "texts": [e.text for e in cand.excerpts[:2]] or [str(meta.get("currentText", ""))],
         })
     return out, None
-
-
-# ── Split choices (more than 50) ────────────────────────────────────────────
-
-def _by_folder(items: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
-    groups: dict[str, list[dict[str, Any]]] = {}
-    for n in items:
-        groups.setdefault(n.get("folder") or "No folder", []).append(n)
-    return sorted(groups.items(), key=lambda kv: -len(kv[1]))
-
-
-def _by_tag(items: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
-    remaining, groups = list(items), []
-    while remaining:
-        counts = Counter(t for n in remaining for t in set(n.get("tags") or []))
-        if not counts:
-            groups.append(("No tag", remaining))
-            break
-        tag, _ = counts.most_common(1)[0]
-        groups.append((f"#{tag}", [n for n in remaining if tag in (n.get("tags") or [])]))
-        remaining = [n for n in remaining if tag not in (n.get("tags") or [])]
-    return groups
-
-
-def _by_year(items: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
-    groups: dict[str, list[dict[str, Any]]] = {}
-    for n in items:
-        year = str(n.get("lastEdited", ""))[:4] or "Unknown year"
-        groups.setdefault(f"Edited {year}", []).append(n)
-    return sorted(groups.items(), key=lambda kv: kv[0], reverse=True)
-
-
-def _by_relevance(items: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
-    chunks = [items[i:i + MAX_LIST] for i in range(0, len(items), MAX_LIST)]
-    labels = ["Most relevant 50"] + [f"Next {len(c)}" for c in chunks[1:-1]] + ([f"Remaining {len(chunks[-1])}"] if len(chunks) > 1 else [])
-    return list(zip(labels, chunks))
-
-
-_SPLITTERS = (_by_folder, _by_tag, _by_year, _by_relevance)
-
-
-def split_parts(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Plain-code split, in order folder → tag → year → relevance; a part still
-    over 50 is split again by the next way. Items keep their rank order."""
-    def split(group: list[dict[str, Any]], level: int, prefix: str) -> list[tuple[str, list[dict[str, Any]]]]:
-        if len(group) <= MAX_LIST:
-            return [(prefix, group)]
-        for lvl in range(level, len(_SPLITTERS)):
-            groups = _SPLITTERS[lvl](group)
-            if len(groups) > 1 or lvl == len(_SPLITTERS) - 1:
-                parts = []
-                for label, members in groups:
-                    parts += split(members, lvl + 1, f"{prefix} · {label}" if prefix else label)
-                return parts
-        return [(prefix, group)]
-
-    parts = split(items, 0, "")
-    if len(parts) > MAX_PARTS:   # too fragmented to choose from: fall back to relevance
-        parts = _by_relevance(items)
-    return [{"label": label or "All matches", "noteIds": [n["noteId"] for n in members]} for label, members in parts]
 
 
 # ── The borderline checker ──────────────────────────────────────────────────
@@ -340,20 +286,20 @@ async def judge_note_ids(ctx: ToolContext, topic: str, keywords: list[str], note
 
 # ── The tool ────────────────────────────────────────────────────────────────
 
-PROPOSE_BULK_CHANGE_SCHEMA: dict[str, Any] = {
+CHANGE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "action": {"type": "string", "enum": list(ACTIONS), "description": "move | tag | archive | trash (soft delete, recoverable)."},
         "targetFolderId": {"type": "string", "description": "For move: folder ID from list_folders, or \"none\" for no folder."},
         "newFolderName": {"type": "string", "description": "For move into a folder that doesn't exist yet: its name (created when the user presses Apply)."},
-        "addTags": {"type": "array", "items": {"type": "string"}, "description": "For tag: tags to add."},
-        "removeTags": {"type": "array", "items": {"type": "string"}, "description": "For tag: tags to remove."},
+        "addTags": {"type": "array", "items": {"type": "string"}, "description": "For tag: tags to add (exact spelling)."},
+        "removeTags": {"type": "array", "items": {"type": "string"}, "description": "For tag: tags to remove (exact spelling). Alone this deletes the tag; to rename or respell it, also give addTags."},
         "archived": {"type": "boolean", "description": "For archive: true to archive (default), false to unarchive (then also set filters.archived=true)."},
         "filters": {
             "type": "object",
             "description": "Exact conditions (all must hold). Archived notes are excluded unless archived=true.",
             "properties": {
-                "tag": {"type": "string"},
+                "tag": {"type": "string", "description": "Exact tag, capitals included."},
                 "folderId": {"type": "string", "description": "Folder ID (subfolders included) or \"none\"."},
                 "archived": {"type": "boolean"},
                 "untitled": {"type": "boolean"},
@@ -367,96 +313,198 @@ PROPOSE_BULK_CHANGE_SCHEMA: dict[str, Any] = {
     "required": ["action"],
 }
 
+ADD_TO_PENDING_SCHEMA: dict[str, Any] = {
+    "type": "boolean",
+    "description": "Only when a review list is already waiting: true if this continues or adjusts it, false if it's a separate task.",
+}
 
-async def run_propose_bulk_change(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+PROPOSE_BULK_CHANGE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "changes": {
+            "type": "array",
+            "items": CHANGE_SCHEMA,
+            "description": f"1-{MAX_CHANGES} changes, each with the notes it applies to (e.g. one per tag to rename).",
+        },
+        "addToPending": ADD_TO_PENDING_SCHEMA,
+    },
+    "required": ["changes"],
+}
+
+
+async def _resolve_change(ctx: ToolContext, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None, ToolResult | None]:
+    """One change → (change for Express with its candidates, problem for the
+    model, hard failure). A change matching no notes is a problem, not a
+    failure, so the call's other changes still go ahead."""
     action = str(args.get("action", "")).strip()
-    summary = f"propose_bulk_change({action})"
     if action not in ACTIONS:
-        return error_result("invalid_args", "action must be move, tag, archive or trash.", recoverable=True, summary=summary)
+        return None, "action must be move, tag, archive or trash.", None
     if action == "trash" and not ctx.allow_trash:
-        # The tool menu already hides trash when it's off; this is the backstop.
-        return error_result("not_allowed", "Sending notes to trash is turned off in the user's agent settings.",
-                            recoverable=False, summary=f"{summary} -> trash turned off")
+        return None, "Sending notes to trash is turned off in the user's agent settings.", None
     params, err = _params(action, args)
     filters, ferr = _filters(args.get("filters"))
     topic = str(args.get("topic") or "").strip()[:500]
     keywords = [str(k).strip()[:100] for k in args.get("keywords") or [] if str(k).strip()][:5]
     if err or ferr:
-        return error_result("invalid_args", err or ferr, recoverable=True, summary=summary)
+        return None, err or ferr, None
     if not filters and not topic:
-        return error_result("invalid_args", "Give filters and/or a topic describing which notes to change.",
-                            recoverable=True, summary=summary)
+        return None, "Give filters and/or a topic describing which notes to change.", None
 
-    # 1-2. Candidates: exact filters (complete), topic (hybrid search), or both.
-    exact, truncated, folder_name = None, False, None
+    exact, folder_name = None, None
     if filters:
-        exact, truncated, failure = await _exact_notes(ctx, filters)
+        exact, _truncated, failure = await _exact_notes(ctx, filters)
         if failure:
-            return failure
+            return None, None, failure
         if filters.get("folderId") and filters["folderId"] != "none":
             folder_name = next((n.get("folder") for n in exact if n.get("folderId") == filters["folderId"]), None)
+        if not exact and "tag" in filters:
+            return None, (f"No note has the tag «{filters['tag']}» exactly (tags match exactly, capitals included). "
+                          "Check the exact names with list_tags."), None
     if topic:
         allowed = {n["noteId"] for n in exact} if exact is not None else None
         items, failure = await _topic_notes(ctx, topic, keywords, allowed)
         if failure:
-            return failure
+            return None, None, failure
     else:
         items = [dict(n, strong=True, keywordHit=True, texts=[]) for n in exact]
-
-    instruction = topic or _filter_reason(filters, folder_name)
     if not items:
-        return ToolResult(ok=True, data={"matched": 0, "note": "No notes match. Nothing to change."},
-                          summary=f"{summary} -> 0 notes")
+        return None, "No notes match this change.", None
 
-    # 3. More than 50 → split choices (no AI yet).
-    if len(items) > MAX_LIST:
-        parts = split_parts(items)
-        payload, failure = await _call_express(ctx, "POST", "/v1/agent/selections", summary, json={
-            "action": action, "params": params, "instruction": instruction, "topic": topic,
-            "keywords": keywords, "filterReason": "" if topic else _filter_reason(filters, folder_name), "parts": parts,
+    if not topic:
+        reason = _filter_reason(filters, folder_name)
+        candidates = [{"noteId": n["noteId"], "verdict": "likely", "reason": reason} for n in items]
+    elif len(items) <= MAX_LIST:
+        candidates = await judge(ctx, topic, keywords, items)
+    else:
+        # Too many to check now: judged when the user opens their part.
+        candidates = [{"noteId": n["noteId"], "verdict": "unjudged", "reason": "checked when you open this part", "pending": True}
+                      for n in items[:2000]]
+    change = {"action": action, "params": params, "instruction": topic or _filter_reason(filters, folder_name),
+              "topic": topic, "keywords": keywords, "candidates": candidates}
+    return change, None, None
+
+
+def _model_view(payload: dict[str, Any]) -> dict[str, Any]:
+    """What the model is told about the list the user now sees."""
+    titles = {c["key"]: c.get("title", c["action"]) for c in payload.get("changes", [])}
+    rows = []
+    for cand in payload.get("candidates", [])[:MAX_ROWS_FOR_MODEL]:
+        rows.append({
+            "note": cand.get("title") or "(untitled)",
+            "changes": [
+                {"change": item.get("label") or titles.get(item["change"], ""), "verdict": item["verdict"], "reason": item.get("reason", ""),
+                 **({"clashesWith": [titles.get(k, k) for k in item["clashesWith"]]} if item.get("clashesWith") else {})}
+                for item in cand.get("items", [])
+            ],
         })
+    return {"changes": list(titles.values()), "notes": len(payload.get("candidates", [])), "rows": rows}
+
+
+async def run_propose_bulk_change(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    raw = args.get("changes")
+    if not isinstance(raw, list) or not raw:
+        # Accept a single change given flat, as older prompts did.
+        raw = [args] if args.get("action") else []
+    summary = f"propose_bulk_change({', '.join(str(c.get('action', '?')) for c in raw if isinstance(c, dict)) or '-'})"
+    if not raw or len(raw) > MAX_CHANGES:
+        return error_result("invalid_args", f"Give 1-{MAX_CHANGES} changes.", recoverable=True, summary=summary)
+    if any(isinstance(c, dict) and c.get("action") == "trash" for c in raw) and not ctx.allow_trash:
+        # The tool menu already hides trash when it's off; this is the backstop.
+        return error_result("not_allowed", "Sending notes to trash is turned off in the user's agent settings.",
+                            recoverable=False, summary=f"{summary} -> trash turned off")
+
+    changes, problems = [], []
+    for index, change_args in enumerate(raw, start=1):
+        if not isinstance(change_args, dict):
+            problems.append(f"change {index}: not an object")
+            continue
+        change, problem, failure = await _resolve_change(ctx, change_args)
         if failure:
             return failure
-        choices = {"selectionId": payload["selectionId"], "action": action, "params": payload.get("params", params),
-                   "total": len(items), "parts": payload["parts"]}
+        if problem:
+            problems.append(f"change {index}: {problem}")
+        elif change:
+            changes.append(change)
+    if not changes:
+        return error_result("invalid_args", " ".join(problems) or "Nothing to change.", recoverable=True,
+                            summary=f"{summary} -> nothing to propose")
+
+    return await save_to_review_list(ctx, {"changes": changes}, summary, args.get("addToPending"),
+                                     {"problems": problems} if problems else {})
+
+
+async def save_to_review_list(ctx: ToolContext, body: dict[str, Any], summary: str, add_to_pending: Any,
+                              extra: dict[str, Any] | None = None) -> ToolResult:
+    """Sends changes (or grouping's groups) to Express, which keeps ONE
+    pending review list per account: they're added to it, or — when the
+    agent said they're a separate task while a list is pending — held. Above
+    50 notes on their own they become split choices. Shared by
+    propose_bulk_change and suggest_groups."""
+    added_this_reply = bool(ctx.bulk_draft.get("addedToPending"))
+    separate = bool(ctx.pending_list) and not added_this_reply and add_to_pending is not True
+    request = {**body, "split": True, "mode": "separate" if separate else "add"}
+    if ctx.chat_id:
+        request["chatId"] = ctx.chat_id
+    if separate and ctx.bulk_draft.get("heldId"):
+        request["heldId"] = ctx.bulk_draft["heldId"]
+    payload, failure = await _call_express(ctx, "POST", "/v1/agent/proposals", summary, json=request)
+    if failure:
+        return failure
+
+    extra = {**(extra or {}), **({"alreadyLikeThat": payload["alreadyCount"]} if payload.get("alreadyCount") else {})}
+    if payload.get("empty"):
+        return ToolResult(ok=True, data={"matched": 0, "note": "Nothing to change — every matching note is already like that.", **extra},
+                          summary=f"{summary} -> nothing to change")
+
+    if payload.get("splitChoices"):
+        choices = payload["splitChoices"]
         return ToolResult(
             ok=True,
-            data={"matched": len(items), "truncated": truncated, "splitChoices": [{"label": p["label"], "notes": p["count"]} for p in payload["parts"]],
-                  "note": "Too many for one review list; the user sees these choices and opens one. Nothing changes until they press Apply."},
-            summary=f"{summary} -> {len(items)} notes, {len(payload['parts'])} choices",
+            data={"matched": choices["total"], "splitChoices": [{"label": p["label"], "notes": p["count"]} for p in choices["parts"]],
+                  "note": ("Too many notes for one review list; the user sees these choices and opens one (it goes into their "
+                           "pending list). Nothing changes until they press Apply."),
+                  **extra},
+            summary=f"{summary} -> {choices['total']} notes, {len(choices['parts'])} choices",
             splitChoices=choices,
         )
 
-    # 4. 50 or fewer → judge (topic) or all likely (exact) → saved proposal.
-    if topic:
-        candidates = await judge(ctx, topic, keywords, items)
+    view = _model_view(payload)
+    clashes = payload.get("clashCount", 0)
+    proposal = {k: payload.get(k) for k in ("proposalId", "status", "version", "heldReason", "changes", "groups", "candidates", "openedFrom")}
+    if payload.get("status") == "held":
+        ctx.bulk_draft["heldId"] = payload["proposalId"]
+        reason = ("adding it would take the waiting list over 50 notes" if payload.get("heldReason") == "too-many"
+                  else "it's a separate task from the list already waiting")
+        note = (f"Held, not shown as a list yet: {reason}. The user sees a short card with two buttons — add these changes "
+                "to the waiting list, or show them after finishing it. Nothing changes until they press Apply.")
     else:
-        reason = _filter_reason(filters, folder_name)
-        candidates = [{"noteId": n["noteId"], "verdict": "likely", "reason": reason} for n in items]
-    payload, failure = await _call_express(ctx, "POST", "/v1/agent/proposals", summary, json={
-        "action": action, "params": params, "instruction": instruction, "candidates": candidates,
-    })
-    if failure:
-        return failure
-    likely = sum(1 for c in payload["candidates"] if c["verdict"] == "likely")
+        ctx.bulk_draft["addedToPending"] = True
+        note = ("The user sees ONE review list holding every change waiting for Apply"
+                + (" (these were added to the list already waiting)" if payload.get("extended") else "")
+                + ". Clashing items contradict each other on a note: both start unticked and the user picks one. "
+                  "Nothing changes until they press Apply.")
     return ToolResult(
         ok=True,
-        data={
-            "matched": len(payload["candidates"]),
-            "reviewList": [{"title": c["title"] or "(untitled)", "verdict": c["verdict"], "reason": c["reason"]} for c in payload["candidates"]],
-            "note": "The user sees this review list with tick boxes (likely ones ticked). Nothing changes until they press Apply.",
-        },
-        summary=f"{summary} -> {len(payload['candidates'])} notes ({likely} likely)",
-        proposal={k: payload[k] for k in ("proposalId", "action", "params", "candidates")},
+        data={"reviewList": view, "status": payload.get("status"), "note": note,
+              **({"notesWithClashes": clashes} if clashes else {}), **extra},
+        summary=f"{summary} -> {view['notes']} notes, {len(view['changes'])} change{'s' if len(view['changes']) != 1 else ''}"
+                + (" (held)" if payload.get("status") == "held" else ""),
+        proposal=proposal,
     )
 
 
 PROPOSE_BULK_CHANGE = ToolSpec(
     name="propose_bulk_change",
     description=(
-        "Prepare a change to SEVERAL notes at once — move to a folder, add/remove tags, archive, or send to "
-        "trash (recoverable) — as a review list the user approves. Describe WHICH notes with exact filters "
-        "and/or a topic; never collect note IDs yourself. Nothing changes until the user presses Apply."
+        "Prepare changes to notes — move to a folder (newFolderName for a folder that doesn't exist yet), add/remove "
+        "tags, archive/unarchive, or send to trash (recoverable) — as a review list the user approves; nothing changes "
+        "until they press Apply. Put every change the request needs in `changes` (one call can hold several). For "
+        "each, describe WHICH notes with exact filters (folderId from list_folders) and/or a topic plus keywords; "
+        "never collect note IDs yourself. Renaming a tag — including respelling it (\"remove the z from my tags\": "
+        "welcomez → welcome) — is one change per tag: filters.tag = old, removeTags = [old], addTags = [new]; "
+        "removeTags alone deletes the tag, only when the user wants it gone. Tags match exactly, capitals included: "
+        "take names from list_tags. The user has ONE review list waiting for Apply; your changes go into it. "
+        "Propose only what the user just asked for."
     ),
     parameters=PROPOSE_BULK_CHANGE_SCHEMA,
     executor=run_propose_bulk_change,
