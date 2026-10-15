@@ -1,9 +1,10 @@
-import { historyField } from '@codemirror/commands';
-
 /**
  * In-memory registry for CodeMirror runtime state and baseline comparisons.
  * Kept outside of persisted Zustand state to avoid heavy object cloning
  * and unnecessary React re-renders while typing.
+ *
+ * Must stay free of CodeMirror imports: it is loaded eagerly via useTabsStore,
+ * while the editor itself lives in a lazily loaded chunk.
  */
 
 // Map<tabId, CodeMirrorJSONSnapshot>
@@ -37,12 +38,13 @@ const normalizeLinkPreviews = (previews) =>
 
 export const editorRegistry = {
   /**
-   * Capture and save a CodeMirror view's state snapshot including undo/redo history.
+   * Capture and save a CodeMirror view's state snapshot. `fields` are the state
+   * fields to serialize alongside doc/selection (e.g. { history: historyField }).
    */
-  saveEditorSnapshot: (tabId, view) => {
+  saveEditorSnapshot: (tabId, view, fields) => {
     if (!tabId || !view || !view.state) return;
     try {
-      const snapshot = view.state.toJSON({ history: historyField });
+      const snapshot = view.state.toJSON(fields);
       snapshots.set(String(tabId), snapshot);
     } catch (err) {
       console.warn('Failed to snapshot editor state for tab:', tabId, err);

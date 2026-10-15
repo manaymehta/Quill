@@ -84,7 +84,7 @@ const Navbar = () => {
   return (
     <div
       ref={navbarRef}
-      className={`bg-[#202124]/80 backdrop-blur-sm px-5 py-2 flex items-center justify-between z-[100] fixed top-0 left-0 w-full transition-transform duration-300 ease-out will-change-transform ${
+      className={`bg-(--page-bg)/80 backdrop-blur-sm px-5 py-2 flex items-center justify-between z-[100] fixed top-0 left-0 w-full transition-transform duration-300 ease-out will-change-transform ${
         isEffectiveVisible ? 'translate-y-0' : '-translate-y-full'
       } sm:translate-y-0`}
     >

@@ -1,5 +1,5 @@
-import { memo, useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder } from 'react-icons/md'
+import { memo, useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import axiosInstance from '../../utils/axiosInstance';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
@@ -16,6 +16,15 @@ import { historyField, redo } from '@codemirror/commands';
 import { keymap } from '@codemirror/view';
 import { editorRegistry } from '../../utils/editorRegistry';
 import { useTabsStore } from '../../store/useTabsStore';
+import { useUIStore } from '../../store/useUIStore';
+import FadeTitle from '../../components/TabDock/FadeTitle';
+import { EDITOR_CARD_STYLE, EDITOR_TOOLBAR_H_PX, EDITOR_TOOLBAR_DOT_SLOT_MARGIN_PX, fullscreenToolbarHeight } from '../../components/Editor/editorChrome';
+import { DOCK_METRICS, DOCK_MOBILE_QUERY } from '../../components/TabDock/dockMetrics';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
+
+// State fields persisted in editor snapshots (used for both toJSON and fromJSON)
+const SNAPSHOT_FIELDS = { history: historyField };
 
 // "Apply & save" from the agent chat marks a tab pendingSave; the editor runs
 // its normal save once when it opens. Claimed per tab + revision so React
@@ -46,6 +55,10 @@ const EDITOR_BASIC_SETUP = {
   highlightSelectionMatches: false,
   searchKeymap: false,
 };
+
+const isMobileOrTouch = () =>
+  typeof window !== 'undefined' &&
+  (window.matchMedia('(pointer: coarse)').matches || window.matchMedia(BELOW_TABLET_QUERY).matches);
 
 const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChecklistItemChange, removeChecklistItem }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
@@ -92,6 +105,14 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const [title, setTitle] = useState(noteData?.title || "");
   const [folderId, setFolderId] = useState(noteData?.folderId || null);
   const [showMovePicker, setShowMovePicker] = useState(false);
+  const isEditorFullscreen = useUIStore((s) => s.isEditorFullscreen);
+  const toggleEditorFullscreen = useUIStore((s) => s.toggleEditorFullscreen);
+  // Toolbar height: card mode's, easing to the full-screen one (fits the dock's dot) along the
+  // full-screen transition (--fs, set by GlobalEditorOverlay)
+  const dockMetrics = useMediaQuery(DOCK_MOBILE_QUERY) ? DOCK_METRICS.mobile : DOCK_METRICS.desktop;
+  const toolbarCardH = useMediaQuery(BELOW_TABLET_QUERY) ? EDITOR_TOOLBAR_H_PX.phone : EDITOR_TOOLBAR_H_PX.desktop;
+  const toolbarHeight = `calc(${toolbarCardH}px + ${fullscreenToolbarHeight(dockMetrics) - toolbarCardH}px * var(--fs, 0))`;
+  const dotSlotWidth = dockMetrics.height[1] + 2 * EDITOR_TOOLBAR_DOT_SLOT_MARGIN_PX;
   const [error, setError] = useState("")
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isChecklist, setIsChecklist] = useState(noteData?.isChecklist || false);
@@ -104,6 +125,21 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   // Ref to the CodeMirror editor view for programmatic focus
   const cmViewRef = useRef(null);
 
+  // The scrolling area's reserved scrollbar gutter (always kept, see .editor-scrollbar) is taken
+  // back out of its right padding (.editor-column in index.css), so its left and right margins
+  // match. Its width depends on the browser and zoom, so it's measured: the element's width minus
+  // the width available to its content (it has no border). Re-measured on resize (e.g. zoom).
+  const scrollAreaRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const measure = () => el.style.setProperty('--scrollbar-gutter-w', `${el.offsetWidth - el.clientWidth}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const currentNoteId = noteData?._id;
 
   // Rehydrate CodeMirror runtime state (doc, selection, undo/redo history) from in-memory registry
@@ -113,7 +149,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     if (snapshot) {
       return {
         json: snapshot,
-        fields: { history: historyField },
+        fields: SNAPSHOT_FIELDS,
       };
     }
     return undefined;
@@ -295,9 +331,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     setLinkPreviews(prev => prev.filter(p => p.url !== urlToRemove));
   }, []);
 
-  // Auto-focus the CodeMirror editor when this tab becomes the active tab
+  // Auto-focus the CodeMirror editor when this tab becomes the active tab (desktop only)
   useEffect(() => {
-    if (isActive && !isChecklist && cmViewRef.current) {
+    if (isActive && !isChecklist && cmViewRef.current && !isMobileOrTouch()) {
       // Small delay lets the display:none → display:block paint happen first
       const t = setTimeout(() => cmViewRef.current?.focus(), 50);
       return () => clearTimeout(t);
@@ -357,7 +393,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       const changedOutside = Boolean(liveTab) && (liveTab.externalRev || 0) !== mountRev;
       if (liveTab && !changedOutside) {
         if (cmViewRef.current) {
-          editorRegistry.saveEditorSnapshot(tabId, cmViewRef.current);
+          editorRegistry.saveEditorSnapshot(tabId, cmViewRef.current, SNAPSHOT_FIELDS);
         }
         if (onUpdateTabState && latestDraftRef.current) {
           onUpdateTabState(latestDraftRef.current);
@@ -560,7 +596,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const agentDiffHasChanges = Array.isArray(noteData?.agentDiff) && noteData.agentDiff.some((part) => part.added || part.removed);
 
   return (
-    <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] rounded-[24px] shadow-sm border border-[#e8dcc8] overflow-hidden relative'>
+    <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] overflow-hidden relative' style={EDITOR_CARD_STYLE}>
 
       {/* agent-staged draft banner */}
       {noteData?.agentStaged && (
@@ -616,40 +652,61 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       )}
 
       {/* editor content area */}
-      <div className='flex-grow flex flex-col pt-5 md:pt-6 px-5 md:px-7 pb-2 overflow-y-auto editor-scrollbar'>
+      <div ref={scrollAreaRef} className='editor-column [--column-pad:1.25rem] md:[--column-pad:1.75rem] flex-grow flex flex-col pt-5 md:pt-6 pb-2 overflow-y-auto editor-scrollbar'>
 
         {/* metadata area */}
-        <div className="text-[11px] md:text-[13px] font-medium tracking-widest md:tracking-[0.15em] text-stone-500 mb-1 md:mb-1.5 uppercase flex items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-1.5 md:gap-2 whitespace-nowrap min-w-0 shrink-0 pl-8 md:pl-0">
-            <span className="shrink-0">{noteData?.createdAt ? new Date(noteData.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-            <span className="text-[16px] leading-none mb-0.5 shrink-0">&middot;</span>
-            <span className="shrink-0">{type === 'edit' ? 'EDITED' : 'NEW NOTE'}</span>
+        <div className="text-[11px] md:text-[13px] font-medium tracking-wider md:tracking-[0.15em] text-stone-500 mb-1 md:mb-1.5 uppercase flex items-center justify-between gap-1.5 md:gap-2 shrink-0">
+          {/* Date · status. The part of the row that gives way on a narrow phone (fading out at its
+              end), so the folder pill and the full-screen toggle keep their full size. */}
+          <div className="flex min-w-0 pl-8 md:pl-0">
+            <FadeTitle className="flex items-center gap-1 md:gap-2 min-w-0">
+              <span className="shrink-0">{noteData?.createdAt ? new Date(noteData.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              <span className="text-[16px] leading-none mb-0.5 shrink-0">&middot;</span>
+              <span className="shrink-0">{type === 'edit' ? 'EDITED' : 'NEW NOTE'}</span>
+            </FadeTitle>
           </div>
-          {(() => {
-            const folderObj = folderId ? folders.find(f => f._id === folderId) : null;
-            return (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowMovePicker(true);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1 md:py-1.5 bg-[#ebe0d3] hover:bg-[#e4d7c8] text-stone-600 rounded-full transition-all duration-200 text-xs md:text-sm font-sans tracking-normal normal-case border border-[#e0d2bf] shadow-sm cursor-pointer shrink-0"
-                title="Change note folder"
-              >
-                {folderObj ? (
-                  <>
-                    <MdOutlineFolder style={{ color: folderObj.color }} size={16} />
-                    <span className="text-[#333] font-medium truncate max-w-[100px] md:max-w-[120px]">{folderObj.name}</span>
-                  </>
-                ) : (
-                  <>
-                    <MdOutlineFolder className="text-stone-400" size={16} />
-                    <span className="text-stone-500 font-normal">Folder</span>
-                  </>
-                )}
-              </button>
-            );
-          })()}
+          {/* Folder and the full-screen toggle beside it: never shrink. The toggle is round and as
+              tall as the folder pill (both use --chip-h: the pill's own height at each size). */}
+          <div className="flex items-center gap-1 md:gap-1.5 shrink-0 [--chip-h:26px] md:[--chip-h:34px]">
+            {(() => {
+              const folderObj = folderId ? folders.find(f => f._id === folderId) : null;
+              return (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMovePicker(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 h-(--chip-h) bg-[#ebe0d3] hover:bg-[#e4d7c8] text-stone-600 rounded-full transition-all duration-200 text-xs md:text-sm font-sans tracking-normal normal-case border border-[#e0d2bf] shadow-sm cursor-pointer shrink-0"
+                  title="Change note folder"
+                >
+                  {folderObj ? (
+                    <>
+                      <MdOutlineFolder style={{ color: folderObj.color }} size={16} />
+                      <span className="text-[#333] font-medium truncate max-w-[100px] md:max-w-[120px]">{folderObj.name}</span>
+                    </>
+                  ) : (
+                    <>
+                      <MdOutlineFolder className="text-stone-400" size={16} />
+                      <span className="text-stone-500 font-normal">Folder</span>
+                    </>
+                  )}
+                </button>
+              );
+            })()}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleEditorFullscreen();
+              }}
+              className="flex shrink-0 size-(--chip-h) items-center justify-center rounded-full bg-[#ebe0d3] hover:bg-[#e4d7c8] text-stone-600 border border-[#e0d2bf] shadow-sm cursor-pointer transition-colors duration-200"
+              title={isEditorFullscreen ? 'Exit full screen' : 'Full screen'}
+              aria-label={isEditorFullscreen ? 'Exit full screen' : 'Full screen'}
+              aria-pressed={isEditorFullscreen}
+            >
+              {isEditorFullscreen ? <MdCloseFullscreen className="text-[13px] md:text-[15px]" /> : <MdOpenInFull className="text-[13px] md:text-[15px]" />}
+            </button>
+          </div>
         </div>
 
         {/* title area */}
@@ -850,7 +907,16 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           ) : (
             /* ── CodeMirror live-preview markdown editor ── */
              <div 
-               className="flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75]"
+               className="flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] cursor-text"
+               onClick={(e) => {
+                 if (e.target === e.currentTarget && cmViewRef.current) {
+                   const view = cmViewRef.current;
+                   view.focus();
+                   view.dispatch({
+                     selection: { anchor: view.state.doc.length },
+                   });
+                 }
+               }}
                onPaste={(event) => {
                  const pastedText = event.clipboardData?.getData('text') || '';
                  const urls = pastedText.match(/(https?:\/\/[^\s]+)/g) || [];
@@ -867,13 +933,13 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                 }}
                 onCreateEditor={(view) => {
                   cmViewRef.current = view;
-                  if (isActive && !isChecklist) {
+                  if (isActive && !isChecklist && !isMobileOrTouch()) {
                     view.focus();
                   }
                 }}
                 onUpdate={(viewUpdate) => {
                   if (viewUpdate.docChanged || viewUpdate.selectionSet) {
-                    editorRegistry.saveEditorSnapshot(currentNoteId, viewUpdate.view);
+                    editorRegistry.saveEditorSnapshot(currentNoteId, viewUpdate.view, SNAPSHOT_FIELDS);
                   }
                 }}
                 extensions={EDITOR_EXTENSIONS}
@@ -928,10 +994,18 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         <div className="h-[1px] w-full bg-black/5" />
       </div>
 
-      <div className="bg-[#eaddce] px-4 md:px-5 py-1.5 md:py-2 flex items-center justify-between gap-1 md:gap-2 shrink-0">
+      {/* Toolbar. In full screen the dock shrinks to a dot centred in it (TabDock), so the toolbar
+          becomes three columns — tools | free slot for the dot | actions — with equal side columns,
+          keeping the slot exactly at the centre. */}
+      <div
+        className={`editor-column [--column-pad:1rem] md:[--column-pad:1.25rem] bg-[#eaddce] items-center gap-1 md:gap-2 shrink-0 ${
+          isEditorFullscreen ? 'grid grid-cols-[1fr_auto_1fr]' : 'flex justify-between'
+        }`}
+        style={{ height: toolbarHeight }}
+      >
 
         {/* tools */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 justify-self-start">
 
 
           <button
@@ -964,8 +1038,12 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
         </div>
 
+        {isEditorFullscreen && (
+          <div aria-hidden style={{ width: dotSlotWidth }} />
+        )}
+
         {/* actions */}
-        <div className="flex items-center gap-1 md:gap-2 shrink-0">
+        <div className="flex items-center gap-1 md:gap-2 shrink-0 justify-self-end">
 
           {!isChecklist && (
             <span className="hidden md:inline text-[11px] text-stone-400 font-medium whitespace-nowrap">

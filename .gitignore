@@ -28,6 +28,7 @@ Thumbs.db
 # ====== Editor Directories and Files ======
 .vscode/
 .idea/
+.claude/
 *.sublime-workspace
 *.sublime-project
 

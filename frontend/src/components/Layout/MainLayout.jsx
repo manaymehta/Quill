@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, Suspense } from "react";
 import Sidebar from "../Sidebar/Sidebar";
 import Navbar from "../Navbar/Navbar";
 import { Outlet, useLocation } from "react-router-dom";
@@ -87,7 +87,10 @@ const MainLayout = () => {
                         </div>
                     </div>
                 ) : (
-                    <Outlet />
+                    /* Boundary for lazily loaded routes (e.g. Graph) so the shell stays mounted */
+                    <Suspense fallback={null}>
+                        <Outlet />
+                    </Suspense>
                 )}
             </div>
 

@@ -44,7 +44,7 @@ const ConfirmModal = () => {
                         animate={{ scale: 1 }}
                         exit={{ scale: 0.88 }}
                         transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-                        className="w-full max-w-[320px] bg-[#202124] rounded-2xl shadow-2xl border border-[#3c4043] overflow-hidden flex flex-col p-5 text-white relative"
+                        className="w-full max-w-[320px] bg-(--page-bg) rounded-2xl shadow-2xl border border-[#3c4043] overflow-hidden flex flex-col p-5 text-white relative"
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="mb-2">
