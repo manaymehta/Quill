@@ -114,6 +114,27 @@ const coordinateRefresh = async (failedToken) => {
     });
 };
 
+// For requests made outside axios (the agent chat stream uses fetch so it can
+// read events as they arrive): the same coordinated refresh the interceptor
+// below does after a 401. Returns the new access token, or throws after
+// signalling that the session has expired.
+export const refreshAfterUnauthorized = async (failedToken) => {
+    try {
+        const refreshResult = await coordinateRefresh(failedToken);
+        const refreshedToken = refreshResult?.accessToken || getAccessToken();
+        if (!refreshedToken) {
+            throw new Error("Unable to obtain refreshed access token");
+        }
+        return refreshedToken;
+    } catch (refreshError) {
+        clearAccessToken();
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("auth:expired"));
+        }
+        throw refreshError;
+    }
+};
+
 axiosInstance.interceptors.response.use((response) => response, async (error) => {
     const originalRequest = error.config;
     if (

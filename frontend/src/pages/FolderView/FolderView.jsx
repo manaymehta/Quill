@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import NotesGrid from '../../components/Cards/NotesGrid';
-import AiSearchPanel from '../../components/Cards/AiSearchPanel';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
@@ -25,8 +24,6 @@ const FolderView = () => {
 
   const searchQuery = useSearchStore((state) => state.searchQuery);
   const searchMode = useSearchStore((state) => state.searchMode);
-  const semanticResult = useSearchStore((state) => state.semanticResult);
-  const isSearchingAI = useSearchStore((state) => state.isSearchingAI);
   const openTab = useTabsStore((state) => state.openTab);
 
   const [isAddingFolder, setIsAddingFolder] = useState(false);
@@ -66,8 +63,6 @@ const FolderView = () => {
   }, [subtreeKey, subtreeIds]);
 
   const handleEdit = useCallback((note) => openTab(note), [openTab]);
-
-  const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
 
   // Subfolders list (direct children only)
   const subfolders = useMemo(() =>
@@ -124,35 +119,6 @@ const FolderView = () => {
         <div className="mb-3">
           <Breadcrumb folderId={folderId} />
         </div>
-        {isAIMode ? (
-          <div className="flex flex-col-reverse md:flex-row gap-4">
-            <div className="flex-1 min-w-0">
-              {isSearchingAI ? (
-                <div className="flex flex-col items-center justify-center mt-20 opacity-50 animate-pulse">
-                  <p className="text-sm font-medium text-slate-400 text-center">
-                    Analyzing context across your notes...
-                  </p>
-                </div>
-              ) : (
-                <NotesGrid
-                  notes={semanticResult?.sourceNotes || []}
-                  loading={isLoading}
-                  emptyMessage="No matching notes found."
-                  onEdit={handleEdit}
-                  onDelete={promptDelete}
-                  onArchive={promptToggleArchive}
-                  onToggleHome={handleToggleHome}
-                  onMove={handleMoveNote}
-                  onChecklistToggle={handleChecklist}
-                  allowDrag={false}
-                />
-              )}
-            </div>
-            <div className="w-full md:w-1/3 shrink-0">
-              <AiSearchPanel />
-            </div>
-          </div>
-        ) : (
           <div>
             <div className="space-y-3">
               <div>
@@ -201,7 +167,6 @@ const FolderView = () => {
               )}
             </div>
           </div>
-        )}
       </div>
     </div>
   );

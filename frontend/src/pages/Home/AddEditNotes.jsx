@@ -26,6 +26,11 @@ import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
 // State fields persisted in editor snapshots (used for both toJSON and fromJSON)
 const SNAPSHOT_FIELDS = { history: historyField };
 
+// "Apply & save" from the agent chat marks a tab pendingSave; the editor runs
+// its normal save once when it opens. Claimed per tab + revision so React
+// StrictMode's double effects can't save twice.
+const claimedAgentSaves = new Set();
+
 const EDITOR_EXTENSIONS = [
   markdown(),
   quillTheme,
@@ -353,6 +358,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   }, [content, tags, isChecklist, checklist, folderId, linkPreviews]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const latestDraftRef = useRef();
+  // The tab revision this editor was opened with; a different one at unmount
+  // means the tab was changed from outside (agent edit, revert).
+  const mountRevRef = useRef(noteData?.externalRev || 0);
 
   // Keep in-memory registry draft immediately up to date for dirty-check evaluations
   useEffect(() => {
@@ -374,12 +382,16 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   // On unmount (e.g. switching tabs), preserve CodeMirror state and flush latest draft.
   // Strictly checks whether the tab is still open in useTabsStore to avoid resurrecting discarded tabs.
   useEffect(() => {
+    const mountRev = mountRevRef.current;
     return () => {
       const tabId = currentNoteId;
       if (!tabId) return;
 
-      const isStillOpen = useTabsStore.getState().openTabs.some((t) => t._id === tabId);
-      if (isStillOpen) {
+      const liveTab = useTabsStore.getState().openTabs.find((t) => t._id === tabId);
+      // Skip the write-back when the tab was changed from outside: this
+      // editor's copy is stale and would overwrite the new contents.
+      const changedOutside = Boolean(liveTab) && (liveTab.externalRev || 0) !== mountRev;
+      if (liveTab && !changedOutside) {
         if (cmViewRef.current) {
           editorRegistry.saveEditorSnapshot(tabId, cmViewRef.current, SNAPSHOT_FIELDS);
         }
@@ -510,6 +522,21 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     handleSaveNote();
   }, [isChecklist, content, title, checklist, handleSaveNote]);
 
+  // "Apply & save" from the agent chat: the same save the Save button does,
+  // once the editor has mounted. The claim is taken inside the timer so a
+  // StrictMode mount → unmount → mount still saves exactly once.
+  useEffect(() => {
+    if (!noteData?.pendingSave || !currentNoteId) return;
+    const claim = `${currentNoteId}:${noteData.externalRev || 0}`;
+    const timer = setTimeout(() => {
+      if (claimedAgentSaves.has(claim)) return;
+      claimedAgentSaves.add(claim);
+      if (onUpdateTabState) onUpdateTabState({ pendingSave: false });
+      handleAddNote();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSummarize = async () => {
     if (!content.trim()) {
       setError("Please enter content to summarize.");
@@ -559,12 +586,70 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     }
   };
 
+  const [showAgentDiff, setShowAgentDiff] = useState(false);
+
   const activeChecklistItem = activeChecklistId ? checklist.find(i => i.id === activeChecklistId) : null;
 
   const checklistItems = useMemo(() => checklist.map(item => item.id), [checklist]);
 
+  // Cheap derived check; avoid useMemo (React Compiler rejects manual deps here).
+  const agentDiffHasChanges = Array.isArray(noteData?.agentDiff) && noteData.agentDiff.some((part) => part.added || part.removed);
+
   return (
     <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] overflow-hidden relative' style={EDITOR_CARD_STYLE}>
+
+      {/* agent-staged draft banner */}
+      {noteData?.agentStaged && (
+        <div className="shrink-0 flex flex-col gap-2 px-5 md:px-7 pt-4 pb-3 bg-amber-50/80 border-b border-amber-200/70 font-sans">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs md:text-sm text-[#7a4a12] font-medium">
+              Drafted by the Notes Agent — unsaved. Review, then save or discard.
+            </p>
+            <div className="flex items-center gap-2 shrink-0">
+              {agentDiffHasChanges && (
+                <button
+                  onClick={() => setShowAgentDiff((v) => !v)}
+                  className="text-[11px] font-semibold text-[#7a4a12] border border-amber-300 rounded-full px-3 py-1 hover:bg-amber-100 transition-colors cursor-pointer shrink-0"
+                >
+                  {showAgentDiff ? 'Hide changes' : 'View changes'}
+                </button>
+              )}
+              {noteData?.agentRevert && (
+                <button
+                  onClick={() => useTabsStore.getState().revertAgentEdit(currentNoteId)}
+                  title="Put back exactly what you had before the agent's edit"
+                  className="text-[11px] font-semibold text-[#7a4a12] border border-amber-300 rounded-full px-3 py-1 hover:bg-amber-100 transition-colors cursor-pointer shrink-0"
+                >
+                  Revert agent edit
+                </button>
+              )}
+            </div>
+          </div>
+          {showAgentDiff && agentDiffHasChanges && (
+            <div className="max-h-56 overflow-y-auto editor-scrollbar rounded-xl border border-amber-200 bg-white/70 p-3 text-xs md:text-sm leading-relaxed whitespace-pre-wrap font-mono">
+              {noteData.agentOriginalTitle !== undefined && noteData.agentOriginalTitle !== (noteData.title || '') && (
+                <div className="mb-2 text-stone-500">
+                  Title: <span className="line-through text-red-700 bg-red-100">{noteData.agentOriginalTitle || '(untitled)'}</span>{' '}
+                  → <span className="text-emerald-700 bg-emerald-100">{noteData.title || '(untitled)'}</span>
+                </div>
+              )}
+              {noteData.agentDiff.map((part, idx) => {
+                if (!part.added && !part.removed) return (
+                  <span key={idx} className="text-stone-400">{part.value}</span>
+                );
+                return (
+                  <span
+                    key={idx}
+                    className={part.added ? 'bg-emerald-100 text-emerald-900' : 'bg-red-100 text-red-900 line-through'}
+                  >
+                    {part.value}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* editor content area */}
       <div ref={scrollAreaRef} className='editor-column [--column-pad:1.25rem] md:[--column-pad:1.75rem] flex-grow flex flex-col pt-5 md:pt-6 pb-2 overflow-y-auto editor-scrollbar'>

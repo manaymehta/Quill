@@ -43,7 +43,7 @@ export const useTabsStore = create((set, get) => ({
     return true;
   },
 
-  createDraftTab: (folderId = null) => {
+  createDraftTab: (folderId = null, initial = null) => {
     if (get().openTabs.length >= MAX_OPEN_TABS) {
       get().showTabToast(
         `Maximum limit of ${MAX_OPEN_TABS} open tabs reached. Please close an open tab first.`,
@@ -53,7 +53,7 @@ export const useTabsStore = create((set, get) => ({
     }
 
     const newDraftId = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const newTab = {
+    const baseTab = {
       _id: newDraftId,
       title: '',
       content: '',
@@ -64,9 +64,12 @@ export const useTabsStore = create((set, get) => ({
       folderId: folderId,
       linkPreviews: [],
     };
+    const newTab = initial ? { ...baseTab, ...initial, _id: newDraftId, isDraft: true } : baseTab;
 
-    // Register blank baseline & draft in in-memory registry
-    editorRegistry.setBaseline(newDraftId, newTab);
+    // Baseline intentionally stays BLANK even for prefilled (agent-staged)
+    // drafts: closing an unsaved staged draft must trigger the dirty guard,
+    // so generated content can't vanish silently.
+    editorRegistry.setBaseline(newDraftId, baseTab);
     editorRegistry.setDraft(newDraftId, newTab);
 
     set({ openTabs: [...get().openTabs, newTab], activeTabId: newDraftId });
@@ -110,6 +113,33 @@ export const useTabsStore = create((set, get) => ({
     editorRegistry.setDraft(id, patch);
     set({
       openTabs: get().openTabs.map((t) => (t._id === id ? { ...t, ...patch } : t)),
+    });
+  },
+
+  // Change a tab's contents from outside the editor (agent edits, revert).
+  // The editor copies a tab's fields only when it mounts, so bumping
+  // externalRev (the editor slot's key) remounts it with the new contents;
+  // dropping the CodeMirror snapshot stops the old document coming back.
+  applyExternalUpdate: (id, patch) => {
+    const tab = get().openTabs.find((t) => t._id === id);
+    if (!tab) return false;
+    editorRegistry.deleteEditorSnapshot(id);
+    get().updateTabState(id, { ...patch, externalRev: (tab.externalRev || 0) + 1 });
+    return true;
+  },
+
+  // "Revert agent edit": restore exactly what the tab held before the agent's
+  // edit was applied (unsaved text included) and drop the agent markers.
+  revertAgentEdit: (id) => {
+    const tab = get().openTabs.find((t) => t._id === id);
+    if (!tab?.agentRevert) return false;
+    return get().applyExternalUpdate(id, {
+      ...tab.agentRevert,
+      agentStaged: false,
+      agentDiff: null,
+      agentRevert: null,
+      agentOriginalContent: undefined,
+      agentOriginalTitle: undefined,
     });
   },
 

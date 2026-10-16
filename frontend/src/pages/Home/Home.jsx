@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import NotesGrid from '../../components/Cards/NotesGrid';
-import AiSearchPanel from '../../components/Cards/AiSearchPanel';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import { useModalStore } from '../../components/Modals/useModalStore';
 import { useSearchStore } from '../../store/useSearchStore';
@@ -23,8 +22,6 @@ const Home = () => {
 
   const searchQuery = useSearchStore((state) => state.searchQuery);
   const searchMode = useSearchStore((state) => state.searchMode);
-  const semanticResult = useSearchStore((state) => state.semanticResult);
-  const isSearchingAI = useSearchStore((state) => state.isSearchingAI);
   const setSearchScope = useSearchStore((state) => state.setSearchScope);
   const setScopeFolderIds = useSearchStore((state) => state.setScopeFolderIds);
   const openTab = useTabsStore((state) => state.openTab);
@@ -87,7 +84,6 @@ const Home = () => {
 
   const handleEdit = useCallback((note) => openTab(note), [openTab]);
 
-  const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
 
   const folderHierarchy = useMemo(() => buildFolderHierarchy(folders), [folders]);
   const topLevelFolders = folderHierarchy.rootFolders;
@@ -112,34 +108,6 @@ const Home = () => {
                 isAddingFolder={isAddingFolder}
                 setIsAddingFolder={setIsAddingFolder}
               />
-            </div>
-          </div>
-        ) : isAIMode ? (
-          <div className="flex flex-col-reverse md:flex-row gap-4">
-            <div className="flex-1 min-w-0">
-              {isSearchingAI ? (
-                <div className="flex flex-col items-center justify-center mt-20 opacity-50 animate-pulse">
-                  <p className="text-sm font-medium text-slate-400 text-center">
-                    Analyzing context across your notes...
-                  </p>
-                </div>
-              ) : (
-                <NotesGrid
-                  notes={semanticResult?.sourceNotes || []}
-                  loading={isLoading}
-                  emptyMessage="No matching notes found."
-                  onEdit={handleEdit}
-                  onDelete={promptDelete}
-                  onArchive={promptToggleArchive}
-                  onToggleHome={handleToggleHome}
-                  onMove={handleMoveNote}
-                  onChecklistToggle={handleChecklist}
-                  allowDrag={false}
-                />
-              )}
-            </div>
-            <div className="w-full md:w-1/3 shrink-0">
-              <AiSearchPanel />
             </div>
           </div>
         ) : (

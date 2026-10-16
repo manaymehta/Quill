@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react';
 import NoteCard from './NoteCard';
 import EmptyCard from './EmptyCard';
 import { useFoldersStore } from '../../store/useFoldersStore';
-import { useSearchStore } from '../../store/useSearchStore';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay, defaultDropAnimationSideEffects } from '@dnd-kit/core';
 import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { useReorderNotesMutation, useReorderHomeNotesMutation } from '../../hooks/useNoteMutations';
@@ -17,9 +16,8 @@ const dropAnimation = {
   }),
 };
 
-const getCols = (isAIMode) => {
+const getCols = () => {
     if (typeof window === 'undefined') return 2;
-    if (isAIMode) return window.innerWidth >= 1280 ? 3 : 2;
     if (window.innerWidth >= 1280) return 4;
     if (window.innerWidth >= 1024) return 3;
     return 2;
@@ -44,12 +42,10 @@ const NotesGrid = ({
     const reorderNotesMutation = useReorderNotesMutation();
     const reorderHomeNotesMutation = useReorderHomeNotesMutation();
     const { activeFolderId } = useFoldersStore();
-    const { searchMode, isSearchingAI, semanticResult } = useSearchStore();
-    const isAIMode = searchMode === 'semantic' && (isSearchingAI || semanticResult);
 
     const [items, setItems] = useState(notes || []);
     const [activeId, setActiveId] = useState(null);
-    const [cols, setCols] = useState(() => getCols(isAIMode));
+    const [cols, setCols] = useState(() => getCols());
 
     // Keep local items synchronized with incoming notes prop
     useEffect(() => {
@@ -59,14 +55,14 @@ const NotesGrid = ({
 
     const sortableItems = useMemo(() => (items || []).map(n => n._id), [items]);
 
-    // Re-compute on window resize and whenever AI mode toggles
+    // Re-compute on window resize
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCols(getCols(isAIMode));
-        const onResize = () => setCols(getCols(isAIMode));
+        setCols(getCols());
+        const onResize = () => setCols(getCols());
         window.addEventListener('resize', onResize);
         return () => window.removeEventListener('resize', onResize);
-    }, [isAIMode]);
+    }, []);
 
     const sensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),

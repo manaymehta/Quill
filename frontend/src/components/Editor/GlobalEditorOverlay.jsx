@@ -264,8 +264,10 @@ const GlobalEditorOverlay = () => {
               style={{ maxWidth: 'calc(var(--editor-max-w) + (100vw - var(--editor-max-w)) * var(--fs))' }}
             >
               <Suspense fallback={<EditorFallback />}>
+                {/* externalRev in the key: an outside change (agent edit, revert)
+                    remounts the editor so it picks up the new contents. */}
                 <TabEditorSlot
-                  key={activeTab._id}
+                  key={`${activeTab._id}:${activeTab.externalRev || 0}`}
                   tab={activeTab}
                   isActive={true}
                   onNoteSaved={handleNoteSaved}

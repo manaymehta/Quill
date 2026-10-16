@@ -15,7 +15,6 @@ const {
     searchNotes,
     summarizeNote,
     getArchivedNotes,
-    semanticSearch,
     reorderNotes,
     reorderHomeNotes,
     moveNote,
@@ -48,7 +47,6 @@ router.put("/restore-note/:noteId", authenticateToken, restoreNote);
 router.delete("/delete-trash-note/:noteId", authenticateToken, permanentDeleteNote);
 router.put("/update-note-archive/:noteId", authenticateToken, validateObjectBody, updateNoteArchive);
 router.get("/search-notes", authenticateToken, validateQueryParam("query", { required: true, maxLength: 4096 }), searchNotes);
-router.get("/semantic-search", authenticateToken, validateQueryParam("query", { required: true, maxLength: 4096 }), semanticSearch);
 router.post("/summarize-note", authenticateToken, validateObjectBody, summarizeNote);
 router.put("/reorder-notes", authenticateToken, validateObjectBody, reorderNotes);
 router.put("/reorder-home-notes", authenticateToken, validateObjectBody, reorderHomeNotes);
