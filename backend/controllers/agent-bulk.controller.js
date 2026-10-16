@@ -14,7 +14,7 @@ const {
 const {
     MAX_LIST, groupParts, planFromProposal, planFromSelection, restrictPlan, mergePlans, buildCandidates, applyChanges, changeTitle, splitParts,
 } = require("../services/bulk-plan.service");
-const { changesOf, pendingOf, pendingSummary, markMoved } = require("../services/pending-list.service");
+const { changesOf, pendingOf, pendingSummary, markMoved, summarizeReceipt } = require("../services/pending-list.service");
 const { triggerEmbed, deleteEmbed } = require("./note.controller");
 const { appendTurns } = require("./agent.controller");
 const { allowsBulkAction, getAgentScopes } = require("../services/agent-scopes.service");
@@ -109,30 +109,6 @@ const normalizeParams = async (action, params, userId) => {
 const itemsOf = (candidate) => (Array.isArray(candidate.items) && candidate.items.length > 0
     ? candidate.items
     : [{ change: "c1", verdict: candidate.verdict || "likely", reason: candidate.reason || "", label: "", clashesWith: [] }]);
-
-const summarizeReceipt = (receipt) => {
-    const counts = { applied: 0, skippedChanged: 0, skippedUnchanged: 0, undone: 0, undoSkipped: 0 };
-    for (const op of receipt.ops) {
-        if (op.status === "applied") counts.applied += 1;
-        else if (op.status === "skipped-changed") counts.skippedChanged += 1;
-        else if (op.status === "skipped-unchanged") counts.skippedUnchanged += 1;
-        else if (op.status === "undone") counts.undone += 1;
-        else if (op.status === "undo-skipped") counts.undoSkipped += 1;
-    }
-    return {
-        receiptId: String(receipt._id),
-        proposalId: receipt.proposalId,
-        action: receipt.action,
-        params: receipt.params,
-        changes: changesOf(receipt).map((c) => ({ key: c.key, action: c.action, params: c.params, title: changeTitle(c) })),
-        instruction: receipt.instruction,
-        status: receipt.status,
-        createdAt: receipt.createdAt,
-        undoneAt: receipt.undoneAt,
-        counts,
-        ops: receipt.ops.map((op) => ({ noteId: op.noteId, title: op.title, status: op.status })),
-    };
-};
 
 // Search-index follow-ups after a commit (fire-and-forget, like note saves):
 // trashed notes lose their pieces; restored / re-tagged / (un)archived notes

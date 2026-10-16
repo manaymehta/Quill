@@ -6,7 +6,7 @@ const AgentReceipt = require("../models/agent-receipt.model");
 const AgentSelection = require("../models/agent-selection.model");
 const User = require("../models/user.model");
 const { DEFAULT_SCOPES, SCOPE_KEYS, getAgentScopes } = require("../services/agent-scopes.service");
-const { pendingOf, pendingSummary, markMoved } = require("../services/pending-list.service");
+const { pendingOf, pendingSummary, markMoved, summarizeReceipt } = require("../services/pending-list.service");
 
 const { MAX_STORED_TURNS, MAX_CHATS_PER_USER, CHAT_TITLE_MAX, expiryFor } = AgentChat;
 const CHAT_LIMIT_MESSAGE = `${MAX_CHATS_PER_USER} chats is the limit — delete one to start a new chat`;
@@ -591,6 +591,9 @@ const listChats = async (req, res) => {
 // GET /v1/agent/chats/:chatId — the turns and working set. Review lists and
 // split choices whose saved record is gone (erased after 3 days; a pinned
 // chat outlives them) come back marked expired, unless already applied.
+// Applied lists come with their receipt (moved pointers never do). A pointer
+// to a list now shown in another chat names that chat (`movedTo`); null when
+// it's this chat or that chat is gone.
 const getChat = async (req, res) => {
     const filter = ownChatFilter(req);
     try {
@@ -600,8 +603,8 @@ const getChat = async (req, res) => {
         const proposalIds = doc.turns.map((t) => t.proposal?.proposalId).filter(Boolean);
         const selectionIds = doc.turns.map((t) => t.splitChoices?.selectionId).filter(Boolean);
         const [liveProposals, receipts, liveSelections] = await Promise.all([
-            proposalIds.length ? AgentProposal.find({ userId, proposalId: { $in: proposalIds } }).select("proposalId status").lean() : [],
-            proposalIds.length ? AgentReceipt.find({ userId, proposalId: { $in: proposalIds } }).select("proposalId").lean() : [],
+            proposalIds.length ? AgentProposal.find({ userId, proposalId: { $in: proposalIds } }).select("proposalId status chatId").lean() : [],
+            proposalIds.length ? AgentReceipt.find({ userId, proposalId: { $in: proposalIds } }).lean() : [],
             selectionIds.length ? AgentSelection.find({ userId, selectionId: { $in: selectionIds } }).select("selectionId").lean() : [],
         ]);
         const usable = new Set([...liveProposals, ...receipts].map((p) => p.proposalId));
@@ -610,6 +613,21 @@ const getChat = async (req, res) => {
         const closed = new Map(liveProposals.filter((p) => p.status === "replaced" || p.status === "discarded").map((p) => [p.proposalId, p.status]));
         const held = new Set(liveProposals.filter((p) => p.status === "held").map((p) => p.proposalId));
         const liveSelectionIds = new Set(liveSelections.map((s) => s.selectionId));
+        const receiptOf = new Map(receipts.map((r) => [r.proposalId, summarizeReceipt(r)]));
+        const thisChatId = String(doc._id);
+        const listChat = new Map(liveProposals.map((p) => [p.proposalId, p.chatId]));
+        const otherChatIds = [...new Set(doc.turns
+            .filter((t) => t.proposal?.moved)
+            .map((t) => listChat.get(t.proposal.proposalId))
+            .filter((id) => id && id !== thisChatId && OBJECT_ID_RE.test(id)))];
+        const otherChats = otherChatIds.length
+            ? await AgentChat.find({ _id: { $in: otherChatIds }, userId }).select("title").lean()
+            : [];
+        const chatTitles = new Map(otherChats.map((c) => [String(c._id), c.title]));
+        const movedTo = (proposalId) => {
+            const chatId = listChat.get(proposalId);
+            return chatTitles.has(chatId) ? { chatId, title: chatTitles.get(chatId) } : null;
+        };
         return res.json({
             error: false,
             chat: chatSummary(doc),
@@ -623,6 +641,8 @@ const getChat = async (req, res) => {
                         expired: !usable.has(t.proposal.proposalId),
                         closed: closed.get(t.proposal.proposalId) || null,
                         status: held.has(t.proposal.proposalId) ? "held" : t.proposal.status === "held" ? "open" : t.proposal.status,
+                        receipt: t.proposal.moved ? null : receiptOf.get(t.proposal.proposalId) || null,
+                        ...(t.proposal.moved && { movedTo: movedTo(t.proposal.proposalId) }),
                     }
                     : null,
                 splitChoices: t.splitChoices ? { ...t.splitChoices, expired: !liveSelectionIds.has(t.splitChoices.selectionId) } : null,

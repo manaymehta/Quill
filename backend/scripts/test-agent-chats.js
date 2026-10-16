@@ -128,6 +128,32 @@ const near = (date, ms, slack = 60_000) => date && Math.abs(new Date(date).getTi
             candidates: [{ noteId: noteR.data.note._id }] });
         await AgentProposal.updateOne({ proposalId: applied.data.proposalId }, { $set: { chatId } });
         const applyRes = await call(USER_A, "POST", `/agent/proposals/${applied.data.proposalId}/apply`, { noteIds: [noteR.data.note._id] });
+        // An applied list comes with its receipt; a moved pointer to the same
+        // list never does (a pointer has no list to show a result on).
+        await appendTurns(USER_A, chatId, [
+            { role: "assistant", text: "moved pointer", citations: [], proposal: { proposalId: applied.data.proposalId, moved: true } },
+            { role: "assistant", text: "applied list", citations: [], proposal: { proposalId: applied.data.proposalId, action: "tag", params: {}, candidates: [] } },
+        ]);
+        const afterApply = (await call(USER_A, "GET", `/agent/chats/${chatId}`)).data.turns;
+        const appliedTurn = afterApply.find((x) => x.text === "applied list").proposal;
+        const pointerTurn = afterApply.find((x) => x.text === "moved pointer").proposal;
+        check("applied lists come back with their receipt; moved pointers don't",
+            appliedTurn.receipt?.counts?.applied === 1 && appliedTurn.receipt.status === "applied"
+            && pointerTurn.moved === true && pointerTurn.receipt === null,
+            JSON.stringify({ applied: appliedTurn.receipt?.counts, pointer: pointerTurn }));
+        // The pointer names the chat the list now lives in — not this chat,
+        // and not a chat that's gone.
+        const otherChat = await AgentChat.create({ userId: USER_A, title: "Other chat" });
+        await AgentProposal.updateOne({ proposalId: applied.data.proposalId }, { $set: { chatId: String(otherChat._id) } });
+        const pointerElsewhere = (await call(USER_A, "GET", `/agent/chats/${chatId}`)).data.turns.find((x) => x.text === "moved pointer").proposal;
+        await AgentChat.deleteOne({ _id: otherChat._id });
+        const pointerGone = (await call(USER_A, "GET", `/agent/chats/${chatId}`)).data.turns.find((x) => x.text === "moved pointer").proposal;
+        check("a moved pointer names the other chat holding the list; null for this chat or a deleted one",
+            pointerTurn.movedTo === null && pointerElsewhere.movedTo?.chatId === String(otherChat._id)
+            && pointerElsewhere.movedTo.title === "Other chat" && pointerGone.movedTo === null
+            && afterApply.find((x) => x.text === "applied list").proposal.movedTo === undefined,
+            JSON.stringify({ same: pointerTurn.movedTo, elsewhere: pointerElsewhere.movedTo, gone: pointerGone.movedTo }));
+        await AgentProposal.updateOne({ proposalId: applied.data.proposalId }, { $set: { chatId } });
         // One pending list per account: the one above merged into `live` and
         // was applied with it, so a fresh pending list stands in for "open".
         const pendingNow = await call(USER_A, "POST", "/agent/proposals", { action: "tag", params: { add: ["chatstest3"] },

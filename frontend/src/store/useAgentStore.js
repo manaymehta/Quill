@@ -37,7 +37,8 @@ const groupChangeKeys = (p) => new Set(p.groups.flatMap((g) => g.changes));
 
 const withReviewState = (proposal) => {
   if (!proposal) return null;
-  if (proposal.moved) return { proposalId: proposal.proposalId, status: 'moved' };
+  // movedTo: { chatId, title } when the list is now shown in another chat.
+  if (proposal.moved) return { proposalId: proposal.proposalId, status: 'moved', movedTo: proposal.movedTo || null };
   const p = normalizeProposal(proposal);
   const grouped = groupChangeKeys(p);
   return {
@@ -184,28 +185,22 @@ export const useAgentStore = create((set, get) => ({
       const data = (await axiosInstance.get(`/agent/chats/${chatId}`)).data || {};
       if (epoch !== conversationEpoch) return;
       const turns = Array.isArray(data.turns) ? data.turns : [];
-      let messages = turns.map((t) => makeMessage({
+      // Review lists already applied (or undone) come with their receipt and
+      // show the result, not fresh tick boxes. Moved pointers never have one.
+      const reviewState = (proposal) => {
+        const p = withReviewState(proposal);
+        const receipt = p && p.status !== 'moved' && proposal.receipt;
+        return receipt ? { ...p, receipt, status: receipt.status === 'applied' ? 'applied' : 'undone' } : p;
+      };
+      const messages = turns.map((t) => makeMessage({
         role: t.role,
         text: t.text,
         citations: t.citations || [],
-        proposal: withReviewState(t.proposal),
+        proposal: reviewState(t.proposal),
         splitChoices: withChoiceState(t.splitChoices),
         // Group cards from before grouping made review lists.
         oldGroupCards: Boolean(t.groupSuggestions),
       }));
-      // Review lists already applied (or undone) show their result, not
-      // fresh tick boxes: match them to the user's receipts.
-      if (messages.some((m) => m.proposal)) {
-        const receipts = (await axiosInstance.get('/agent/receipts')).data?.receipts || [];
-        if (epoch !== conversationEpoch) return;
-        const byProposal = new Map(receipts.map((r) => [r.proposalId, r]));
-        messages = messages.map((m) => {
-          const receipt = m.proposal && byProposal.get(m.proposal.proposalId);
-          return receipt
-            ? { ...m, proposal: { ...m.proposal, receipt, status: receipt.status === 'applied' ? 'applied' : 'undone' } }
-            : m;
-        });
-      }
       set({
         activeChatId: chatId,
         messages,
@@ -448,12 +443,16 @@ export const useAgentStore = create((set, get) => ({
         label: bulkDoneLabel(proposal),
         message: `${count} note${count === 1 ? '' : 's'}`,
         type: action === 'trash' ? 'delete' : action === 'archive' ? 'archive' : 'success',
-        onUndo: () => get().undoReviewList(messageId),
+        onUndo: () => get().undoByReceipt(receipt.receiptId),
       });
     } catch (error) {
       const data = error?.response?.data;
-      // Replaced or discarded meanwhile (another tab): show that instead.
-      const closed = /replaced/.test(data?.message || '') ? 'replaced' : /discarded/.test(data?.message || '') ? 'discarded' : null;
+      // Closed or changed meanwhile (another tab or chat): show that instead
+      // of an error that repeats on every click.
+      const closed = error?.response?.status === 404 ? 'expired'
+        : data?.code === 'list-updated' ? 'moved'
+          : /replaced/.test(data?.message || '') ? 'replaced' : /discarded/.test(data?.message || '') ? 'discarded' : null;
+      if (closed === 'moved') return patch({ status: 'moved' });
       patch(closed ? { status: closed } : { status: 'open', error: data?.message || 'Could not apply — nothing was changed. Try again.' });
     }
   },
@@ -516,7 +515,11 @@ export const useAgentStore = create((set, get) => ({
         scrollTarget: { messageId, at: Date.now() },
       });
     } catch (error) {
-      patch({ releasing: null, error: error?.response?.data?.message || 'Could not do that. Try again.' });
+      const { status, data } = error?.response || {};
+      // Gone, or already shown / discarded from another tab.
+      const closed = status === 404 ? 'expired' : data?.status === 'discarded' ? 'discarded' : data?.status === 'open' ? 'moved' : null;
+      if (closed === 'moved') return patch({ status: 'moved' });
+      patch({ releasing: null, ...(closed && { status: closed }), error: data?.message || 'Could not do that. Try again.' });
     }
   },
 
@@ -532,9 +535,17 @@ export const useAgentStore = create((set, get) => ({
       patch({ status: 'discarded', error: null });
     } catch (error) {
       const data = error?.response?.data;
-      if (data?.status === 'replaced' || data?.status === 'discarded') patch({ status: data.status });
+      if (error?.response?.status === 404) patch({ status: 'expired', error: null });
+      else if (data?.status === 'replaced' || data?.status === 'discarded') patch({ status: data.status });
       else patch({ error: data?.message || 'Could not discard. Try again.' });
     }
+  },
+
+  // The toast's Undo: through the list's message when it's still on screen,
+  // else straight by receipt (the user may have switched chats since).
+  undoByReceipt: (receiptId) => {
+    const message = get().messages.find((m) => m.proposal?.receipt?.receiptId === receiptId);
+    return message ? get().undoReviewList(message.id) : get().undoFromActivity(receiptId);
   },
 
   undoReviewList: async (messageId) => {

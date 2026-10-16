@@ -29,4 +29,29 @@ const markMoved = (userId, proposalId) => AgentChat.collection.updateMany(
     { arrayFilters: [{ "t.proposal.proposalId": proposalId }] },
 );
 
-module.exports = { changesOf, pendingOf, pendingSummary, markMoved };
+// A receipt as the screen shows it: per-status note counts and the notes.
+const summarizeReceipt = (receipt) => {
+    const counts = { applied: 0, skippedChanged: 0, skippedUnchanged: 0, undone: 0, undoSkipped: 0 };
+    for (const op of receipt.ops) {
+        if (op.status === "applied") counts.applied += 1;
+        else if (op.status === "skipped-changed") counts.skippedChanged += 1;
+        else if (op.status === "skipped-unchanged") counts.skippedUnchanged += 1;
+        else if (op.status === "undone") counts.undone += 1;
+        else if (op.status === "undo-skipped") counts.undoSkipped += 1;
+    }
+    return {
+        receiptId: String(receipt._id),
+        proposalId: receipt.proposalId,
+        action: receipt.action,
+        params: receipt.params,
+        changes: changesOf(receipt).map((c) => ({ key: c.key, action: c.action, params: c.params, title: changeTitle(c) })),
+        instruction: receipt.instruction,
+        status: receipt.status,
+        createdAt: receipt.createdAt,
+        undoneAt: receipt.undoneAt,
+        counts,
+        ops: receipt.ops.map((op) => ({ noteId: op.noteId, title: op.title, status: op.status })),
+    };
+};
+
+module.exports = { changesOf, pendingOf, pendingSummary, markMoved, summarizeReceipt };

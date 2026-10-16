@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Component, useEffect, useRef, useState } from 'react';
 import { RiSparkling2Fill } from 'react-icons/ri';
 import { IoMdSend } from 'react-icons/io';
 import { IoAdd, IoSettingsOutline, IoStop } from 'react-icons/io5';
@@ -42,6 +42,25 @@ const DiffView = ({ parts }) => (
         ))}
     </div>
 );
+
+// Catches a render error below it and shows `fallback` instead, so one bad
+// message (e.g. a list saved in a shape the screen doesn't expect) can't
+// blank the whole app. The error still goes to the console.
+class RenderGuard extends Component {
+    state = { failed: false };
+
+    static getDerivedStateFromError() {
+        return { failed: true };
+    }
+
+    componentDidCatch(error, info) {
+        console.error('[agent] render failed:', error, info?.componentStack);
+    }
+
+    render() {
+        return this.state.failed ? this.props.fallback : this.props.children;
+    }
+}
 
 const pillButton = 'text-[11px] font-semibold rounded-full px-3 py-1 border transition-colors cursor-pointer disabled:opacity-50';
 
@@ -231,9 +250,23 @@ const ReviewItem = ({ item, checked, editable, onToggle, titles, showLabel }) =>
 // A bulk change waiting for approval (architecture plan §2.3): one row per
 // note with a tick box per change, one Apply for everything ticked, then
 // Done · Undo.
-const ReviewList = ({ proposal, onToggle, onApply, onUndo, onDiscard, onOpenNote, onToggleGroupChange, onToggleGroupNote, onRelease }) => {
+const ReviewList = ({ proposal, onToggle, onApply, onUndo, onDiscard, onOpenNote, onToggleGroupChange, onToggleGroupNote, onRelease, onOpenChat, isBusy }) => {
     if (proposal.status === 'moved') {
-        return <p className="text-[11px] text-stone-500 italic">This list moved to a newer message — it's kept up to date there.</p>;
+        const { movedTo } = proposal;
+        if (!movedTo) return <p className="text-[11px] text-stone-500 italic">This list moved to a newer message — it's kept up to date there.</p>;
+        return (
+            <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[11px] text-stone-500 italic">This list moved to your chat “{movedTo.title}” — it's kept up to date there.</p>
+                <button
+                    onClick={() => onOpenChat(movedTo.chatId)}
+                    disabled={isBusy}
+                    title={isBusy ? 'Wait for the answer (or press Stop) first' : undefined}
+                    className={`${pillButton} border-stone-300 text-stone-600 hover:bg-stone-100 disabled:cursor-not-allowed`}
+                >
+                    Open that chat
+                </button>
+            </div>
+        );
     }
     if (proposal.status === 'held') return <HeldCard proposal={proposal} onRelease={onRelease} onDiscard={onDiscard} />;
     // Closed without applying: one line, no rows.
@@ -780,7 +813,7 @@ const AgentChatPanel = () => {
                         }`}
                     >
                         {message.role === 'assistant' && !message.isError ? (
-                            <>
+                            <RenderGuard fallback={<p className="text-[11px] text-red-700">This message couldn't be shown.</p>}>
                                 <ReactMarkdown components={markdownComponents}>
                                     {message.text}
                                 </ReactMarkdown>
@@ -796,6 +829,8 @@ const AgentChatPanel = () => {
                                             onToggleGroupChange={(index, change) => toggleGroupChange(message.id, index, change)}
                                             onToggleGroupNote={(index, noteId) => toggleGroupNote(message.id, index, noteId)}
                                             onRelease={(how) => releaseHeld(message.id, how)}
+                                            onOpenChat={handleOpenChat}
+                                            isBusy={isBusy}
                                         />
                                     </div>
                                 )}
@@ -869,7 +904,7 @@ const AgentChatPanel = () => {
                                         ))}
                                     </div>
                                 )}
-                            </>
+                            </RenderGuard>
                         ) : (
                             message.text
                         )}
@@ -943,4 +978,10 @@ const AgentChatPanel = () => {
     );
 };
 
-export default AgentChatPanel;
+const GuardedAgentChatPanel = () => (
+    <RenderGuard fallback={<p className="text-sm text-red-700 p-5">The agent panel hit an error — reload the page.</p>}>
+        <AgentChatPanel />
+    </RenderGuard>
+);
+
+export default GuardedAgentChatPanel;
