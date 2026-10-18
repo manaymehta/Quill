@@ -407,13 +407,8 @@ const TabDock = () => {
     longPressTimerRef.current = setTimeout(() => {
       longPressTimerRef.current = null;
       isHoldingAfterLongPressRef.current = true;
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        try {
-          navigator.vibrate(25);
-        } catch {
-          // Ignore unsupported vibrate error
-        }
-      }
+      // No navigator.vibrate here: the phone already buzzes for a long press on its own (see
+      // onContextMenu on the strip), and a second buzz of ours read as a double vibration.
       setIsHoldMenuOpen(true);
     }, 500);
   };
@@ -684,7 +679,7 @@ const TabDock = () => {
       style={{ paddingBottom, right: rootRight }}
       className="dock-root fixed bottom-0 left-0 right-0 z-50 flex flex-col justify-end items-center pointer-events-none px-3 sm:px-4"
     >
-      <DockToast progress={progress} metrics={metrics} height={dockHeight} radius={dockRadius} />
+      <DockToast progress={progress} metrics={metrics} isCompact={isEditorActive} height={dockHeight} radius={dockRadius} />
 
       <AnimatePresence>
         {showHoldMenu && (
@@ -775,8 +770,8 @@ const TabDock = () => {
                   onTouchEnd={handleTouchEnd}
                   onTouchCancel={handleTouchEnd}
                   // Phones: holding a finger also triggers the browser's own long-press (its context
-                  // menu, with a haptic buzz of its own) at about the moment our hold opens the list —
-                  // felt as a double vibration. Cancelling it here, from the start, leaves only ours.
+                  // menu). Cancelled here so no menu appears over the list. Its haptic buzz still
+                  // fires, and is the hold's only vibration (the list doesn't add one).
                   onContextMenu={isMobile ? (e) => e.preventDefault() : undefined}
                   className="relative flex items-center overflow-x-auto shrink sm:shrink-0 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] max-w-[calc(100vw-10rem)] sm:max-w-[50vw] md:max-w-[60vw] lg:max-w-[700px] min-w-0 h-full select-none md:cursor-grab md:active:cursor-grabbing [touch-action:pan-x] [-webkit-touch-callout:none]"
                   // mask-image (edge fades) is written directly by checkScrollFade

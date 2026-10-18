@@ -12,6 +12,7 @@ import { useModalStore } from "../Modals/useModalStore";
 import ParticleBackground from "../Background/ParticleBackground";
 import AgentChatPanel from "../Cards/AgentChatPanel";
 import { useSearchStore } from "../../store/useSearchStore";
+import { useAgentToast } from "../../hooks/useAgentToast";
 
 const MainLayout = () => {
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
@@ -25,6 +26,9 @@ const MainLayout = () => {
 
     const isEditorActive = activeTabId !== 'home';
     const sidebarRef = useRef(null);
+
+    // While the chat is off screen, the agent's state shows as a toast that opens it
+    useAgentToast();
 
     // Agent mode shows the chat in place of the page, on every page. Navigating
     // means "show me that page", so it leaves agent mode; the conversation (and

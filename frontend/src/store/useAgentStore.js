@@ -136,7 +136,8 @@ let lastWakeAt = 0;
 
 export const useAgentStore = create((set, get) => ({
   // { id, role: 'user'|'assistant', text, citations?: [{noteId,title}], isError?: bool,
-  //   drafts?: staged-draft chips, pendingEdits?: edits waiting for Apply / Skip }
+  //   drafts?: staged-draft chips, pendingEdits?: edits waiting for Apply / Skip,
+  //   fresh?: made during this visit (not reloaded with a chat) — see useAgentToast }
   messages: [],
   workingSet: [],      // [{ noteId, title }] — newest mention first
   isBusy: false,
@@ -318,6 +319,7 @@ export const useAgentStore = create((set, get) => ({
           ...(data.proposal?.status === 'open' ? markMoved(get().messages, data.proposal.proposalId) : get().messages),
           makeMessage({
             role: 'assistant',
+            fresh: true,
             text: data.message || '',
             citations: data.citations || [],
             drafts: staged,
@@ -590,6 +592,7 @@ export const useAgentStore = create((set, get) => ({
       set({
         messages: [...markMoved(get().messages, data.proposalId), makeMessage({
           role: 'assistant',
+          fresh: true,
           text: data.extended
             ? `Added “${data.partLabel}” to your pending list — review it below.`
             : `Opened “${data.partLabel}” — ${data.candidates.length} notes to review below.`,
