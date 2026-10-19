@@ -6,6 +6,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
 import { DOCK_METRICS, DOCK_MOBILE_QUERY, getEditorClearance } from '../TabDock/dockMetrics';
+import BottomSheet from '../Modals/BottomSheet';
 import { EDITOR_CARD_STYLE, EDITOR_RADIUS_PX } from './editorChrome';
 
 // The editor pulls in CodeMirror (~600 kB minified), so it lives in its own chunk.
@@ -127,6 +128,35 @@ const GlobalEditorOverlay = () => {
   const handleToggleMockPanel = useCallback(() => {
     setIsMockPanelOpen((prev) => !prev);
   }, []);
+
+  // The side panel's contents, beside the editor or in the phone sheet (where the title is the place
+  // to drag the sheet from)
+  const renderPanelBody = (onTitlePointerDown) => (
+    <>
+      <h3
+        onPointerDown={onTitlePointerDown}
+        className={`text-2xl font-medium mb-4 pt-2 md:pt-0 ${onTitlePointerDown ? 'touch-none' : ''} ${panelContent ? 'text-[#d97757]' : 'text-white'}`}
+        style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+      >
+        {panelContent ? 'Summary' : 'Mock Panel'}
+      </h3>
+
+      {panelContent ? (
+        <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-5 overflow-y-auto editor-scrollbar text-sm text-stone-300 leading-relaxed font-serif whitespace-pre-wrap">
+          {panelContent}
+        </div>
+      ) : (
+        <>
+          <p className="text-sm text-stone-400 leading-relaxed mb-6">
+            This is a temporary side panel with a dark color scheme.
+          </p>
+          <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-4 flex items-center justify-center">
+            <span className="text-stone-500 text-xs tracking-widest uppercase">Content Area</span>
+          </div>
+        </>
+      )}
+    </>
+  );
 
   if (!isEditorOpen && openTabs.length === 0) {
     return null;
@@ -277,70 +307,28 @@ const GlobalEditorOverlay = () => {
               </Suspense>
             </div>
 
-            {/* Mock Side Panel (Becomes Bottom Sheet on Mobile) */}
+            {/* Side panel: beside the editor on wider screens, a bottom sheet on phones (the shared
+                BottomSheet — pulled down to close, its title the place to drag from) */}
             <AnimatePresence>
-              {isMockPanelOpen && (
-                <>
-                  {/* Mobile Backdrop for Bottom Sheet */}
-                  <Motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[25] md:hidden"
-                    onClick={() => setIsMockPanelOpen(false)}
-                  />
-
-                  <Motion.div
-                    initial={{
-                      y: isBelowTablet ? '100%' : 0,
-                      scale: isBelowTablet ? 1 : 0.95,
-                      opacity: isBelowTablet ? 1 : 0,
-                    }}
-                    animate={{ y: 0, scale: 1, opacity: 1 }}
-                    exit={{
-                      y: isBelowTablet ? '100%' : 0,
-                      scale: isBelowTablet ? 1 : 0.95,
-                      opacity: isBelowTablet ? 1 : 0,
-                    }}
-                    transition={{ type: 'tween', ease: 'easeOut', duration: 0.25 }}
-                    drag={isBelowTablet ? 'y' : false}
-                    dragConstraints={{ top: 0, bottom: 0 }}
-                    dragElastic={0.2}
-                    onDragEnd={(e, info) => {
-                      if (info.offset.y > 100 || info.velocity.y > 500) {
-                        setIsMockPanelOpen(false);
-                      }
-                    }}
-                    className="fixed md:static inset-x-0 bottom-0 md:bottom-auto md:w-[350px] shrink-0 h-[60vh] md:h-full bg-[#1e1e1e] rounded-t-[32px] md:rounded-[24px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] md:shadow-xl border-t md:border border-[#333] p-6 md:p-8 flex flex-col text-stone-200 origin-bottom md:origin-left z-30"
-                  >
-                    <div
-                      className="w-12 h-1.5 bg-[#444] rounded-full mx-auto mb-6 md:hidden cursor-grab active:cursor-grabbing"
-                      onClick={() => setIsMockPanelOpen(false)}
-                    />
-
-                    <h3
-                      className={`text-2xl font-medium mb-4 ${panelContent ? 'text-[#d97757]' : 'text-white'}`}
-                      style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-                    >
-                      {panelContent ? 'Summary' : 'Mock Panel'}
-                    </h3>
-
-                    {panelContent ? (
-                      <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-5 overflow-y-auto editor-scrollbar text-sm text-stone-300 leading-relaxed font-serif whitespace-pre-wrap">
-                        {panelContent}
-                      </div>
-                    ) : (
-                      <>
-                        <p className="text-sm text-stone-400 leading-relaxed mb-6">
-                          This is a temporary side panel with a dark color scheme.
-                        </p>
-                        <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-4 flex items-center justify-center">
-                          <span className="text-stone-500 text-xs tracking-widest uppercase">Content Area</span>
-                        </div>
-                      </>
-                    )}
-                  </Motion.div>
-                </>
+              {isMockPanelOpen && !isBelowTablet && (
+                <Motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.95, opacity: 0 }}
+                  transition={{ type: 'tween', ease: 'easeOut', duration: 0.25 }}
+                  className="md:w-[350px] shrink-0 h-full bg-[#1e1e1e] rounded-[24px] shadow-xl border border-[#333] p-8 flex flex-col text-stone-200 origin-left z-30"
+                >
+                  {renderPanelBody()}
+                </Motion.div>
+              )}
+            </AnimatePresence>
+            <AnimatePresence>
+              {isMockPanelOpen && isBelowTablet && (
+                <BottomSheet key="editor-panel-sheet" onClose={() => setIsMockPanelOpen(false)} heightShare={0.6} className="text-stone-200">
+                  {(startDrag) => (
+                    <div className="flex-1 min-h-0 flex flex-col px-6 pb-6">{renderPanelBody(startDrag)}</div>
+                  )}
+                </BottomSheet>
               )}
             </AnimatePresence>
           </div>

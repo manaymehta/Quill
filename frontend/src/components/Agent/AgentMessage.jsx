@@ -41,7 +41,7 @@ const MetaLine = ({ children }) => (
 const Citations = ({ citations, onOpen }) => {
   const openingNoteId = useContext(OpeningNoteContext);
   const rowRef = useRef(null);
-  const updateRowFade = useEdgeFade(rowRef, 'x', 24, citations.length);
+  const updateRowFade = useEdgeFade(rowRef, 'x', 12, citations.length);
   return (
   <div className="flex flex-col gap-2">
     <MetaLine>Sources</MetaLine>
@@ -165,8 +165,9 @@ const AgentMessage = memo(({ message, actions }) => {
   return (
     // The id + ring: a used split-choice / group button scrolls here and outlines it briefly
     // The agent's side stops short of the right edge (your messages own that side), so the two read
-    // apart at a glance; a margin, so the jump-to outline still hugs the reply
-    <Arrive side="left" id={id} className="self-stretch mr-8 md:mr-16 flex flex-col gap-2 rounded-[22px] transition-shadow">
+    // apart at a glance — from small tablets up; a phone needs the width. A margin, so the jump-to
+    // outline still hugs the reply
+    <Arrive side="left" id={id} className="self-stretch sm:mr-8 md:mr-16 flex flex-col gap-2 rounded-[22px] transition-shadow">
       <RenderGuard fallback={<p className="px-1 text-xs text-red-300">This message couldn't be shown.</p>}>
         {message.text && (
           <div className="agent-cream self-start max-w-full rounded-[20px] rounded-bl-md bg-[#f4eadc] border border-[#e8dcc8] px-4 md:px-5 py-3 md:py-3.5 text-sm md:text-[15px] leading-relaxed font-medium text-[#494949] break-words">

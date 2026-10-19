@@ -58,7 +58,8 @@ const SearchBar = () => {
               animate={{ width: 'auto', opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ width: LABEL_SPRING, opacity: PILL_FADE }}
-              className="overflow-hidden"
+              // Phones: the coral sparkle alone says it, and the search field needs the room
+              className="overflow-hidden hidden sm:block"
             >
               <span className="block pl-1">Agent</span>
             </motion.span>
@@ -67,23 +68,25 @@ const SearchBar = () => {
       </button>
 
 
-      <div className="flex w-full sm:w-80 items-center px-4 bg-[#27272a]  rounded-full">
+      {/* min-w-0 here and on the input: an input won't shrink below its built-in width on its own,
+          so on a phone it ran under the search icon */}
+      <div className="flex flex-1 min-w-0 sm:flex-none sm:w-80 items-center px-4 bg-[#27272a] rounded-full">
         <input
           type="text"
           value={searchQuery}
-          className="w-full bg-transparent py-[10px] outline-none text-white "
+          className="flex-1 min-w-0 w-full bg-transparent py-[10px] outline-none text-white placeholder:truncate"
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={isAgent ? 'Ask the agent…' : 'Search notes…'}
         />
         {searchQuery && (
           <IoMdClose
-            className="text-slate-400 hover:text-white mr-2 text-xl cursor-pointer"
+            className="shrink-0 text-slate-400 hover:text-white mr-2 text-xl cursor-pointer"
             onClick={clearSearch}
           />
         )}
         <FaMagnifyingGlass
-          className={`cursor-pointer ${isAgent ? 'text-[#dd5e57]' : 'text-[#ccc6bc]'} hover:text-white transition-colors`}
+          className={`shrink-0 ml-2 cursor-pointer ${isAgent ? 'text-[#dd5e57]' : 'text-[#ccc6bc]'} hover:text-white transition-colors`}
           onClick={() => {
             if (isAgent) sendToAgent();
           }}

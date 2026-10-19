@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IoAdd, IoSettingsOutline, IoStop } from 'react-icons/io5';
 import { LuArrowUp } from 'react-icons/lu';
@@ -12,6 +11,7 @@ import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
 import { DOCK_METRICS, DOCK_MOBILE_QUERY } from '../TabDock/dockMetrics';
 import AgentMessage from './AgentMessage';
 import AgentSidePanel from './AgentSidePanel';
+import BottomSheet from '../Modals/BottomSheet';
 import { useScrollEdges } from './useScrollEdges';
 import { btnRoundDark, btnRoundDarkOn, FADE_IN, FADE_OUT, HEIGHT_SPRING, OpeningNoteContext, SWAP } from './agentStyles';
 import { Collapse, RenderGuard } from './agentUi';
@@ -346,8 +346,9 @@ const AgentPanel = () => {
   const meta = metaFor(activeChat, isOpeningChat);
   const isHistoryOn = sideTab === 'chats' || sideTab === 'activity';
 
-  const sidePanel = isSideOpen && (
+  const renderSidePanel = (onHeaderPointerDown) => isSideOpen && (
     <AgentSidePanel
+      onHeaderPointerDown={onHeaderPointerDown}
       tab={sideTab}
       onTabChange={showSide}
       onClose={() => setSideTab(null)}
@@ -464,7 +465,7 @@ const AgentPanel = () => {
                 style={{ width: SIDE_W, originX: 0 }}
                 className="shrink-0 h-full bg-[#1e1e1e] rounded-[24px] border border-[#333] shadow-xl overflow-hidden"
               >
-                {sidePanel}
+                {renderSidePanel()}
               </motion.div>
             )}
           </AnimatePresence>
@@ -472,40 +473,15 @@ const AgentPanel = () => {
       </div>
       </div>
 
-      {/* …and a bottom sheet on phones, dragged down to close. In a portal: inside the panel's own
-          layer (z-[1], above the particles) it would sit under the dock */}
-      {isBelowTablet && createPortal(
+      {/* …and a bottom sheet on phones, pulled down to close (it places itself above the dock) */}
+      {isBelowTablet && (
         <AnimatePresence>
           {isSideOpen && (
-            <>
-              <motion.div
-                key="agent-side-backdrop"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1, transition: FADE_IN }}
-                exit={{ opacity: 0, transition: FADE_OUT }}
-                onClick={() => setSideTab(null)}
-                className="fixed inset-0 z-[59] bg-black/40 backdrop-blur-sm"
-              />
-              <motion.div
-                key="agent-side-sheet"
-                initial={{ y: '100%' }}
-                animate={{ y: 0, transition: SIDE_SPRING }}
-                exit={{ y: '100%', transition: HEIGHT_SPRING }}
-                drag="y"
-                dragConstraints={{ top: 0, bottom: 0 }}
-                dragElastic={{ top: 0, bottom: 0.6 }}
-                onDragEnd={(e, info) => {
-                  if (info.offset.y > 100 || info.velocity.y > 500) setSideTab(null);
-                }}
-                className="agent-panel fixed inset-x-0 bottom-0 z-[60] h-[72vh] bg-[#1e1e1e] rounded-t-[32px] border-t border-[#333] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] flex flex-col"
-              >
-                <div className="w-12 h-1.5 bg-[#444] rounded-full mx-auto mt-3 shrink-0 cursor-grab active:cursor-grabbing" />
-                <div className="flex-1 min-h-0">{sidePanel}</div>
-              </motion.div>
-            </>
+            <BottomSheet key="agent-side-sheet" onClose={() => setSideTab(null)} className="agent-panel">
+              {(startDrag) => renderSidePanel(startDrag)}
+            </BottomSheet>
           )}
-        </AnimatePresence>,
-        document.body,
+        </AnimatePresence>
       )}
     </div>
   );

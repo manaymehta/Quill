@@ -381,12 +381,15 @@ const SegmentedTabs = ({ tab, onChange }) => (
   </div>
 );
 
-const AgentSidePanel = ({ tab, onTabChange, onClose, chats, chatsError, activeChatId, isBusy, onOpenChat, onNewChat, onRename, onTogglePin, onDelete, activity, activityError, onUndo, scopes, onScopeChange }) => {
+const AgentSidePanel = ({ tab, onTabChange, onClose, chats, chatsError, activeChatId, isBusy, onOpenChat, onNewChat, onRename, onTogglePin, onDelete, activity, activityError, onUndo, scopes, onScopeChange, onHeaderPointerDown }) => {
   const title = SIDE_TABS.find((t) => t.id === tab)?.title;
   const listRef = useRef(null);
   const updateListFade = useEdgeFade(listRef, 'y', 24, `${tab}:${chats?.length}:${activity?.length}`);
   return (
     <div className="flex flex-col h-full min-h-0">
+      {/* On a phone the header (title, close, tabs) is where the sheet is dragged from — the list
+          below keeps its own scrolling */}
+      <div onPointerDown={onHeaderPointerDown} className={`shrink-0 ${onHeaderPointerDown ? 'touch-none' : ''}`}>
       <div className="flex items-center justify-between gap-2 px-5 pt-5 pb-3 shrink-0">
         <AnimatePresence mode="wait" initial={false}>
           <motion.h3 key={title} {...SWAP} className="text-2xl font-medium text-[#f4eadc] truncate" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
@@ -397,6 +400,7 @@ const AgentSidePanel = ({ tab, onTabChange, onClose, chats, chatsError, activeCh
       </div>
       <div className="px-5 pb-3 shrink-0">
         <SegmentedTabs tab={tab} onChange={onTabChange} />
+      </div>
       </div>
       <div ref={listRef} onScroll={updateListFade} className="flex-1 min-h-0 overflow-y-auto agent-scrollbar px-2 pb-5">
         <AnimatePresence mode="wait" initial={false}>
