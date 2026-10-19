@@ -4,7 +4,8 @@ import { useSearchStore } from '../store/useSearchStore';
 import { useTabsStore } from '../store/useTabsStore';
 import { useToastStore } from '../store/useToastStore';
 
-// The agent's own toast, one persistent card in the toast stack while the chat isn't on screen:
+// The agent's own toast, one persistent card in the toast stack while the chat isn't on screen (agent
+// mode off, or a note open over it):
 //   "Agent working…"   — a turn is running
 //   "Agent awaits you" — something waits for the user: a review list not applied (or a held one),
 //                        an edit waiting for Apply / Skip, split choices with no part opened
@@ -57,7 +58,8 @@ export const useAgentToast = () => {
 
     const syncToast = () => {
       const { isBusy, messages } = useAgentStore.getState();
-      const inAgentMode = useSearchStore.getState().searchMode === 'agent';
+      // On screen: agent mode, with no note open over it in the editor
+      const inAgentMode = useSearchStore.getState().searchMode === 'agent' && useTabsStore.getState().activeTabId === 'home';
 
       if (wasBusy && !isBusy && !inAgentMode) unseenReply = true;
       wasBusy = isBusy;
@@ -95,6 +97,7 @@ export const useAgentToast = () => {
     const unsubscribers = [
       useAgentStore.subscribe(sync),
       useSearchStore.subscribe(sync),
+      useTabsStore.subscribe((state, prev) => { if (state.activeTabId !== prev.activeTabId) sync(); }),
       useToastStore.subscribe((state, prev) => { if (state.toasts !== prev.toasts) sync(); }),
     ];
     return () => {

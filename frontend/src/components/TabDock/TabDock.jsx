@@ -1,10 +1,12 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MdAdd, MdHome, MdClose } from 'react-icons/md';
+import { RiSparkling2Fill } from 'react-icons/ri';
 import { motion, animate, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useUIStore } from '../../store/useUIStore';
+import { useSearchStore } from '../../store/useSearchStore';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { DOCK_METRICS, DOCK_MOBILE_QUERY } from './dockMetrics';
 import { PILL_FADE, PILL_SPRING, useCenteredDockPx, useDockPx } from './dockMotion';
@@ -50,6 +52,8 @@ const STRIP_SCROLL_SPRING = { type: 'spring', visualDuration: 0.3, bounce: 0 };
 
 // Pills and the separator + strip group enter/leave by springing their width (see SpringWidth)
 const PILL_GAP_PX     = 4; // between pills in the strip
+// The agent's chat gets a pill in the strip while it's open, first in line, like an open note's
+const AGENT_PILL_ID = 'agent';
 const DOCK_ROW_GAP_PX = 4; // between items in the dock row
 
 // Left separator (1px line + 2px margin each side, matching the right separator's w-[1px] mx-0.5).
@@ -130,21 +134,29 @@ const TabDock = () => {
   const closeTab       = useTabsStore((s) => s.closeTab);
   const createDraftTab = useTabsStore((s) => s.createDraftTab);
   const activeFolderId = useFoldersStore((s) => s.activeFolderId);
+  const isAgentMode    = useSearchStore((s) => s.searchMode === 'agent');
 
   const isEditorActive = activeTabId !== 'home';
+  const pillCount = openTabs.length + (isAgentMode ? 1 : 0);
+  // Compact while a workspace is open: a note in the editor, or the agent's chat (shown under any
+  // open note). Switching between the two is no resize.
+  const isCompact = isEditorActive || isAgentMode;
+  const activePillId = isEditorActive ? activeTabId : (isAgentMode ? AGENT_PILL_ID : null);
 
-  // The pill whose activation coincides with the dock resizing (see CloseSlot): the one tapped at
-  // home, or the one that was active when going home. Worked out while rendering from the previous
-  // active tab (React's pattern for reacting to a changed value), and cleared once the resize settles.
-  const [prevActiveTabId, setPrevActiveTabId] = useState(activeTabId);
+  // The pill whose activation coincides with the dock resizing (see CloseSlot): the one that becomes
+  // active as the dock compacts (a note tapped at home, the agent opened), or the one that was active
+  // as it expands again (going home). Worked out while rendering from the previous state (React's
+  // pattern for reacting to a changed value), and cleared once the resize settles.
+  const [prevActivePillId, setPrevActivePillId] = useState(activePillId);
+  const [prevCompact, setPrevCompact] = useState(isCompact);
   const [compactionPillId, setCompactionPillId] = useState(null);
   // Full-screen editor: whether the dock has been expanded from its dot (see the dot below)
   const [isDockExpanded, setIsDockExpanded] = useState(false);
-  if (prevActiveTabId !== activeTabId) {
-    setPrevActiveTabId(activeTabId);
-    const wasEditor = prevActiveTabId !== 'home';
-    // Switching notes within the editor is no resize: those slots use their own spring
-    setCompactionPillId(wasEditor === isEditorActive ? null : (isEditorActive ? activeTabId : prevActiveTabId));
+  if (prevActivePillId !== activePillId || prevCompact !== isCompact) {
+    setPrevActivePillId(activePillId);
+    setPrevCompact(isCompact);
+    // Switching pills while compact is no resize: those slots use their own spring
+    setCompactionPillId(prevCompact === isCompact ? null : (isCompact ? activePillId : prevActivePillId));
     // Leaving the editor: the next note opens with the dock as a dot again
     if (!isEditorActive) setIsDockExpanded(false);
   }
@@ -154,12 +166,12 @@ const TabDock = () => {
 
   // One master progress (0 = home/expanded, 1 = editor/compact). Every dock dimension derives from
   // it: separate springs per dimension drift out of phase and twitch.
-  const progressTarget = useMotionValue(isEditorActive ? 1 : 0);
+  const progressTarget = useMotionValue(isCompact ? 1 : 0);
   const progress       = useSpring(progressTarget, DOCK_SPRING);
 
   useEffect(() => {
-    progressTarget.set(isEditorActive ? 1 : 0);
-  }, [isEditorActive, progressTarget]);
+    progressTarget.set(isCompact ? 1 : 0);
+  }, [isCompact, progressTarget]);
 
   const dockHeight    = useDockPx(progress, metrics.height);
   const dockRadius    = useTransform(progress, [0, 1], metrics.radius);
@@ -508,7 +520,9 @@ const TabDock = () => {
 
   const queryParams   = new URLSearchParams(location.search);
   const isFoldersView = queryParams.get('view') === 'folders';
-  const isHomeActive  = location.pathname === '/dashboard' && !isFoldersView && !isEditorActive;
+  // The agent's chat shows in place of the page (MainLayout), so while it's open Home isn't "here"
+  const isAgentActive = isAgentMode && !isEditorActive;
+  const isHomeActive  = location.pathname === '/dashboard' && !isFoldersView && !isEditorActive && !isAgentMode;
 
   // While the long-press list is open, the document-level capture listener above intercepts every
   // click outside it (closing the list), so click handlers here never run in that state. Only
@@ -516,8 +530,11 @@ const TabDock = () => {
   // which doesn't go through that click listener.
   const handleHomeClick = () => {
     setActiveTab('home');
+    // Already on /dashboard, navigating changes nothing — so leave the chat here too
+    if (useSearchStore.getState().searchMode === 'agent') useSearchStore.getState().setSearchMode('keyword');
     navigate('/dashboard');
   };
+
   // Opening a note from the dock (+, a pill, the long-press list) keeps the dock expanded in the
   // full-screen editor — you're using it — until a tap outside it. A note opened from its card on the
   // page opens with the dock as a dot. (Outside full screen this has no effect, and turning full
@@ -534,13 +551,19 @@ const TabDock = () => {
       return;
     }
     setIsDockExpanded(true);
-    setActiveTab(tabId);
+    // The agent's pill: back to the chat, which shows on the page under any open note
+    setActiveTab(tabId === AGENT_PILL_ID ? 'home' : tabId);
   };
-  const handleCloseTab  = (tabId) => closeTab(tabId);
+  const handleCloseTab  = (tabId) => {
+    if (tabId === AGENT_PILL_ID) useSearchStore.getState().setSearchMode('keyword');
+    else closeTab(tabId);
+  };
 
   // Roving tabindex: only one pill is in the Tab order (the active one, else the first);
   // arrows move between pills, Enter/Space opens, Delete closes.
-  const focusablePillId = openTabs.some((t) => t._id === activeTabId) ? activeTabId : openTabs[0]?._id;
+  const focusablePillId = isAgentActive ? AGENT_PILL_ID
+    : openTabs.some((t) => t._id === activeTabId) ? activeTabId
+      : isAgentMode ? AGENT_PILL_ID : openTabs[0]?._id;
 
   const handlePillKeyDown = (tabId, e) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -595,7 +618,7 @@ const TabDock = () => {
 
   // Strip edge fades. Keyed on the tab count (re-observing the pill wrappers), not the tab list,
   // which is recreated on every title keystroke.
-  const checkScrollFade = useEdgeFade(tabsContainerRef, 'x', STRIP_FADE_PX, openTabs.length);
+  const checkScrollFade = useEdgeFade(tabsContainerRef, 'x', STRIP_FADE_PX, pillCount);
 
   // Desktop mouse drag-to-scroll with release momentum. Capture-phase click listener
   // suppresses accidental tab activation when releasing a drag gesture (> 4px).
@@ -642,7 +665,7 @@ const TabDock = () => {
 
   // Vertical mouse wheel scrolls the strip horizontally, eased for notched wheels.
   // Native non-passive listener: React's onWheel is passive, so it can't stop the page scrolling too.
-  const hasTabs = openTabs.length > 0;
+  const hasTabs = pillCount > 0;
   useEffect(() => {
     const el = tabsContainerRef.current;
     if (!el) return;
@@ -672,6 +695,96 @@ const TabDock = () => {
     return () => el.removeEventListener('wheel', onWheel);
   }, [hasTabs, stopMomentum, stopStripScroll]);
 
+  // One pill in the strip: an open note's, or the agent's while its chat is open (the same pill,
+  // with a sparkle). Active: cream, with its in-flow close button; inactive: dark, close on hover.
+  const renderPill = ({ id, title, icon = null, isActive, followsCompaction }) => (
+    <SpringWidth
+      key={id}
+      gap={PILL_GAP_PX}
+      data-pill-wrapper=""
+      // No re-scroll here: ensurePillVisible already tracks the pill while it grows,
+      // and restarting it on settle would reset the scroll mid-motion.
+      onSettled={checkScrollFade}
+      className="shrink-0"
+      contentClassName="flex items-center"
+    >
+    <motion.div
+      role="tab"
+      aria-selected={isActive}
+      tabIndex={id === focusablePillId ? 0 : -1}
+      onKeyDown={(e) => handlePillKeyDown(id, e)}
+      data-tab-id={id}
+      style={{
+        height: pillHeight,
+        paddingLeft: pillPL,
+        paddingRight: pillPR,
+        overflow: 'hidden',
+      }}
+      onClick={(e) => handleTabClick(id, e)}
+      className={`
+        shrink-0 group/tabpill relative flex items-center rounded-full cursor-pointer border transition-colors duration-200 select-none
+        outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#f4eadc]/70
+        ${isActive
+          ? 'bg-[#f4eadc] text-[#333] shadow-sm border-transparent'
+          : 'bg-white/5 text-stone-300 border-white/5 hover:bg-white/10'
+        }
+      `}
+    >
+      {/* The width cap sits on the title, not the pill, so the close slot adds its width
+          beside the title instead of taking it from it. */}
+      {icon}
+      <FadeTitle
+        style={{ maxWidth: pillTextMaxW }}
+        className={`font-medium leading-none text-xs select-none pointer-events-none ${isActive ? '' : 'group-hover/tabpill:[--tab-pill-fade:24px]'}`}
+      >
+        {title}
+      </FadeTitle>
+
+      {/* Active: in-flow cross. Its slot opens/closes as the pill becomes active/inactive
+          (see CloseSlot), so the pill resizes smoothly instead of snapping.
+          The after: pseudo-element widens the hit area without changing the look. */}
+      <CloseSlot
+        isActive={isActive}
+        followsCompaction={followsCompaction}
+        progress={progress}
+        metrics={metrics}
+        className="shrink-0 self-stretch flex items-center justify-end overflow-hidden"
+        aria-hidden={!isActive}
+      >
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Close tab"
+          onClick={(e) => { e.stopPropagation(); handleCloseTab(id); }}
+          style={{ width: CLOSE_BUTTON_PX, height: CLOSE_BUTTON_PX }}
+          className={`relative flex items-center justify-center rounded-full shrink-0 text-stone-500 hover:text-red-500 hover:bg-stone-200/60 transition-colors after:absolute after:-inset-2 ${isActive ? '' : 'pointer-events-none'}`}
+          title="Close tab"
+        >
+          <MdClose className="text-xs cursor-pointer shrink-0" />
+        </button>
+      </CloseSlot>
+
+      {!isActive && (
+        /* Inactive: cross fades in on hover while the label's tail fades out (mask, so no
+           colour has to match the translucent dock); pill does not resize */
+        <div className="absolute right-0 top-0 bottom-0 flex items-center justify-end pr-1.5 opacity-0 group-hover/tabpill:opacity-100 pointer-events-none group-hover/tabpill:pointer-events-auto transition-opacity duration-150 ease-out">
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Close tab"
+            onClick={(e) => { e.stopPropagation(); handleCloseTab(id); }}
+            style={{ width: CLOSE_BUTTON_PX, height: CLOSE_BUTTON_PX }}
+            className="relative flex items-center justify-center rounded-full shrink-0 text-stone-300 hover:text-red-300 hover:bg-white/20 transition-colors after:absolute after:-inset-2"
+            title="Close tab"
+          >
+            <MdClose className="text-xs cursor-pointer shrink-0" />
+          </button>
+        </div>
+      )}
+    </motion.div>
+    </SpringWidth>
+  );
+
   return (
     <motion.div
       ref={dockRootRef}
@@ -679,7 +792,7 @@ const TabDock = () => {
       style={{ paddingBottom, right: rootRight }}
       className="dock-root fixed bottom-0 left-0 right-0 z-50 flex flex-col justify-end items-center pointer-events-none px-3 sm:px-4"
     >
-      <DockToast progress={progress} metrics={metrics} isCompact={isEditorActive} height={dockHeight} radius={dockRadius} />
+      <DockToast progress={progress} metrics={metrics} isCompact={isCompact} height={dockHeight} radius={dockRadius} />
 
       <AnimatePresence>
         {showHoldMenu && (
@@ -739,7 +852,7 @@ const TabDock = () => {
                 compacts was slow and twitched). Closing the last tab: the group collapses as a whole,
                 still rendering the last pill (AnimatePresence freezes exiting children). */}
             <AnimatePresence initial={false}>
-            {openTabs.length > 0 && (
+            {pillCount > 0 && (
               <SpringWidth
                 key="tab-group"
                 gap={0}
@@ -782,95 +895,21 @@ const TabDock = () => {
                   snaps at the end. Default initial (true): this list only mounts with the group, i.e.
                   when the first tab opens, so that pill grows in like any other. */}
               <AnimatePresence onExitComplete={checkScrollFade}>
-                {openTabs.map((tab) => {
-                  const isActive = activeTabId === tab._id;
-                  return (
-                    <SpringWidth
-                      key={tab._id}
-                      gap={PILL_GAP_PX}
-                      data-pill-wrapper=""
-                      // No re-scroll here: ensurePillVisible already tracks the pill while it grows,
-                      // and restarting it on settle would reset the scroll mid-motion.
-                      onSettled={checkScrollFade}
-                      className="shrink-0"
-                      contentClassName="flex items-center"
-                    >
-                    <motion.div
-                      role="tab"
-                      aria-selected={isActive}
-                      tabIndex={tab._id === focusablePillId ? 0 : -1}
-                      onKeyDown={(e) => handlePillKeyDown(tab._id, e)}
-                      data-tab-id={tab._id}
-                      style={{
-                        height: pillHeight,
-                        paddingLeft: pillPL,
-                        paddingRight: pillPR,
-                        overflow: 'hidden',
-                      }}
-                      onClick={(e) => handleTabClick(tab._id, e)}
-                      className={`
-                        shrink-0 group/tabpill relative flex items-center rounded-full cursor-pointer border transition-colors duration-200 select-none
-                        outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#f4eadc]/70
-                        ${isActive
-                          ? 'bg-[#f4eadc] text-[#333] shadow-sm border-transparent'
-                          : 'bg-white/5 text-stone-300 border-white/5 hover:bg-white/10'
-                        }
-                      `}
-                    >
-                      {/* The width cap sits on the title, not the pill, so the close slot adds its width
-                          beside the title instead of taking it from it. */}
-                      <FadeTitle
-                        style={{ maxWidth: pillTextMaxW }}
-                        className={`font-medium leading-none text-xs select-none pointer-events-none ${isActive ? '' : 'group-hover/tabpill:[--tab-pill-fade:24px]'}`}
-                      >
-                        {tab.title || 'Untitled Note'}
-                      </FadeTitle>
-
-                      {/* Active: in-flow cross. Its slot opens/closes as the pill becomes active/inactive
-                          (see CloseSlot), so the pill resizes smoothly instead of snapping.
-                          The after: pseudo-element widens the hit area without changing the look. */}
-                      <CloseSlot
-                        isActive={isActive}
-                        followsCompaction={tab._id === compactionPillId}
-                        progress={progress}
-                        metrics={metrics}
-                        className="shrink-0 self-stretch flex items-center justify-end overflow-hidden"
-                        aria-hidden={!isActive}
-                      >
-                        <button
-                          type="button"
-                          tabIndex={-1}
-                          aria-label="Close tab"
-                          onClick={(e) => { e.stopPropagation(); handleCloseTab(tab._id); }}
-                          style={{ width: CLOSE_BUTTON_PX, height: CLOSE_BUTTON_PX }}
-                          className={`relative flex items-center justify-center rounded-full shrink-0 text-stone-500 hover:text-red-500 hover:bg-stone-200/60 transition-colors after:absolute after:-inset-2 ${isActive ? '' : 'pointer-events-none'}`}
-                          title="Close tab"
-                        >
-                          <MdClose className="text-xs cursor-pointer shrink-0" />
-                        </button>
-                      </CloseSlot>
-
-                      {!isActive && (
-                        /* Inactive: cross fades in on hover while the label's tail fades out (mask, so no
-                           colour has to match the translucent dock); pill does not resize */
-                        <div className="absolute right-0 top-0 bottom-0 flex items-center justify-end pr-1.5 opacity-0 group-hover/tabpill:opacity-100 pointer-events-none group-hover/tabpill:pointer-events-auto transition-opacity duration-150 ease-out">
-                          <button
-                            type="button"
-                            tabIndex={-1}
-                            aria-label="Close tab"
-                            onClick={(e) => { e.stopPropagation(); handleCloseTab(tab._id); }}
-                            style={{ width: CLOSE_BUTTON_PX, height: CLOSE_BUTTON_PX }}
-                            className="relative flex items-center justify-center rounded-full shrink-0 text-stone-300 hover:text-red-300 hover:bg-white/20 transition-colors after:absolute after:-inset-2"
-                            title="Close tab"
-                          >
-                            <MdClose className="text-xs cursor-pointer shrink-0" />
-                          </button>
-                        </div>
-                      )}
-                    </motion.div>
-                    </SpringWidth>
-                  );
+                {/* The agent's chat, while it's open: compact like a note's, active (cream) with
+                    the chat on screen */}
+                {isAgentMode && renderPill({
+                  id: AGENT_PILL_ID,
+                  title: 'Agent',
+                  icon: <RiSparkling2Fill className="shrink-0 mr-1.5 text-xs text-[#e85d56]" />,
+                  isActive: isAgentActive,
+                  followsCompaction: compactionPillId === AGENT_PILL_ID,
                 })}
+                {openTabs.map((tab) => renderPill({
+                  id: tab._id,
+                  title: tab.title || 'Untitled Note',
+                  isActive: activeTabId === tab._id,
+                  followsCompaction: tab._id === compactionPillId,
+                }))}
               </AnimatePresence>
               </div>
               </SpringWidth>
@@ -905,4 +944,4 @@ const TabDock = () => {
   );
 };
 
-export default TabDock;
+export default TabDock;

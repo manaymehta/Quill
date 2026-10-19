@@ -2,6 +2,11 @@ import React from 'react';
 import { FaMagnifyingGlass } from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
 import { RiSparkling2Fill } from 'react-icons/ri';
+import { motion, AnimatePresence } from 'framer-motion';
+import { PILL_FADE } from '../TabDock/dockMotion';
+
+// The label's width: the dock's quickest width spring (no bounce on widths)
+const LABEL_SPRING = { type: 'spring', visualDuration: 0.16, bounce: 0 };
 import { useSearchStore } from '../../store/useSearchStore';
 import { useAgentStore } from '../../store/useAgentStore';
 
@@ -31,18 +36,34 @@ const SearchBar = () => {
   };
 
   return (
-    <div className="flex items-center gap-2 w-full sm:w-auto mx-2 rounded-full">
+    <div data-navbar-search="" className="flex items-center gap-2 w-full sm:w-auto mx-2 rounded-full">
       <button
         onClick={toggleMode}
         title={isAgent ? 'Notes agent — click for keyword search' : 'Keyword search — click for the notes agent'}
-        className={`flex items-center gap-1 px-3 py-3 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer
+        className={`flex items-center px-3 py-3 rounded-full text-xs font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer
           ${isAgent
-            ? 'bg-[#635c51] text-white '
+            ? 'bg-[#dd5e57] hover:bg-[#fb6d65] text-white '
             : 'bg-[#27272a] text-slate-400 hover:text-white '
           }`}
       >
         <RiSparkling2Fill className={`text-sm ${isAgent ? 'text-white' : 'text-[#dd5e57]'}`} />
-        {isAgent && <span>Agent</span>}
+        {/* The label grows in and out with a quick width spring (no bounce on widths) and
+            fades, so the button and the search field glide instead of snapping. Its gap is inside
+            the part that grows, so nothing jumps at the end. */}
+        <AnimatePresence initial={false}>
+          {isAgent && (
+            <motion.span
+              key="label"
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 'auto', opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ width: LABEL_SPRING, opacity: PILL_FADE }}
+              className="overflow-hidden"
+            >
+              <span className="block pl-1">Agent</span>
+            </motion.span>
+          )}
+        </AnimatePresence>
       </button>
 
 

@@ -1,6 +1,8 @@
 import { memo, useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
+import { RiSparkling2Fill } from 'react-icons/ri'
+import { LuUndo2 } from 'react-icons/lu'
 import axiosInstance from '../../utils/axiosInstance';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -22,6 +24,7 @@ import { EDITOR_CARD_STYLE, EDITOR_TOOLBAR_H_PX, EDITOR_TOOLBAR_DOT_SLOT_MARGIN_
 import { DOCK_METRICS, DOCK_MOBILE_QUERY } from '../../components/TabDock/dockMetrics';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
+import AgentDiffView from '../../components/Editor/AgentDiffView';
 
 // State fields persisted in editor snapshots (used for both toJSON and fromJSON)
 const SNAPSHOT_FIELDS = { history: historyField };
@@ -41,6 +44,12 @@ const EDITOR_EXTENSIONS = [
     { key: 'Mod-Shift-z', run: redo, preventDefault: true },
   ]),
 ];
+
+// The agent strip's controls: exactly the Folder chip (its fill, border, shadow, height, regular-weight
+// grey label, lighter icon). The view you're on is the same chip pressed: its hover shade, dark text.
+const AGENT_CHIP = 'flex items-center h-(--chip-h) rounded-full border border-[#e0d2bf] shadow-sm text-xs md:text-sm font-sans font-normal transition-colors duration-200 cursor-pointer';
+const AGENT_CHIP_OFF = 'bg-[#ebe0d3] hover:bg-[#e4d7c8] text-stone-500 hover:text-[#333]';
+const AGENT_CHIP_ON = 'bg-[#e4d7c8] text-[#333]';
 
 const EDITOR_BASIC_SETUP = {
   lineNumbers: false,
@@ -586,7 +595,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     }
   };
 
-  const [showAgentDiff, setShowAgentDiff] = useState(false);
+  // An agent edit: 'changes' (a diff of your original against the text now — what opening an edit to
+  // review lands on), 'before' (your original, read-only) or 'after' (the note, editable)
+  const [agentView, setAgentView] = useState('changes');
 
   const activeChecklistItem = activeChecklistId ? checklist.find(i => i.id === activeChecklistId) : null;
 
@@ -594,60 +605,73 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
   // Cheap derived check; avoid useMemo (React Compiler rejects manual deps here).
   const agentDiffHasChanges = Array.isArray(noteData?.agentDiff) && noteData.agentDiff.some((part) => part.added || part.removed);
+  // What you had before the agent's edit: the diff's kept and removed parts
+  const agentOriginalContent = Array.isArray(noteData?.agentDiff)
+    ? noteData.agentDiff.filter((part) => !part.added).map((part) => part.value).join('')
+    : content;
+  const agentTitleChanged = noteData?.agentOriginalTitle !== undefined && noteData.agentOriginalTitle !== (noteData.title || '');
+  const hasAgentBefore = Boolean(noteData?.agentStaged) && !isChecklist && (agentDiffHasChanges || agentTitleChanged);
+  const isShowingBefore = hasAgentBefore && agentView === 'before';
+  const isShowingChanges = hasAgentBefore && agentView === 'changes';
 
   return (
     <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] overflow-hidden relative' style={EDITOR_CARD_STYLE}>
 
-      {/* agent-staged draft banner */}
+      {/* Agent-staged: a slim strip in the editor's own language (its meta line, its chips), not a
+          yellow banner with a raw line diff — when the agent rewrites prose, every line showed as
+          deleted and re-added, in markdown, above the same text again. Before / After swaps the
+          body for your original, read-only, in the same editor look. */}
       {noteData?.agentStaged && (
-        <div className="shrink-0 flex flex-col gap-2 px-5 md:px-7 pt-4 pb-3 bg-amber-50/80 border-b border-amber-200/70 font-sans">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs md:text-sm text-[#7a4a12] font-medium">
-              Drafted by the Notes Agent — unsaved. Review, then save or discard.
-            </p>
-            <div className="flex items-center gap-2 shrink-0">
-              {agentDiffHasChanges && (
-                <button
-                  onClick={() => setShowAgentDiff((v) => !v)}
-                  className="text-[11px] font-semibold text-[#7a4a12] border border-amber-300 rounded-full px-3 py-1 hover:bg-amber-100 transition-colors cursor-pointer shrink-0"
-                >
-                  {showAgentDiff ? 'Hide changes' : 'View changes'}
-                </button>
-              )}
-              {noteData?.agentRevert && (
-                <button
-                  onClick={() => useTabsStore.getState().revertAgentEdit(currentNoteId)}
-                  title="Put back exactly what you had before the agent's edit"
-                  className="text-[11px] font-semibold text-[#7a4a12] border border-amber-300 rounded-full px-3 py-1 hover:bg-amber-100 transition-colors cursor-pointer shrink-0"
-                >
-                  Revert agent edit
-                </button>
-              )}
-            </div>
-          </div>
-          {showAgentDiff && agentDiffHasChanges && (
-            <div className="max-h-56 overflow-y-auto editor-scrollbar rounded-xl border border-amber-200 bg-white/70 p-3 text-xs md:text-sm leading-relaxed whitespace-pre-wrap font-mono">
-              {noteData.agentOriginalTitle !== undefined && noteData.agentOriginalTitle !== (noteData.title || '') && (
-                <div className="mb-2 text-stone-500">
-                  Title: <span className="line-through text-red-700 bg-red-100">{noteData.agentOriginalTitle || '(untitled)'}</span>{' '}
-                  → <span className="text-emerald-700 bg-emerald-100">{noteData.title || '(untitled)'}</span>
-                </div>
-              )}
-              {noteData.agentDiff.map((part, idx) => {
-                if (!part.added && !part.removed) return (
-                  <span key={idx} className="text-stone-400">{part.value}</span>
-                );
-                return (
-                  <span
-                    key={idx}
-                    className={part.added ? 'bg-emerald-100 text-emerald-900' : 'bg-red-100 text-red-900 line-through'}
-                  >
-                    {part.value}
+        <div className="shrink-0 flex items-center justify-between gap-3 px-5 md:px-7 pt-3 pb-2.5 border-b border-black/5 font-sans">
+          <p className="flex items-center gap-1.5 min-w-0 text-[11px] md:text-[13px] font-medium tracking-wider md:tracking-[0.15em] uppercase text-stone-500">
+            <RiSparkling2Fill className="shrink-0 text-[#e85d56] text-xs md:text-sm" />
+            <span className="truncate">{type === 'edit' ? 'Edited by the agent' : 'Drafted by the agent'} · unsaved</span>
+          </p>
+          {/* Every control here is the editor's Folder chip (its height, fill, border, shadow, text);
+              the view you're on is a dark ink pill — Changes on its own, Before | After as a pair. */}
+          <div className="flex items-center gap-1.5 shrink-0 [--chip-h:26px] md:[--chip-h:34px]">
+            {hasAgentBefore && (
+              <button
+                type="button"
+                onClick={() => setAgentView('changes')}
+                aria-pressed={agentView === 'changes'}
+                className={`${AGENT_CHIP} px-3 ${agentView === 'changes' ? AGENT_CHIP_ON : AGENT_CHIP_OFF}`}
+              >
+                Changes
+              </button>
+            )}
+            {hasAgentBefore && (
+              <div role="tablist" aria-label="Your original or the note now" className="flex items-center h-(--chip-h) rounded-full bg-[#ebe0d3] border border-[#e0d2bf] shadow-sm overflow-hidden">
+                {[['before', 'Before'], ['after', 'After']].map(([view, label], idx) => (
+                  <span key={view} className="flex items-center h-full">
+                    {idx > 0 && <span className="w-px h-3.5 bg-black/10" aria-hidden />}
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={agentView === view}
+                      onClick={() => setAgentView(view)}
+                      className={`h-full px-3 text-xs md:text-sm font-sans font-normal transition-colors duration-200 cursor-pointer ${
+                        agentView === view ? AGENT_CHIP_ON : 'text-stone-500 hover:bg-[#e4d7c8] hover:text-[#333]'
+                      }`}
+                    >
+                      {label}
+                    </button>
                   </span>
-                );
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+            {noteData?.agentRevert && (
+              <button
+                type="button"
+                onClick={() => useTabsStore.getState().revertAgentEdit(currentNoteId)}
+                title="Put back exactly what you had before the agent's edit"
+                className={`${AGENT_CHIP} gap-1.5 px-3 ${AGENT_CHIP_OFF}`}
+              >
+                <LuUndo2 className="text-sm text-stone-400" />
+                Revert
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -709,10 +733,18 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           </div>
         </div>
 
-        {/* title area */}
+        {/* title area (Before: the title you had, read-only) */}
+        {isShowingBefore && (
+          <p
+            className='w-full font-medium text-[32px] md:text-[40px] text-stone-500 mb-2 md:mb-3 shrink-0 leading-tight tracking-tight truncate'
+            style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+          >
+            {noteData.agentOriginalTitle ?? title}
+          </p>
+        )}
         <input
           type='text'
-          className='w-full bg-transparent outline-none font-medium text-[32px] md:text-[40px] text-[#333] placeholder-stone-400 mb-2 md:mb-3 caret-[#333] cursor-text shrink-0 leading-tight tracking-tight'
+          className={`w-full bg-transparent outline-none font-medium text-[32px] md:text-[40px] text-[#333] placeholder-stone-400 mb-2 md:mb-3 caret-[#333] cursor-text shrink-0 leading-tight tracking-tight ${isShowingBefore ? 'hidden' : ''}`}
           style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
           placeholder='Untitled Note'
           value={title}
@@ -907,7 +939,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           ) : (
             /* ── CodeMirror live-preview markdown editor ── */
              <div 
-               className="flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] cursor-text"
+               className={`flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] cursor-text ${isShowingBefore || isShowingChanges ? 'hidden' : ''}`}
                onClick={(e) => {
                  if (e.target === e.currentTarget && cmViewRef.current) {
                    const view = cmViewRef.current;
@@ -947,6 +979,30 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                 basicSetup={EDITOR_BASIC_SETUP}
               />
             </div>
+          )}
+
+          {/* Before: your original, read-only, in the editor's own look (the live editor above is
+              only hidden, so switching back keeps your place) */}
+          {isShowingBefore && (
+            <div className="flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] opacity-70 select-text">
+              <CodeMirror
+                value={agentOriginalContent}
+                editable={false}
+                readOnly
+                extensions={EDITOR_EXTENSIONS}
+                basicSetup={EDITOR_BASIC_SETUP}
+              />
+            </div>
+          )}
+
+          {/* Changes: a git-style diff of your original against the text as it is now */}
+          {isShowingChanges && (
+            <AgentDiffView
+              before={agentOriginalContent}
+              after={content}
+              titleBefore={noteData.agentOriginalTitle}
+              titleAfter={title}
+            />
           )}
 
           {/* Link Previews list */}

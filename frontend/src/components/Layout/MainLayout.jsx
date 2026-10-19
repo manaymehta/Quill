@@ -2,6 +2,8 @@ import { useRef, useEffect, Suspense } from "react";
 import Sidebar from "../Sidebar/Sidebar";
 import Navbar from "../Navbar/Navbar";
 import { Outlet, useLocation } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { EASE_IN, EASE_OUT } from "../TabDock/dockMotion";
 import ConfirmModal from "../Modals/ConfirmModal";
 import FolderDeleteModal from "../Modals/FolderDeleteModal";
 import { useUIStore } from "../../store/useUIStore";
@@ -10,7 +12,7 @@ import TabDock from "../TabDock/TabDock";
 import GlobalEditorOverlay from "../Editor/GlobalEditorOverlay";
 import { useModalStore } from "../Modals/useModalStore";
 import ParticleBackground from "../Background/ParticleBackground";
-import AgentChatPanel from "../Cards/AgentChatPanel";
+import AgentPanel from "../Agent/AgentPanel";
 import { useSearchStore } from "../../store/useSearchStore";
 import { useAgentToast } from "../../hooks/useAgentToast";
 
@@ -77,25 +79,38 @@ const MainLayout = () => {
 
     return (
         <div className="relative min-h-screen min-h-dvh">
-            <ParticleBackground isPaused={isEditorActive} />
+            <ParticleBackground isPaused={isEditorActive || isAgentMode} />
             
             {/* Navbar rendered on normal pages at z-[100] */}
             {!isEditorActive && <Navbar />}
 
             {/* Main Outlet content (hidden when editor is active) */}
             <div className={`transition-[padding] ${isSidebarOpen ? "pl-0 sm:pl-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "pl-0 sm:pl-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]"} pt-[60px] md:pt-[72px] ${isEditorActive ? "hidden" : ""}`}>
-                {isAgentMode ? (
-                    <div className="pb-24 px-2 md:px-4 flex justify-center">
-                        <div className="w-full max-w-2xl">
-                            <AgentChatPanel />
-                        </div>
-                    </div>
-                ) : (
-                    /* Boundary for lazily loaded routes (e.g. Graph) so the shell stays mounted */
-                    <Suspense fallback={null}>
-                        <Outlet />
-                    </Suspense>
-                )}
+                {/* The chat in place of the page. It opens with its own scale-up; closing, it leaves the
+                    same way reversed (a slight shrink and a quick fade) and the page fades back in —
+                    it used to vanish in one frame. */}
+                <AnimatePresence mode="wait" initial={false}>
+                    {isAgentMode ? (
+                        <motion.div
+                            key="agent"
+                            style={{ originY: 0 }}
+                            exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.1, ease: EASE_IN } }}
+                        >
+                            <AgentPanel />
+                        </motion.div>
+                    ) : (
+                        <motion.div
+                            key="page"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1, transition: { duration: 0.12, ease: EASE_OUT } }}
+                        >
+                            {/* Boundary for lazily loaded routes (e.g. Graph) so the shell stays mounted */}
+                            <Suspense fallback={null}>
+                                <Outlet />
+                            </Suspense>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
 
             {/* Global Note Editor Overlay (z-20) */}
