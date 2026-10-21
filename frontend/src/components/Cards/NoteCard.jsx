@@ -9,18 +9,18 @@ import {
   MdOutlineFolder, MdArrowOutward, MdMoreVert, 
   MdOutlineHome, MdHome 
 } from "react-icons/md";
-import { useSortable, defaultAnimateLayoutChanges } from '@dnd-kit/sortable';
+import { useSortable } from '@dnd-kit/sortable';
+import { preloadMarkdownEditor } from '../Editor/markdownEditorLoader';
 import { CSS } from '@dnd-kit/utilities';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { MOBILE_QUERY } from '../../constants/breakpoints';
 import MoveToPicker from './MoveToPicker';
+import { useMenuPlacement, buttonAnchor, contextMenuKind, shutterMenuVariants, shutterItemVariants, TOUCH_MENU_ZOOM } from './menuPlacement';
 
-const animateLayoutChanges = (args) => {
-  if (args.wasDragging) return false;
-  return defaultAnimateLayoutChanges(args);
-};
+// NotesGrid slides the cards to their places itself; dnd-kit animating the same moves would fight it
+const animateLayoutChanges = () => false;
 
 // ── Markdown component overrides for the compact card preview ────────────────
 const CARD_MD_COMPONENTS = {
@@ -70,46 +70,6 @@ const CARD_MD_PLUGINS = [remarkGfm];
 
 const PREVIEW_CHARS = 150;
 
-const shutterMenuVariants = {
-  closed: {
-    opacity: 0,
-    scaleY: 0.82,
-    y: -8,
-    transition: {
-      duration: 0.12,
-      ease: [0.4, 0, 1, 1],
-    },
-  },
-  open: {
-    opacity: 1,
-    scaleY: 1,
-    y: 0,
-    transition: {
-      duration: 0.16,
-      ease: [0.16, 1, 0.3, 1],
-    },
-  },
-};
-
-const shutterItemVariants = {
-  closed: {
-    opacity: 0,
-    y: -4,
-    transition: {
-      duration: 0.1,
-      ease: [0.4, 0, 1, 1],
-    },
-  },
-  open: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.15,
-      ease: [0.16, 1, 0.3, 1],
-    },
-  },
-};
-
 // ── Inner static rendering component ─────────────────────────────────────────
 const InnerNoteCard = memo(({
   title, content, tags, folder, folderId, isChecklist, checklist,
@@ -123,6 +83,7 @@ const InnerNoteCard = memo(({
   const observerTargetRef = useRef(null);
 
   const markdownSlice = useMemo(() => (content || '').slice(0, 500), [content]);
+
 
   const setActiveDropdownNoteId = useFoldersStore((s) => s.setActiveDropdownNoteId);
   const isEditorActive = useTabsStore((s) => s.activeTabId !== 'home');
@@ -199,6 +160,38 @@ const InnerNoteCard = memo(({
     }] : [])
   ];
 
+  // Placed by how it was opened (right-click, long-press, ⋮), from its real size, and opening from
+  // the edge nearest that: see menuPlacement
+  const [measureMenu, menuPlace] = useMenuPlacement(coords);
+  // The menu's box and rows, as they always looked; touch screens get it scaled up evenly
+  // (TOUCH_MENU_ZOOM). `up` mirrors the rows' drift for a menu opening upwards.
+  const renderMenuBody = (up) => (
+    <div className={`bg-[#1e1e20] p-1 rounded-2xl shadow-2xl flex flex-col gap-[5px] min-w-[165px] border-0 outline-none overflow-hidden ${TOUCH_MENU_ZOOM}`}>
+      {menuItems.map((item, idx) => (
+        <motion.button
+          key={idx}
+          type="button"
+          custom={up}
+          variants={shutterItemVariants}
+          onClick={() => {
+            setActiveDropdownNoteId(null);
+            item.onClick();
+          }}
+          className={`flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full ${
+            item.variant === 'danger'
+              ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
+              : item.variant === 'success'
+              ? 'hover:bg-emerald-500/20 hover:text-emerald-400 text-emerald-400'
+              : 'hover:bg-white/[0.15] hover:text-white text-stone-300'
+          }`}
+        >
+          <span>{item.label}</span>
+          {cloneElement(item.icon, { className: "shrink-0" })}
+        </motion.button>
+      ))}
+    </div>
+  );
+
   return (
     <div
       ref={observerTargetRef}
@@ -207,83 +200,55 @@ const InnerNoteCard = memo(({
         ${shouldAnimate && !isOverlay ? 'animate-card-fade-in' : ''}
         ${isDragging ? 'opacity-30' : 'opacity-100'}
         ${isMenuOpen ? 'ring-1 ring-white/10' : ''}
-        ${isOverlay ? 'shadow-2xl scale-105 opacity-95' : (isDragging ? '' : 'shadow-xs')}`}
+        ${isOverlay ? 'note-card-lift' : (isDragging ? '' : 'shadow-xs')}`}
     >
       <div className="flex flex-col">
         <div className="flex justify-between items-start gap-1">
           <h4 className="text-lg md:text-2xl font-semibold tracking-tight text-[#e85d56] leading-tight flex-1 min-w-0 pr-1">{title}</h4>
           
-          {!isOverlay && (
-            <div className="relative shrink-0 no-card-click">
-              <button
-                type="button"
-                onClick={toggleMenu}
-                className="p-1 -mr-1 -mt-1 rounded-full text-stone-400 hover:text-stone-700 hover:bg-black/5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer flex items-center justify-center"
-                title="Note options"
-              >
-                <MdMoreVert size={20} />
-              </button>
-            </div>
-          )}
+          {/* The dragged copy keeps the button's room (hidden): without it the title could fit on
+              one line less and the lifted card came out shorter than the one picked up */}
+          <div className={`relative shrink-0 no-card-click ${isOverlay ? 'invisible' : ''}`} aria-hidden={isOverlay || undefined}>
+            <button
+              type="button"
+              onClick={toggleMenu}
+              tabIndex={isOverlay ? -1 : undefined}
+              // pointer-coarse:before = an invisible, finger-sized (44px) tap area around the 28px button
+              className="relative p-1 -mr-1 -mt-1 rounded-full text-stone-400 hover:text-stone-700 hover:bg-black/5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer flex items-center justify-center pointer-coarse:before:absolute pointer-coarse:before:-inset-2 pointer-coarse:before:content-['']"
+              title="Note options"
+            >
+              <MdMoreVert size={20} />
+            </button>
+          </div>
         </div>
 
         {(isMenuOpen || coords) && createPortal(
-          <AnimatePresence onExitComplete={() => setCoords(null)}>
-            {isMenuOpen && coords && (
-              <motion.div
-                key="note-context-menu"
-                initial="closed"
-                animate="open"
-                exit="closed"
-                variants={shutterMenuVariants}
-                style={(() => {
-                  const menuWidth = 175;
-                  const menuHeight = isTrash ? 85 : 210;
-                  const bottomMargin = window.matchMedia(MOBILE_QUERY).matches ? 76 : 8;
-                  let finalX = coords.x;
-                  if (finalX + menuWidth > window.innerWidth - 8) {
-                    finalX = Math.max(8, window.innerWidth - menuWidth - 8);
-                  }
-                  finalX = Math.max(8, finalX);
-                  let finalY = coords.y;
-                  if (finalY + menuHeight > window.innerHeight - bottomMargin) {
-                    finalY = Math.max(8, coords.y - menuHeight - 12);
-                  }
-                  return {
-                    position: 'fixed',
-                    left: `${finalX}px`,
-                    top: `${finalY}px`,
-                    zIndex: 9999,
-                    transformOrigin: 'top',
-                  };
-                })()}
-                className="bg-[#1e1e20] p-1 rounded-2xl shadow-2xl flex flex-col gap-[5px] min-w-[165px] no-card-click select-none border-0 outline-none overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {menuItems.map((item, idx) => (
-                  <motion.button
-                    key={idx}
-                    type="button"
-                    variants={shutterItemVariants}
-                    onClick={() => {
-                      setActiveDropdownNoteId(null);
-                      item.onClick();
-                    }}
-                    className={`flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full ${
-                      item.variant === 'danger'
-                        ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
-                        : item.variant === 'success'
-                        ? 'hover:bg-emerald-500/20 hover:text-emerald-400 text-emerald-400'
-                        : 'hover:bg-white/[0.15] hover:text-white text-stone-300'
-                    }`}
-                  >
-                    <span>{item.label}</span>
-                    {cloneElement(item.icon, { className: "shrink-0" })}
-                  </motion.button>
-                ))}
-              </motion.div>
+          <>
+            {/* Rendered hidden first, only to measure it, so it opens already placed and knows
+                which way it unfolds (menuPlacement) */}
+            {isMenuOpen && coords && !menuPlace && (
+              <div ref={measureMenu} aria-hidden="true" style={{ position: 'fixed', left: 0, top: 0, visibility: 'hidden', pointerEvents: 'none' }}>
+                {renderMenuBody(false)}
+              </div>
             )}
-          </AnimatePresence>,
+            <AnimatePresence onExitComplete={() => setCoords(null)}>
+              {isMenuOpen && menuPlace && (
+                <motion.div
+                  key="note-context-menu"
+                  initial="closed"
+                  animate="open"
+                  exit="closed"
+                  custom={menuPlace.up}
+                  variants={shutterMenuVariants}
+                  style={{ position: 'fixed', left: menuPlace.left, top: menuPlace.top, zIndex: 9999, originY: menuPlace.up ? 1 : 0 }}
+                  className="no-card-click select-none"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {renderMenuBody(menuPlace.up)}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>,
           document.body
         )}
 
@@ -428,6 +393,9 @@ const NoteCard = ({
 
   const longPressTimerRef = useRef(null);
   const touchStartPosRef = useRef({ x: 0, y: 0 });
+  // Set when a long-press opens the menu: the tap some browsers send as the finger lifts must not
+  // close it again. Only that one tap: cleared when the next touch starts (most browsers send none).
+  const skipReleaseTapRef = useRef(false);
 
   useEffect(() => {
     if (activeDropdownNoteId !== id) return;
@@ -463,13 +431,13 @@ const NoteCard = ({
     if (isMenuOpen) {
       setActiveDropdownNoteId(null);
     } else {
-      const rect = e.currentTarget.getBoundingClientRect();
-      setCoords({ x: rect.left, y: rect.bottom + 8 });
+      setCoords(buttonAnchor(e.currentTarget));
       setActiveDropdownNoteId(id);
     }
   };
 
   const handleTouchStart = (e) => {
+    skipReleaseTapRef.current = false;
     if (isDragging || isOverlay) return;
     const { activeDropdownNoteId, activeDropdownFolderId } = useFoldersStore.getState();
     if (activeDropdownNoteId !== null || activeDropdownFolderId !== null) return;
@@ -479,8 +447,9 @@ const NoteCard = ({
     touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
 
     longPressTimerRef.current = setTimeout(() => {
+      skipReleaseTapRef.current = true;
       flushSync(() => {
-        setCoords({ x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
+        setCoords({ kind: 'touch', x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
         setActiveDropdownNoteId(id);
       });
     }, 500);
@@ -552,23 +521,29 @@ const NoteCard = ({
         listeners?.onTouchCancel?.(e);
         handleTouchEnd(e);
       }}
+      // Pressing a card starts loading the editor's text area, so it's ready when the note opens
+      onPointerDownCapture={preloadMarkdownEditor}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
         if (isOverlay || isDragging || isMenuOpen) return;
-        setCoords({ x: e.clientX, y: e.clientY });
+        setCoords({ kind: contextMenuKind(e), x: e.clientX, y: e.clientY });
         setActiveDropdownNoteId(id);
       }}
       onClick={(e) => {
         if (e.target.closest('.no-card-click') || isDragging || isOverlay) return;
         const { activeDropdownNoteId, activeDropdownFolderId, setActiveDropdownNoteId, setActiveDropdownFolderId } = useFoldersStore.getState();
+        // While a menu is open, a tap on a card closes it (and doesn't open the note), this card's own
+        // menu included; only the tap that ends the long-press which opened it is skipped
         if (activeDropdownNoteId !== null || activeDropdownFolderId !== null) {
           e.stopPropagation();
           e.preventDefault();
-          if (activeDropdownNoteId !== id) {
-            setActiveDropdownNoteId(null);
-            setActiveDropdownFolderId(null);
+          if (skipReleaseTapRef.current && activeDropdownNoteId === id) {
+            skipReleaseTapRef.current = false;
+            return;
           }
+          setActiveDropdownNoteId(null);
+          setActiveDropdownFolderId(null);
           return;
         }
         onEdit?.();

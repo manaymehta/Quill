@@ -36,6 +36,11 @@ const MetaLine = ({ children }) => (
   <p className="px-1 text-[11px] md:text-xs font-medium tracking-[0.15em] uppercase text-stone-500">{children}</p>
 );
 
+// The note tiles (sources and drafts): on hover they lift a little, cast a warm shadow and their
+// border turns coral (a ring outside the 1px border doubles it without shifting the text), like the
+// old chat's cards; a disabled tile stays still. Tailwind v4's translate-* sets `translate`, not `transform`.
+const TILE = 'w-[220px] shrink-0 sm:w-auto text-left agent-cream rounded-[20px] bg-[#f8ecdc] border border-gray-700 p-3 md:p-3.5 min-w-0 ring-1 ring-transparent cursor-pointer transition-[translate,box-shadow,border-color,background-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5 hover:border-[#e85d56]/70 hover:ring-[#e85d56]/70 hover:shadow-[0_8px_20px_-8px_rgba(232,93,86,0.45)] hover:bg-[#fbf1e4] disabled:cursor-default disabled:hover:translate-y-0 disabled:hover:border-gray-700 disabled:hover:ring-transparent disabled:hover:shadow-none disabled:hover:bg-[#f8ecdc]';
+
 // Cited notes as small versions of the home grid's note cards; tap opens the note in the dock.
 // On phones a row that scrolls sideways (no scrollbar, its edges fading like the dock's strip).
 const Citations = ({ citations, onOpen }) => {
@@ -52,7 +57,7 @@ const Citations = ({ citations, onOpen }) => {
           onClick={() => onOpen(citation.noteId)}
           title="Open this note"
           disabled={Boolean(openingNoteId)}
-          className={`w-[220px] shrink-0 sm:w-auto text-left agent-cream rounded-[20px] bg-[#f8ecdc] border border-gray-700 p-3 md:p-3.5 min-w-0 cursor-pointer transition-colors duration-150 hover:bg-[#f2e3cf] disabled:cursor-default disabled:hover:bg-[#f8ecdc] ${
+          className={`${TILE} ${
             openingNoteId === citation.noteId ? 'animate-pulse' : openingNoteId ? 'opacity-60' : ''
           }`}
         >
@@ -94,7 +99,7 @@ const StagedCard = ({ staged, onOpenNote }) => {
       onClick={open}
       disabled={!canOpen}
       title={canOpen ? 'Open it' : undefined}
-      className="group/staged w-[220px] shrink-0 sm:w-auto text-left agent-cream rounded-[20px] bg-[#f8ecdc] border border-gray-700 p-3 md:p-3.5 min-w-0 transition-colors duration-150 cursor-pointer hover:bg-[#f2e3cf] disabled:cursor-default disabled:hover:bg-[#f8ecdc] disabled:opacity-60"
+      className={`group/staged ${TILE} disabled:opacity-60`}
     >
       <p className="flex items-center gap-1 text-[11px] md:text-xs font-medium tracking-[0.12em] uppercase text-stone-500">
         <MdOutlineEdit className="shrink-0" />

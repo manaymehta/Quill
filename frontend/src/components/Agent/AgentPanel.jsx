@@ -250,7 +250,6 @@ const AgentPanel = () => {
   const [sideTab, setSideTab] = useState(null); // null | 'chats' | 'activity' | 'settings'
   const [openingNoteId, setOpeningNoteId] = useState(null);
   const openingNoteRef = useRef(null);
-  const scrollAnchorRef = useRef(null);
   const messagesRef = useRef(null);
   const topLineRef = useRef(null);
   const bottomLineRef = useRef(null);
@@ -268,8 +267,11 @@ const AgentPanel = () => {
     wake();
   }, []);
 
+  // Scrolls only the message list: scrollIntoView also scrolled the page itself, which on phones
+  // (with the keyboard up the page can scroll) pushed the card up under the navbar, away from the dock
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const list = messagesRef.current;
+    list?.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
   }, [messages.length, isBusy, steps.length]);
 
   // A used split-choice / group button: bring its review list into view and briefly outline it
@@ -277,7 +279,11 @@ const AgentPanel = () => {
     const element = scrollTarget && document.getElementById(`agent-message-${scrollTarget.messageId}`);
     if (!element) return undefined;
     const outline = ['ring-2', 'ring-[#e85d56]/60', 'ring-offset-4', 'ring-offset-[#2a2a2a]'];
-    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const list = messagesRef.current;
+    if (list) {
+      const offset = element.getBoundingClientRect().top - list.getBoundingClientRect().top;
+      list.scrollTo({ top: list.scrollTop + offset - (list.clientHeight - element.offsetHeight) / 2, behavior: 'smooth' });
+    }
     element.classList.add(...outline);
     const timer = setTimeout(() => element.classList.remove(...outline), 1500);
     return () => {
@@ -435,7 +441,9 @@ const AgentPanel = () => {
           <div className="shrink-0 px-5 md:px-7"><div ref={topLineRef} className="h-px w-full bg-white/10 opacity-0" /></div>
 
           {/* Messages */}
-          <div ref={messagesRef} onScroll={updateMessagesFade} className="flex-1 min-h-0 overflow-y-auto agent-scrollbar px-3 md:px-6 pt-2 pb-4 flex flex-col gap-3">
+          {/* agent-scrollbar-centred: the scrollbar's lane is reserved on both sides, taken out of the
+              padding, so the messages sit centred (index.css) */}
+          <div ref={messagesRef} onScroll={updateMessagesFade} className="flex-1 min-h-0 overflow-y-auto agent-scrollbar agent-scrollbar-centred px-1.5 md:px-[18px] pt-2 pb-4 flex flex-col gap-3">
             {messages.length === 0 && !isBusy && !isOpeningChat && <EmptyState />}
             <OpeningNoteContext.Provider value={openingNoteId}>
               {messages.map((message) => (
@@ -443,7 +451,6 @@ const AgentPanel = () => {
               ))}
             </OpeningNoteContext.Provider>
             {isBusy && <WorkingLine steps={steps} />}
-            <div ref={scrollAnchorRef} />
           </div>
 
           {/* Composer: the editor's bottom bar, in dark */}

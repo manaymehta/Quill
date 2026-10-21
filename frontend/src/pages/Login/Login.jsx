@@ -23,7 +23,11 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
-  const { login, googleLogin, error, isLoading, isLoggedIn } = useAuthStore();
+  const login = useAuthStore((s) => s.login);
+  const googleLogin = useAuthStore((s) => s.googleLogin);
+  const error = useAuthStore((s) => s.error);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
 
   const handleLogin = async (e) => {
     e.preventDefault();

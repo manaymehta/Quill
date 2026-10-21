@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { motion as Motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { FiMenu } from 'react-icons/fi';
 import { useTabsStore } from '../../store/useTabsStore';
@@ -9,15 +9,10 @@ import { DOCK_METRICS, DOCK_MOBILE_QUERY, getEditorClearance } from '../TabDock/
 import BottomSheet from '../Modals/BottomSheet';
 import { EDITOR_CARD_STYLE, EDITOR_RADIUS_PX } from './editorChrome';
 
-// The editor pulls in CodeMirror (~600 kB minified), so it lives in its own chunk.
-// It is warmed on idle after the layout mounts so the first note open is instant.
-const loadAddEditNotes = () => import('../../pages/Home/AddEditNotes');
-const AddEditNotes = lazy(loadAddEditNotes);
-
-// Blank card matching the editor's shell, shown only if the chunk hasn't arrived yet
-const EditorFallback = () => (
-  <div className="h-full w-full bg-[#f4eadc]" style={EDITOR_CARD_STYLE} />
-);
+// The editor loads with the app; only its text area (CodeMirror, ~600 kB) is a separate chunk,
+// fetched on idle after the layout mounts (and when a note card is pressed): markdownEditorLoader
+import AddEditNotes from '../../pages/Home/AddEditNotes';
+import { preloadMarkdownEditor } from './markdownEditorLoader';
 
 // Card mode: the gap around the card, and its max width (phone = below the tablet breakpoint)
 const EDITOR_GAP_PX   = { phone: 8, desktop: 16 };
@@ -107,7 +102,7 @@ const GlobalEditorOverlay = () => {
   }, [activeTabId]);
 
   useEffect(() => {
-    const warm = () => { loadAddEditNotes().catch(() => {}); };
+    const warm = preloadMarkdownEditor;
     if ('requestIdleCallback' in window) {
       const id = window.requestIdleCallback(warm, { timeout: 3000 });
       return () => window.cancelIdleCallback(id);
@@ -293,18 +288,16 @@ const GlobalEditorOverlay = () => {
               className="h-full w-full min-w-0"
               style={{ maxWidth: 'calc(var(--editor-max-w) + (100vw - var(--editor-max-w)) * var(--fs))' }}
             >
-              <Suspense fallback={<EditorFallback />}>
-                {/* externalRev in the key: an outside change (agent edit, revert)
-                    remounts the editor so it picks up the new contents. */}
-                <TabEditorSlot
-                  key={`${activeTab._id}:${activeTab.externalRev || 0}`}
-                  tab={activeTab}
-                  isActive={true}
-                  onNoteSaved={handleNoteSaved}
-                  onToggleMockPanel={handleToggleMockPanel}
-                  onSummaryReceived={handleSummaryReceived}
-                />
-              </Suspense>
+              {/* externalRev in the key: an outside change (agent edit, revert)
+                  remounts the editor so it picks up the new contents. */}
+              <TabEditorSlot
+                key={`${activeTab._id}:${activeTab.externalRev || 0}`}
+                tab={activeTab}
+                isActive={true}
+                onNoteSaved={handleNoteSaved}
+                onToggleMockPanel={handleToggleMockPanel}
+                onSummaryReceived={handleSummaryReceived}
+              />
             </div>
 
             {/* Side panel: beside the editor on wider screens, a bottom sheet on phones (the shared

@@ -24,7 +24,10 @@ const SignUp = () => {
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
 
-  const { signup, googleLogin, error, isLoading } = useAuthStore();
+  const signup = useAuthStore((s) => s.signup);
+  const googleLogin = useAuthStore((s) => s.googleLogin);
+  const error = useAuthStore((s) => s.error);
+  const isLoading = useAuthStore((s) => s.isLoading);
 
   const handleSignUp = async (e) => {
     e.preventDefault();

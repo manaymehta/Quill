@@ -4,7 +4,6 @@ import Home from './pages/Home/Home';
 import SignUp from './pages/SignUp/SignUp';
 import Login from './pages/Login/Login';
 import MainLayout from './components/Layout/MainLayout';
-import Pinned from './pages/Pinned/Pinned';
 import Archive from './pages/Archive/Archive';
 import Trash from './pages/Trash/Trash';
 import { useAuthStore } from './store/useAuthStore';
@@ -15,7 +14,9 @@ import FolderView from './pages/FolderView/FolderView';
 const Graph = lazy(() => import('./pages/Graph/Graph'));
 
 const App = () => {
-  const { isLoggedIn, isInitialized, initializeAuth } = useAuthStore();
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const isInitialized = useAuthStore((s) => s.isInitialized);
+  const initializeAuth = useAuthStore((s) => s.initializeAuth);
 
   useEffect(() => {
     initializeAuth();
@@ -36,7 +37,6 @@ const App = () => {
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={isLoggedIn ? <Home /> : <Navigate to="/" />} />
           <Route path="/folder/:folderId" element={isLoggedIn ? <FolderView /> : <Navigate to="/" />} />
-          <Route path="/pinned" element={isLoggedIn ? <Pinned /> : <Navigate to="/" />} />
           <Route path="/archive" element={isLoggedIn ? <Archive /> : <Navigate to="/" />} />
           <Route path="/trash" element={isLoggedIn ? <Trash /> : <Navigate to="/" />} />
           <Route path="/graph" element={isLoggedIn ? <Graph /> : <Navigate to="/" />} />

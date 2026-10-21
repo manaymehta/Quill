@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { memo, useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import { RiSparkling2Fill } from 'react-icons/ri'
@@ -7,16 +7,12 @@ import axiosInstance from '../../utils/axiosInstance';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import CodeMirror from '@uiw/react-codemirror';
-import { markdown } from '@codemirror/lang-markdown';
-import { quillTheme, quillMarkdownHighlight, hideMarkdownSyntax, lineWrap } from '../../utils/markdownEditor';
 import MoveToPicker from '../../components/Cards/MoveToPicker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useToastStore } from '../../store/useToastStore';
-import { historyField, redo } from '@codemirror/commands';
-import { keymap } from '@codemirror/view';
 import { editorRegistry } from '../../utils/editorRegistry';
+import { noteIndexingFailed } from '../../utils/noteIndexing';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
 import FadeTitle from '../../components/TabDock/FadeTitle';
@@ -24,26 +20,15 @@ import { EDITOR_CARD_STYLE, EDITOR_TOOLBAR_H_PX, EDITOR_TOOLBAR_DOT_SLOT_MARGIN_
 import { DOCK_METRICS, DOCK_MOBILE_QUERY } from '../../components/TabDock/dockMetrics';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
-import AgentDiffView from '../../components/Editor/AgentDiffView';
+import { LiveMarkdownEditor, ReadOnlyMarkdown } from '../../components/Editor/markdownEditorLoader';
 
-// State fields persisted in editor snapshots (used for both toJSON and fromJSON)
-const SNAPSHOT_FIELDS = { history: historyField };
+// Only shown while reviewing an agent's edit, so it loads when first needed
+const AgentDiffView = lazy(() => import('../../components/Editor/AgentDiffView'));
 
 // "Apply & save" from the agent chat marks a tab pendingSave; the editor runs
 // its normal save once when it opens. Claimed per tab + revision so React
 // StrictMode's double effects can't save twice.
 const claimedAgentSaves = new Set();
-
-const EDITOR_EXTENSIONS = [
-  markdown(),
-  quillTheme,
-  quillMarkdownHighlight,
-  hideMarkdownSyntax,
-  lineWrap,
-  keymap.of([
-    { key: 'Mod-Shift-z', run: redo, preventDefault: true },
-  ]),
-];
 
 // The agent strip's controls: exactly the Folder chip (its fill, border, shadow, height, regular-weight
 // grey label, lighter icon). The view you're on is the same chip pressed: its hover shade, dark text.
@@ -51,19 +36,13 @@ const AGENT_CHIP = 'flex items-center h-(--chip-h) rounded-full border border-[#
 const AGENT_CHIP_OFF = 'bg-[#ebe0d3] hover:bg-[#e4d7c8] text-stone-500 hover:text-[#333]';
 const AGENT_CHIP_ON = 'bg-[#e4d7c8] text-[#333]';
 
-const EDITOR_BASIC_SETUP = {
-  lineNumbers: false,
-  foldGutter: true,
-  dropCursor: true,
-  allowMultipleSelections: false,
-  indentOnInput: true,
-  bracketMatching: true,
-  closeBrackets: true,
-  autocompletion: false,
-  highlightActiveLine: false,
-  highlightSelectionMatches: false,
-  searchKeymap: false,
-};
+// While the text area's chunk loads (markdownEditorLoader): the note's text as plain text, in the
+// editor's font and spacing, so the card is never blank and CodeMirror takes over in place
+const TextAreaPlaceholder = ({ text }) => (
+  <div className="font-['Lora',Georgia,serif] text-[#333] whitespace-pre-wrap break-words" aria-hidden="true">
+    {text || <span className="text-[#a8a29e]">Start typing...</span>}
+  </div>
+);
 
 const isMobileOrTouch = () =>
   typeof window !== 'undefined' &&
@@ -150,19 +129,6 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   }, []);
 
   const currentNoteId = noteData?._id;
-
-  // Rehydrate CodeMirror runtime state (doc, selection, undo/redo history) from in-memory registry
-  const initialEditorState = useMemo(() => {
-    if (isChecklist) return undefined;
-    const snapshot = editorRegistry.getEditorSnapshot(currentNoteId);
-    if (snapshot) {
-      return {
-        json: snapshot,
-        fields: SNAPSHOT_FIELDS,
-      };
-    }
-    return undefined;
-  }, [currentNoteId, isChecklist]);
 
   const tagScrollContainerRef = useRef(null);
   const tagInputRef = useRef(null);
@@ -388,28 +354,22 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     }
   }, [currentNoteId, title, content, tags, isChecklist, checklist, folderId, linkPreviews]);
 
-  // On unmount (e.g. switching tabs), preserve CodeMirror state and flush latest draft.
-  // Strictly checks whether the tab is still open in useTabsStore to avoid resurrecting discarded tabs.
-  useEffect(() => {
-    const mountRev = mountRevRef.current;
-    return () => {
-      const tabId = currentNoteId;
-      if (!tabId) return;
+  // Whether what this editor holds may be written back on closing: only while the tab is still
+  // open (so a discarded tab isn't resurrected) and wasn't changed from outside (agent edit, revert:
+  // this copy is stale and would overwrite the new contents)
+  const canWriteBackOnClose = useCallback(() => {
+    if (!currentNoteId) return false;
+    const liveTab = useTabsStore.getState().openTabs.find((t) => t._id === currentNoteId);
+    return Boolean(liveTab) && (liveTab.externalRev || 0) === mountRevRef.current;
+  }, [currentNoteId]);
 
-      const liveTab = useTabsStore.getState().openTabs.find((t) => t._id === tabId);
-      // Skip the write-back when the tab was changed from outside: this
-      // editor's copy is stale and would overwrite the new contents.
-      const changedOutside = Boolean(liveTab) && (liveTab.externalRev || 0) !== mountRev;
-      if (liveTab && !changedOutside) {
-        if (cmViewRef.current) {
-          editorRegistry.saveEditorSnapshot(tabId, cmViewRef.current, SNAPSHOT_FIELDS);
-        }
-        if (onUpdateTabState && latestDraftRef.current) {
-          onUpdateTabState(latestDraftRef.current);
-        }
-      }
-    };
-  }, [currentNoteId, onUpdateTabState]);
+  // On unmount (e.g. switching tabs), flush the latest draft. The text area saves its own CodeMirror
+  // state (cursor, undo history) under the same rule (MarkdownEditor).
+  useEffect(() => () => {
+    if (canWriteBackOnClose() && onUpdateTabState && latestDraftRef.current) {
+      onUpdateTabState(latestDraftRef.current);
+    }
+  }, [canWriteBackOnClose, onUpdateTabState]);
 
 
   const handleAddTag = () => {
@@ -504,11 +464,13 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         }
         onSaveSuccess();
         const notify = showToastMessage || useToastStore.getState().showToast;
-        const embeddingIssue = ["failed", "partial"].includes(response.data?.embedding?.status);
-        if (embeddingIssue) {
-          notify("Note saved. Embedding failed.", "warning");
-        } else {
-          notify(isDraft ? "Note added successfully" : "Note updated successfully", "success");
+        notify(isDraft ? "Note added successfully" : "Note updated successfully", "success");
+        // Indexing for the agent's search runs after the save replies; a failure still shows,
+        // a moment later (from the toast store: this tab has usually closed by then)
+        if (response.data.indexing) {
+          noteIndexingFailed(response.data.note._id).then((failed) => {
+            if (failed) useToastStore.getState().showToast("Note saved. Embedding failed.", "warning");
+          });
         }
       }
     } catch (error) {
@@ -956,28 +918,19 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                  cleanUrls.forEach(url => fetchPreview(url));
                }}
              >
-              <CodeMirror
-                value={content}
-                initialState={initialEditorState}
-                onChange={(val) => {
-                  setContent(val);
-                  setError("");
-                }}
-                onCreateEditor={(view) => {
-                  cmViewRef.current = view;
-                  if (isActive && !isChecklist && !isMobileOrTouch()) {
-                    view.focus();
-                  }
-                }}
-                onUpdate={(viewUpdate) => {
-                  if (viewUpdate.docChanged || viewUpdate.selectionSet) {
-                    editorRegistry.saveEditorSnapshot(currentNoteId, viewUpdate.view, SNAPSHOT_FIELDS);
-                  }
-                }}
-                extensions={EDITOR_EXTENSIONS}
-                placeholder="Start typing..."
-                basicSetup={EDITOR_BASIC_SETUP}
-              />
+              <Suspense fallback={<TextAreaPlaceholder text={content} />}>
+                <LiveMarkdownEditor
+                  noteId={currentNoteId}
+                  value={content}
+                  onChange={(val) => {
+                    setContent(val);
+                    setError("");
+                  }}
+                  viewRef={cmViewRef}
+                  autoFocus={isActive && !isChecklist && !isMobileOrTouch()}
+                  keepOnClose={canWriteBackOnClose}
+                />
+              </Suspense>
             </div>
           )}
 
@@ -985,24 +938,22 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
               only hidden, so switching back keeps your place) */}
           {isShowingBefore && (
             <div className="flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] opacity-70 select-text">
-              <CodeMirror
-                value={agentOriginalContent}
-                editable={false}
-                readOnly
-                extensions={EDITOR_EXTENSIONS}
-                basicSetup={EDITOR_BASIC_SETUP}
-              />
+              <Suspense fallback={<TextAreaPlaceholder text={agentOriginalContent} />}>
+                <ReadOnlyMarkdown value={agentOriginalContent} />
+              </Suspense>
             </div>
           )}
 
           {/* Changes: a git-style diff of your original against the text as it is now */}
           {isShowingChanges && (
-            <AgentDiffView
-              before={agentOriginalContent}
-              after={content}
-              titleBefore={noteData.agentOriginalTitle}
-              titleAfter={title}
-            />
+            <Suspense fallback={null}>
+              <AgentDiffView
+                before={agentOriginalContent}
+                after={content}
+                titleBefore={noteData.agentOriginalTitle}
+                titleAfter={title}
+              />
+            </Suspense>
           )}
 
           {/* Link Previews list */}

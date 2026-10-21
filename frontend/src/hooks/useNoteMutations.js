@@ -5,6 +5,7 @@ import { useTabsStore } from '../store/useTabsStore';
 import { useToastStore } from '../store/useToastStore';
 import { useModalStore } from '../components/Modals/useModalStore';
 import { editorRegistry } from '../utils/editorRegistry';
+import { noteIndexingFailed } from '../utils/noteIndexing';
 import { TOAST, MODAL_MESSAGES } from '../constants/toastMessages';
 
 const hasEmbeddingIssue = (data) => ["failed", "partial"].includes(data?.embedding?.status);
@@ -205,65 +206,48 @@ export const useMoveNoteMutation = () => {
   });
 };
 
+// The cached list each orderable grid shows (Trash has no order)
+const ORDER_LIST_KEYS = {
+  home: () => QUERY_KEYS.HOME_NOTES,
+  folder: (folderId) => QUERY_KEYS.FOLDER_NOTES(folderId),
+  archive: () => QUERY_KEYS.ARCHIVED_NOTES,
+};
+
+// The visible notes (`ids`, in their new order) take over the places they held
+// in the full list; notes hidden by a search keep theirs. The server does the
+// same (note-order.service reorderList), so the cache matches what it saves.
+const reorderInPlace = (notes, ids) => {
+  const moved = new Set(ids);
+  const byId = new Map(notes.map((n) => [n._id, n]));
+  let next = 0;
+  return notes.map((n) => (moved.has(n._id) ? byId.get(ids[next++]) : n));
+};
+
+// A drag in one list: { list: 'home' | 'folder' | 'archive', folderId, ids }.
+// The cache is updated before anything is awaited, so the grid shows the drop
+// on the very next frame.
 export const useReorderNotesMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ updates }) => {
-      const response = await axiosInstance.put('/reorder-notes', { updates });
+    mutationFn: async ({ list, folderId, ids }) => {
+      const response = await axiosInstance.put('/reorder-notes', { list, folderId, ids });
       return response.data;
     },
-    onMutate: async ({ reorderedNotes, folderId }) => {
-      const queryKey = folderId ? QUERY_KEYS.FOLDER_NOTES(folderId) : QUERY_KEYS.ALL_NOTES;
-      await queryClient.cancelQueries({ queryKey });
+    onMutate: async ({ list, folderId, ids }) => {
+      const queryKey = ORDER_LIST_KEYS[list](folderId);
       const previousNotes = queryClient.getQueryData(queryKey);
-
-      if (reorderedNotes) {
-        queryClient.setQueryData(queryKey, reorderedNotes);
-      }
-
+      if (previousNotes) queryClient.setQueryData(queryKey, reorderInPlace(previousNotes, ids));
+      // revert: false — a cancelled fetch would otherwise put back the list from before this drop
+      await queryClient.cancelQueries({ queryKey }, { revert: false });
       return { previousNotes, queryKey };
     },
     onError: (err, variables, context) => {
-      if (context?.previousNotes && context?.queryKey) {
+      if (context?.previousNotes) {
         queryClient.setQueryData(context.queryKey, context.previousNotes);
       }
     },
     onSettled: (data, error, variables, context) => {
-      if (context?.queryKey) {
-        queryClient.invalidateQueries({ queryKey: context.queryKey });
-      } else {
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ALL_NOTES });
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.HOME_NOTES });
-      }
-    },
-  });
-};
-
-export const useReorderHomeNotesMutation = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ updates }) => {
-      const response = await axiosInstance.put('/reorder-home-notes', { updates });
-      return response.data;
-    },
-    onMutate: async ({ reorderedNotes }) => {
-      const cancelPromise = queryClient.cancelQueries({ queryKey: QUERY_KEYS.HOME_NOTES });
-      const previousNotes = queryClient.getQueryData(QUERY_KEYS.HOME_NOTES);
-
-      if (reorderedNotes) {
-        queryClient.setQueryData(QUERY_KEYS.HOME_NOTES, reorderedNotes);
-      }
-
-      await cancelPromise;
-      return { previousNotes };
-    },
-    onError: (err, variables, context) => {
-      if (context?.previousNotes) {
-        queryClient.setQueryData(QUERY_KEYS.HOME_NOTES, context.previousNotes);
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.HOME_NOTES });
+      if (context?.queryKey) queryClient.invalidateQueries({ queryKey: context.queryKey });
     },
   });
 };
@@ -275,13 +259,15 @@ export const useRestoreNoteMutation = () => {
       const response = await axiosInstance.put(`/restore-note/${noteId}`);
       return response.data;
     },
-    onSuccess: (data) => {
-      const embeddingIssue = hasEmbeddingIssue(data);
-      useToastStore.getState().showToast(
-        embeddingIssue ? "Note restored. Embedding failed." : "Note restored successfully",
-        embeddingIssue ? "warning" : "success"
-      );
+    onSuccess: (data, noteId) => {
+      useToastStore.getState().showToast("Note restored successfully", "success");
       queryClient.invalidateQueries({ queryKey: ['notes'] });
+      // Re-indexing runs after the restore replies; a failure still shows, a moment later
+      if (data?.indexing) {
+        noteIndexingFailed(noteId).then((failed) => {
+          if (failed) useToastStore.getState().showToast("Note restored. Embedding failed.", "warning");
+        });
+      }
     },
     onError: (error) => {
       useToastStore.getState().showToast(error.response?.data?.message || "Failed to restore note", "error");

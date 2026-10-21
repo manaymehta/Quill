@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useUIStore } from '../../store/useUIStore';
 import { useTabsStore } from '../../store/useTabsStore';
@@ -9,49 +9,10 @@ import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import { buildFolderHierarchy } from '../../utils/folderHierarchy';
 import { MOBILE_QUERY } from '../../constants/breakpoints';
+import { useMenuPlacement, contextMenuKind, shutterMenuVariants, shutterItemVariants, TOUCH_MENU_ZOOM } from '../Cards/menuPlacement';
 import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdEdit, MdDelete, MdPalette, MdFolder, MdFolderOpen } from 'react-icons/md';
 
 const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'];
-
-const shutterMenuVariants = {
-    closed: {
-        opacity: 0,
-        scaleY: 0.82,
-        y: -8,
-        transition: {
-            duration: 0.12,
-            ease: [0.4, 0, 1, 1],
-        },
-    },
-    open: {
-        opacity: 1,
-        scaleY: 1,
-        y: 0,
-        transition: {
-            duration: 0.16,
-            ease: [0.16, 1, 0.3, 1],
-        },
-    },
-};
-
-const shutterItemVariants = {
-    closed: {
-        opacity: 0,
-        y: -4,
-        transition: {
-            duration: 0.1,
-            ease: [0.4, 0, 1, 1],
-        },
-    },
-    open: {
-        opacity: 1,
-        y: 0,
-        transition: {
-            duration: 0.15,
-            ease: [0.16, 1, 0.3, 1],
-        },
-    },
-};
 
 // Row variants — children inherit timing from parent stagger
 const rowVariants = {
@@ -64,12 +25,48 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
     const location = useLocation();
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
     const editFolderMutation = useEditFolderMutation();
-    const { openFolderDeleteModal } = useModalStore();
+    const openFolderDeleteModal = useModalStore((state) => state.openFolderDeleteModal);
     const [isEditing, setIsEditing] = useState(false);
     const [nameVal, setNameVal] = useState(folder.name);
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [contextMenu, setContextMenu] = useState(null);
     const [closingMenuCoords, setClosingMenuCoords] = useState(null);
+    // Placed by how it was opened (right-click or long-press), from its real size, and unfolding from
+    // the edge nearest that: see menuPlacement
+    const menuAnchor = contextMenu || closingMenuCoords;
+    const [measureMenu, menuPlace] = useMenuPlacement(menuAnchor);
+
+    // Long-press on touch screens opens the menu too (iOS sends no right-click for it); the tap that
+    // ends the press mustn't then open the folder
+    const longPressTimer = useRef(null);
+    const pressStart = useRef(null);
+    const suppressClick = useRef(false);
+    const openMenu = (anchor) => {
+        setContextMenu(anchor);
+        setClosingMenuCoords(anchor);
+    };
+    const cancelLongPress = () => {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+    };
+    useEffect(() => cancelLongPress, []);
+    const handleTouchStart = (e) => {
+        // Most browsers send no tap after a long-press, so a leftover flag would eat the next real tap
+        suppressClick.current = false;
+        const touch = e.touches[0];
+        if (!touch || !isSidebarOpen || isEditing) return;
+        pressStart.current = { x: touch.clientX, y: touch.clientY };
+        longPressTimer.current = setTimeout(() => {
+            suppressClick.current = true;
+            openMenu({ kind: 'touch', ...pressStart.current });
+        }, 500);
+    };
+    const handleTouchMove = (e) => {
+        const touch = e.touches[0];
+        if (touch && pressStart.current && Math.hypot(touch.clientX - pressStart.current.x, touch.clientY - pressStart.current.y) > 10) {
+            cancelLongPress();
+        }
+    };
 
     const hasChildren = hierarchy ? hierarchy.hasChildren(folder._id) : false;
     const isActive = activeFolderId === folder._id;
@@ -89,11 +86,56 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
         if (e.key === 'Escape') { setIsEditing(false); setNameVal(folder.name); }
     };
 
+    // The menu's box and rows, as they always looked; touch screens get it scaled up evenly
+    // (TOUCH_MENU_ZOOM). `up` mirrors the rows' drift for a menu opening upwards.
+    const renderMenuBody = (up) => (
+        <div className={`bg-[#1e1e20] p-1 rounded-2xl shadow-2xl flex flex-col gap-[5px] min-w-[160px] border-0 outline-none overflow-hidden ${TOUCH_MENU_ZOOM}`}>
+            <motion.div custom={up} variants={shutterItemVariants} className="px-2 pb-1 pt-0.5 text-[10px] font-semibold text-stone-500 uppercase tracking-widest select-none">
+                Folder Options
+            </motion.div>
+            <motion.button
+                custom={up}
+                variants={shutterItemVariants}
+                onClick={(e) => { e.stopPropagation(); setContextMenu(null); setIsEditing(true); }}
+                className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-white/[0.09] hover:text-white text-stone-300"
+            >
+                <span>Rename</span>
+                <MdEdit size={13} className="shrink-0" />
+            </motion.button>
+            <motion.button
+                custom={up}
+                variants={shutterItemVariants}
+                onClick={(e) => { e.stopPropagation(); setContextMenu(null); setShowColorPicker(true); }}
+                className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-white/[0.09] hover:text-white text-stone-300"
+            >
+                <span>Color</span>
+                <MdPalette size={13} className="shrink-0" />
+            </motion.button>
+            <motion.button
+                custom={up}
+                variants={shutterItemVariants}
+                onClick={(e) => { e.stopPropagation(); setContextMenu(null); openFolderDeleteModal(folder); }}
+                className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-red-500/15 hover:text-red-400 text-red-400"
+            >
+                <span>Delete</span>
+                <MdDelete size={13} className="shrink-0" />
+            </motion.button>
+        </div>
+    );
+
     return (
         <div style={{ paddingLeft }} className="group relative">
             <div
                 onDoubleClick={(e) => { e.stopPropagation(); setIsEditing(true); }}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={cancelLongPress}
+                onTouchCancel={cancelLongPress}
                 onClick={() => {
+                    if (suppressClick.current) {
+                        suppressClick.current = false;
+                        return;
+                    }
                     const targetPath = `/folder/${folder._id}`;
                     if (location.pathname === targetPath) {
                         useTabsStore.getState().setActiveTab('home');
@@ -108,11 +150,10 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
                     if (isSidebarOpen && !isEditing) {
                         e.preventDefault();
                         e.stopPropagation();
-                        setContextMenu({ x: e.clientX, y: e.clientY });
-                        setClosingMenuCoords({ x: e.clientX, y: e.clientY });
+                        openMenu({ kind: contextMenuKind(e), x: e.clientX, y: e.clientY });
                     }
                 }}
-                className={`flex items-center justify-between h-10 w-full rounded-lg cursor-pointer transition-colors duration-150 ${isActive ? 'bg-[#4c2f2e] text-[#e85d56]' : 'text-gray-300 hover:bg-[#282a2d]'} select-none`}
+                className={`flex items-center justify-between h-10 w-full rounded-lg cursor-pointer transition-colors duration-150 ${isActive ? 'bg-[#4c2f2e] text-[#e85d56]' : 'text-gray-300 hover:bg-[#282a2d]'} select-none [-webkit-touch-callout:none]`}
             >
                 <div className="flex items-center justify-between w-full min-w-0 px-2">
                     <div className="flex items-center min-w-0 flex-1">
@@ -149,83 +190,46 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
 
             {/* Context Menu inside React Portal */}
             {(contextMenu || closingMenuCoords) && createPortal(
-                <AnimatePresence onExitComplete={() => setClosingMenuCoords(null)}>
-                    {contextMenu && (
-                        <>
-                            <motion.div
-                                key="tree-backdrop"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.12 }}
-                                className="fixed inset-0 z-[9998]"
-                                onClick={() => setContextMenu(null)}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
-                            />
-                            <motion.div
-                                key="tree-context-menu"
-                                initial="closed"
-                                animate="open"
-                                exit="closed"
-                                variants={shutterMenuVariants}
-                                style={(() => {
-                                    const coords = contextMenu || closingMenuCoords;
-                                    const menuWidth = 160;
-                                    const menuHeight = 130;
-                                    let finalX = coords.x;
-                                    let finalY = coords.y;
-
-                                    if (coords.x + menuWidth > window.innerWidth) {
-                                        finalX = Math.max(8, coords.x - menuWidth);
-                                    }
-                                    if (coords.y + menuHeight > window.innerHeight) {
-                                        finalY = Math.max(8, coords.y - menuHeight);
-                                    }
-
-                                    return {
-                                        position: 'fixed',
-                                        left: `${finalX}px`,
-                                        top: `${finalY}px`,
-                                        transformOrigin: 'top',
-                                        zIndex: 9999,
-                                    };
-                                })()}
-                                className="bg-[#1e1e20] p-1 rounded-2xl shadow-2xl flex flex-col gap-[5px] min-w-[160px] no-card-click border-0 outline-none overflow-hidden"
-                                onClick={(e) => e.stopPropagation()}
-                                onMouseDown={(e) => e.stopPropagation()}
-                            >
-                                <motion.div variants={shutterItemVariants} className="px-2 pb-1 pt-0.5 text-[10px] font-semibold text-stone-500 uppercase tracking-widest select-none">
-                                    Folder Options
-                                </motion.div>
-                                <motion.button
-                                    variants={shutterItemVariants}
-                                    onClick={(e) => { e.stopPropagation(); setContextMenu(null); setIsEditing(true); }}
-                                    className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-white/[0.09] hover:text-white text-stone-300"
-                                >
-                                    <span>Rename</span>
-                                    <MdEdit size={13} className="shrink-0" />
-                                </motion.button>
-                                <motion.button
-                                    variants={shutterItemVariants}
-                                    onClick={(e) => { e.stopPropagation(); setContextMenu(null); setShowColorPicker(true); }}
-                                    className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-white/[0.09] hover:text-white text-stone-300"
-                                >
-                                    <span>Color</span>
-                                    <MdPalette size={13} className="shrink-0" />
-                                </motion.button>
-                                <motion.button
-                                    variants={shutterItemVariants}
-                                    onClick={(e) => { e.stopPropagation(); setContextMenu(null); openFolderDeleteModal(folder); }}
-                                    className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-red-500/15 hover:text-red-400 text-red-400"
-                                >
-                                    <span>Delete</span>
-                                    <MdDelete size={13} className="shrink-0" />
-                                </motion.button>
-                            </motion.div>
-                        </>
+                <>
+                    {/* Rendered hidden first, only to measure it, so it opens already placed and
+                        knows which way it unfolds (menuPlacement) */}
+                    {contextMenu && !menuPlace && (
+                        <div ref={measureMenu} aria-hidden="true" style={{ position: 'fixed', left: 0, top: 0, visibility: 'hidden', pointerEvents: 'none' }}>
+                            {renderMenuBody(false)}
+                        </div>
                     )}
-                </AnimatePresence>,
+                    <AnimatePresence onExitComplete={() => setClosingMenuCoords(null)}>
+                        {contextMenu && menuPlace && (
+                            <>
+                                <motion.div
+                                    key="tree-backdrop"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.12 }}
+                                    className="fixed inset-0 z-[9998]"
+                                    onClick={() => setContextMenu(null)}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+                                />
+                                <motion.div
+                                    key="tree-context-menu"
+                                    initial="closed"
+                                    animate="open"
+                                    exit="closed"
+                                    custom={menuPlace.up}
+                                    variants={shutterMenuVariants}
+                                    style={{ position: 'fixed', left: menuPlace.left, top: menuPlace.top, zIndex: 9999, originY: menuPlace.up ? 1 : 0 }}
+                                    className="no-card-click"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                    {renderMenuBody(menuPlace.up)}
+                                </motion.div>
+                            </>
+                        )}
+                    </AnimatePresence>
+                </>,
                 document.body
             )}
 
@@ -237,13 +241,15 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
                         onMouseDown={(e) => e.stopPropagation()}
                     />
                     <div
-                        className="absolute left-8 top-10 bg-[#303134] p-2 rounded-2xl z-[101] shadow-xl flex space-x-1 border-0 outline-none"
+                        className="absolute left-8 top-10 z-[101]"
                         onMouseLeave={() => setShowColorPicker(false)}
                         onMouseDown={(e) => e.stopPropagation()}
                     >
-                        {COLORS.map(c => (
-                            <div key={c} onClick={() => { editFolderMutation.mutate({ folderId: folder._id, patch: { color: c } }); setShowColorPicker(false); }} style={{ backgroundColor: c }} className="w-5 h-5 rounded-full cursor-pointer hover:scale-110 transition-transform" />
-                        ))}
+                        <div className={`bg-[#303134] p-2 rounded-2xl shadow-xl flex space-x-1 border-0 outline-none ${TOUCH_MENU_ZOOM}`}>
+                            {COLORS.map(c => (
+                                <div key={c} onClick={() => { editFolderMutation.mutate({ folderId: folder._id, patch: { color: c } }); setShowColorPicker(false); }} style={{ backgroundColor: c }} className="w-5 h-5 rounded-full cursor-pointer hover:scale-110 transition-transform" />
+                            ))}
+                        </div>
                     </div>
                 </>
             )}

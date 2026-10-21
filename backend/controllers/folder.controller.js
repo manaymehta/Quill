@@ -10,6 +10,7 @@ const {
 } = require("../services/folder-tree.service");
 const { withOptionalTransaction } = require("../services/mongo-transaction.service");
 const { createFolderRecord } = require("../services/note-actions.service");
+const { LISTS, sortFor, placeArrivals } = require("../services/note-order.service");
 const FOLDER_LIST_FIELDS = "_id name parentId color icon orderIndex";
 
 const getFolders = async (req, res) => {
@@ -275,6 +276,22 @@ const restoreFolder = async (req, res) => {
                 { $set: { isDeleted: false, deletedAt: null, deletedBatchId: null } },
                 session ? { session } : undefined
             );
+            // They come back into their own folders as they were; any shown on Home
+            // or archived go to the bottom of Home / Archive, keeping their order.
+            const restoredIds = notes.map((note) => note._id);
+            const ends = new Map();
+            const placed = [];
+            for (const [name, match] of [["home", { showInHome: true, isArchived: { $ne: true } }], ["archive", { isArchived: true }]]) {
+                const field = LISTS[name].field;
+                const arriving = await Note.find({ _id: { $in: restoredIds }, userId, ...match })
+                    .sort(sortFor(field)).select(`${field} folderId showInHome isArchived`).session(session).lean();
+                for (const note of arriving) {
+                    const before = { home: false, folder: note.folderId || null, archive: false };
+                    await placeArrivals(note, before, userId, session, ends);
+                    placed.push({ updateOne: { filter: { _id: note._id, userId }, update: { $set: { [field]: note[field] } } } });
+                }
+            }
+            if (placed.length > 0) await Note.bulkWrite(placed, session ? { session } : undefined);
             return notes;
         });
         void runEmbeddingBatch(notesToRestore.map(note => () => triggerEmbed(note, userId)));

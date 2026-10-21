@@ -12,7 +12,7 @@ const Trash = () => {
   const { data: trashNotes = [] } = useTrashNotesQuery();
   const { data: trashFolders = [] } = useTrashFoldersQuery();
 
-  const { openConfirmModal } = useModalStore();
+  const openConfirmModal = useModalStore((s) => s.openConfirmModal);
 
   const restoreNoteMutation = useRestoreNoteMutation();
   const deleteTrashNotePermanentMutation = useDeleteTrashNotePermanentMutation();
@@ -84,7 +84,6 @@ const Trash = () => {
                 onRestore={handleRestoreNote}
                 onDelete={handleDeleteNotePermanentClick}
                 isTrash={true}
-                allowDrag={false}
               />
             </div>
           )}

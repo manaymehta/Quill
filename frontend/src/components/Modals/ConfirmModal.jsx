@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useModalStore } from './useModalStore';
 
 const ConfirmModal = () => {
-    const { confirmModal, closeConfirmModal } = useModalStore();
+    const confirmModal = useModalStore((s) => s.confirmModal);
+    const closeConfirmModal = useModalStore((s) => s.closeConfirmModal);
     const { isOpen, title, message, confirmLabel, variant, onConfirm } = confirmModal;
 
     if (typeof window === 'undefined' || !document.body) return null;

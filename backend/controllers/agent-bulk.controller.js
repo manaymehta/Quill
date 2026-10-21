@@ -11,6 +11,7 @@ const {
     isValidFolderId, findLivingFolder, livingFolderId, moveToFolder, setArchived, trashFields, restoreFromTrash,
     createFolderRecord, trashFolderIfEmpty,
 } = require("../services/note-actions.service");
+const { listsOf, placeArrivals } = require("../services/note-order.service");
 const {
     MAX_LIST, groupParts, planFromProposal, planFromSelection, restrictPlan, mergePlans, buildCandidates, applyChanges, changeTitle, splitParts,
 } = require("../services/bulk-plan.service");
@@ -725,6 +726,7 @@ const applyProposal = async (req, res) => {
                     trash: (note) => Object.assign(note, trashFields()),
                 };
                 const ops = [];
+                const ends = new Map();   // next bottom position per list, shared across these notes
                 for (const pick of chosen) {
                     const candidate = candidates.get(pick.noteId);
                     const note = byId.get(pick.noteId);
@@ -733,12 +735,14 @@ const applyProposal = async (req, res) => {
                         continue;
                     }
                     const before = stateOf(note);
+                    const listsBefore = listsOf(note);
                     const applied = await applyChanges(note, pick.changes.map((k) => changes.get(k)), before, helpers);
                     const after = stateOf(note);
                     if (sameState(before, after)) {
                         ops.push({ noteId: pick.noteId, title: note.title, before, after, status: "skipped-unchanged" });
                         continue;
                     }
+                    await placeArrivals(note, listsBefore, userId, session, ends);
                     await note.save({ session });
                     ops.push({ noteId: pick.noteId, title: note.title, before, after, status: "applied", changes: applied });
                     if (indexedChange(before, after)) indexChanges.push({ noteId: pick.noteId, wasDeleted: before.isDeleted, isDeleted: after.isDeleted });
@@ -798,6 +802,7 @@ const undoReceipt = async (req, res) => {
                 const appliedIds = doc.ops.filter((op) => op.status === "applied").map((op) => op.noteId);
                 const notes = await Note.find({ _id: { $in: appliedIds }, userId }).session(session);
                 const byId = new Map(notes.map((n) => [String(n._id), n]));
+                const ends = new Map();
                 for (const op of doc.ops) {
                     if (op.status !== "applied") continue;
                     const note = byId.get(op.noteId);
@@ -807,6 +812,7 @@ const undoReceipt = async (req, res) => {
                         continue;
                     }
                     const wasDeleted = Boolean(note.isDeleted);
+                    const listsBefore = listsOf(note);
                     note.tags = [...op.before.tags];
                     note.isArchived = op.before.isArchived;
                     note.showInHome = op.before.showInHome;
@@ -823,6 +829,7 @@ const undoReceipt = async (req, res) => {
                         note.folderId = await livingFolderId(note.folderId, userId, session);
                         if (op.before.isDeleted && !note.isDeleted) Object.assign(note, trashFields());
                     }
+                    await placeArrivals(note, listsBefore, userId, session, ends);
                     await note.save({ session });
                     op.status = "undone";
                     if (indexedChange(op.before, op.after)) indexChanges.push({ noteId: op.noteId, wasDeleted, isDeleted: Boolean(note.isDeleted) });

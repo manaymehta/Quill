@@ -4,10 +4,13 @@ import { useTabsStore } from '../../store/useTabsStore';
 import { useArchivedNotesQuery } from '../../hooks/useNotesQuery';
 import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation } from '../../hooks/useNoteMutations';
 
+// A drag here changes Archive's own order
+const ARCHIVE_ORDER = { list: 'archive' };
+
 const Archive = () => {
     const { data: archivedNotes = [] } = useArchivedNotesQuery();
 
-    const { openTab } = useTabsStore();
+    const openTab = useTabsStore((s) => s.openTab);
 
     const { promptDelete } = useDeleteNoteMutation();
     const { promptToggleArchive } = useArchiveNoteMutation();
@@ -39,7 +42,7 @@ const Archive = () => {
                     onDelete={promptDelete}
                     onArchive={handleArchiveToggle}
                     onChecklistToggle={handleChecklist}
-                    allowDrag={false}
+                    orderList={ARCHIVE_ORDER}
                 />
             </div>
         </div>

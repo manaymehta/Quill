@@ -21,6 +21,8 @@ const FolderView = () => {
   const folderHierarchy = useMemo(() => buildFolderHierarchy(folders), [folders]);
   const subtreeIds = useMemo(() => folderHierarchy.getSubtreeIds(folderId), [folderHierarchy, folderId]);
   const { data: folderNotes = [], isLoading } = useFolderNotesQuery(subtreeIds, folderId);
+  // A drag here changes this folder's own order (its subfolders' notes aren't in this grid)
+  const folderOrder = useMemo(() => ({ list: 'folder', folderId }), [folderId]);
 
   const searchQuery = useSearchStore((state) => state.searchQuery);
   const searchMode = useSearchStore((state) => state.searchMode);
@@ -28,7 +30,7 @@ const FolderView = () => {
 
   const [isAddingFolder, setIsAddingFolder] = useState(false);
 
-  const { openFolderDeleteModal } = useModalStore();
+  const openFolderDeleteModal = useModalStore((state) => state.openFolderDeleteModal);
 
   const { promptDelete } = useDeleteNoteMutation();
   const { promptToggleArchive } = useArchiveNoteMutation();
@@ -145,6 +147,7 @@ const FolderView = () => {
                   </h3>
                   <NotesGrid
                     notes={displayedDirectNotes}
+                    orderList={folderOrder}
                     loading={isLoading}
                     emptyMessage="No notes in this folder."
                     onEdit={handleEdit}

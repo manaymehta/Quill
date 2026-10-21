@@ -4,7 +4,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { FiLogOut } from 'react-icons/fi';
 
 const ProfileInfo = ({ onLogout }) => {
-	const { user } = useAuthStore();
+	const user = useAuthStore((s) => s.user);
 	const [isOpen, setIsOpen] = useState(false);
 	const dropdownRef = useRef(null);
 

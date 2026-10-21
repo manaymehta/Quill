@@ -8,10 +8,12 @@ import { createPortal } from 'react-dom';
 import { useModalStore } from './useModalStore';
 
 const FolderDeleteModal = () => {
-    const { folderDeleteModal, closeFolderDeleteModal } = useModalStore();
+    const folderDeleteModal = useModalStore((s) => s.folderDeleteModal);
+    const closeFolderDeleteModal = useModalStore((s) => s.closeFolderDeleteModal);
     const { isOpen, folder, onConfirm } = folderDeleteModal;
 
-    const { getSubtreeIds, getFolderPath } = useFoldersStore();
+    const getSubtreeIds = useFoldersStore((s) => s.getSubtreeIds);
+    const getFolderPath = useFoldersStore((s) => s.getFolderPath);
     const { data: folders = [] } = useFoldersQuery();
     const { data: allNotes = [] } = useAllNotesQuery();
     const deleteFolderMutation = useDeleteFolderMutation();

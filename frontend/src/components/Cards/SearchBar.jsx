@@ -11,11 +11,11 @@ import { useSearchStore } from '../../store/useSearchStore';
 import { useAgentStore } from '../../store/useAgentStore';
 
 const SearchBar = () => {
-  const {
-    searchQuery, setSearchQuery,
-    searchMode, setSearchMode,
-    clearSearch,
-  } = useSearchStore();
+  const searchQuery = useSearchStore((s) => s.searchQuery);
+  const setSearchQuery = useSearchStore((s) => s.setSearchQuery);
+  const searchMode = useSearchStore((s) => s.searchMode);
+  const setSearchMode = useSearchStore((s) => s.setSearchMode);
+  const clearSearch = useSearchStore((s) => s.clearSearch);
 
   const isAgent = searchMode === 'agent';
 

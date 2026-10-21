@@ -16,9 +16,9 @@ const {
     summarizeNote,
     getArchivedNotes,
     reorderNotes,
-    reorderHomeNotes,
     moveNote,
     toggleHomePin,
+    getNoteIndexStatus,
 } = require("../controllers/note.controller");
 const { extractLinkPreview } = require("../controllers/scraper.controller");
 const { authenticateToken } = require("../middleware/auth.middleware");
@@ -34,6 +34,7 @@ router.param("noteId", validateObjectIdParam("noteId"));
 
 router.post("/add-note", authenticateToken, validateObjectBody, addNote);
 router.put("/edit-note/:noteId", authenticateToken, validateObjectBody, editNote);
+router.get("/note-index-status/:noteId", authenticateToken, getNoteIndexStatus);
 router.post("/notes/extract-preview", authenticateToken, validateObjectBody, extractLinkPreview);
 router.get("/get-note/:noteId", authenticateToken, getNoteById);
 router.get("/get-all-notes", authenticateToken, getAllNotes);
@@ -49,7 +50,6 @@ router.put("/update-note-archive/:noteId", authenticateToken, validateObjectBody
 router.get("/search-notes", authenticateToken, validateQueryParam("query", { required: true, maxLength: 4096 }), searchNotes);
 router.post("/summarize-note", authenticateToken, validateObjectBody, summarizeNote);
 router.put("/reorder-notes", authenticateToken, validateObjectBody, reorderNotes);
-router.put("/reorder-home-notes", authenticateToken, validateObjectBody, reorderHomeNotes);
 router.put("/move-note/:noteId", authenticateToken, validateObjectBody, moveNote);
 router.put("/toggle-home-pin/:noteId", authenticateToken, validateObjectBody, toggleHomePin);
 

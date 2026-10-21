@@ -21,6 +21,16 @@
   }
 }
 
+/* Scrollbars show only while their own area is being scrolled, fading in and out
+   (utils/scrollbarVisibility.js animates this on the scrolling element). Not inherited, so a list
+   inside a scrolling page stays hidden; each scrollbar colour below multiplies its opacity by it,
+   and the scrollbar parts take it from their element with `inherit`. */
+@property --scroll-thumb-alpha {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
 /* Global scrollbar for dark theme */
 ::-webkit-scrollbar {
   width: 8px;
@@ -31,12 +41,13 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.2);
+  --scroll-thumb-alpha: inherit;
+  background-color: rgba(255, 255, 255, calc(0.2 * var(--scroll-thumb-alpha)));
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.3);
+  background-color: rgba(255, 255, 255, calc(0.3 * var(--scroll-thumb-alpha)));
 }
 
 @layer components {
@@ -171,7 +182,7 @@
   overflow-y: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+  scrollbar-color: rgba(0, 0, 0, calc(0.15 * var(--scroll-thumb-alpha))) transparent;
 }
 
 .editor-scrollbar::-webkit-scrollbar {
@@ -183,18 +194,26 @@
 }
 
 .editor-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.15);
+  --scroll-thumb-alpha: inherit;
+  background-color: rgba(0, 0, 0, calc(0.15 * var(--scroll-thumb-alpha)));
   border-radius: 10px;
 }
 
 .editor-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.25);
+  background-color: rgba(0, 0, 0, calc(0.25 * var(--scroll-thumb-alpha)));
 }
 
 /* The agent's dark panels: the same slim scrollbar, light on dark */
 .agent-scrollbar {
   overflow-y: auto;
   scrollbar-gutter: stable;
+}
+
+/* The chat's message list: the scrollbar's lane reserved on both sides (its padding is reduced to
+   match), so the messages sit centred; on the right only, the right margin was 6px wider. Here, not
+   as a Tailwind class: the rule above would override it. */
+.agent-scrollbar.agent-scrollbar-centred {
+  scrollbar-gutter: stable both-edges;
 }
 
 .agent-scrollbar::-webkit-scrollbar {
@@ -206,13 +225,15 @@
 }
 
 .agent-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.12);
+  --scroll-thumb-alpha: inherit;
+  background-color: rgba(255, 255, 255, calc(0.12 * var(--scroll-thumb-alpha)));
   border-radius: 10px;
 }
 
 .agent-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.2);
+  background-color: rgba(255, 255, 255, calc(0.2 * var(--scroll-thumb-alpha)));
 }
+
 
 /* Editor text column: identical width in the card and in full screen. --editor-card-w is the card's
    width in card mode (set by GlobalEditorOverlay); the column is that card's inner width (minus its
@@ -356,6 +377,82 @@
   opacity: 1;
 }
 
+/* The card in your hand while dragging (NotesGrid's DragOverlay). Picked up, it starts exactly as
+   the hovered card looked (lifted 4px, its shadow, dimmed) and eases into its lifted look; dropped
+   (.is-settling, added by the grid's drop animation) it eases back, landing identical to the hovered
+   card underneath, so the swap can't be seen. It used to appear at once 5% bigger with the largest
+   shadow, and vanish still enlarged. Touch screens have no hover look, so there it starts and ends
+   as the card at rest. */
+.note-card-lift {
+  animation: noteCardLift 200ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+}
+.note-card-lift::after {
+  animation: noteCardUndim 200ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+}
+.is-settling .note-card-lift {
+  animation: noteCardSettle 220ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+}
+.is-settling .note-card-lift::after {
+  animation: noteCardDim 220ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+}
+
+@keyframes noteCardLift {
+  from {
+    transform: translateY(-4px) scale(1);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.15);
+  }
+  to {
+    transform: translateY(-4px) scale(1.03);
+    box-shadow: 0 28px 40px -12px rgba(0, 0, 0, 0.35), 0 12px 18px -10px rgba(0, 0, 0, 0.25);
+  }
+}
+@keyframes noteCardSettle {
+  from {
+    transform: translateY(-4px) scale(1.03);
+    box-shadow: 0 28px 40px -12px rgba(0, 0, 0, 0.35), 0 12px 18px -10px rgba(0, 0, 0, 0.25);
+  }
+  to {
+    transform: translateY(-4px) scale(1);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.15);
+  }
+}
+@keyframes noteCardUndim {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes noteCardDim {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (hover: none) {
+  @keyframes noteCardLift {
+    from { transform: scale(1); box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+    to { transform: scale(1.03); box-shadow: 0 28px 40px -12px rgba(0, 0, 0, 0.35), 0 12px 18px -10px rgba(0, 0, 0, 0.25); }
+  }
+  @keyframes noteCardSettle {
+    from { transform: scale(1.03); box-shadow: 0 28px 40px -12px rgba(0, 0, 0, 0.35), 0 12px 18px -10px rgba(0, 0, 0, 0.25); }
+    to { transform: scale(1); box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+  }
+  .note-card-lift::after,
+  .is-settling .note-card-lift::after {
+    animation: none;
+  }
+}
+
+/* Reduced motion: no growing or shrinking, just the lifted look */
+@media (prefers-reduced-motion: reduce) {
+  .note-card-lift,
+  .is-settling .note-card-lift {
+    animation: none;
+    box-shadow: 0 28px 40px -12px rgba(0, 0, 0, 0.35), 0 12px 18px -10px rgba(0, 0, 0, 0.25);
+  }
+  .note-card-lift::after,
+  .is-settling .note-card-lift::after {
+    animation: none;
+  }
+}
+
 .physical-folder-card::before,
 .physical-folder-card::after {
   content: '';
@@ -394,9 +491,10 @@
   background: transparent;
 }
 .previews-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
+  --scroll-thumb-alpha: inherit;
+  background: rgba(0, 0, 0, calc(0.1 * var(--scroll-thumb-alpha)));
   border-radius: 10px;
 }
 .previews-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, calc(0.2 * var(--scroll-thumb-alpha)));
 }

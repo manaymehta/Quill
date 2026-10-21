@@ -10,8 +10,11 @@ import { useSearchStore } from '../../store/useSearchStore';
 
 const Navbar = () => {
   const navigate = useNavigate();
-  const { logout, isLoggedIn } = useAuthStore();
-  const { isNavbarVisible, toggleSidebar, isSidebarOpen } = useUIStore();
+  const logout = useAuthStore((state) => state.logout);
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const isNavbarVisible = useUIStore((state) => state.isNavbarVisible);
+  const toggleSidebar = useUIStore((state) => state.toggleSidebar);
+  const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const searchQuery = useSearchStore((state) => state.searchQuery);
 
   const [isScrolledVisible, setIsScrolledVisible] = useState(true);

@@ -19,6 +19,7 @@ const noteSchema = new Schema({
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
     orderIndex: { type: Number, default: 0 },
+    archiveOrderIndex: { type: Number, default: 0 },
     linkPreviews: [{
         url: { type: String, required: true },
         title: { type: String },
@@ -36,5 +37,6 @@ noteSchema.index({ userId: 1, isDeleted: 1, isArchived: 1, orderIndex: 1, create
 noteSchema.index({ userId: 1, isDeleted: 1, isArchived: 1, folderId: 1, orderIndex: 1, createdAt: -1 });
 noteSchema.index({ userId: 1, isDeleted: 1, showInHome: 1, homeOrderIndex: 1, createdAt: -1 });
 noteSchema.index({ userId: 1, isDeleted: 1, deletedBatchId: 1, deletedAt: -1 });
+noteSchema.index({ userId: 1, isDeleted: 1, isArchived: 1, archiveOrderIndex: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Note", noteSchema);

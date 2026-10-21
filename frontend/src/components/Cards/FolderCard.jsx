@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -6,50 +6,11 @@ import { MdEdit, MdDelete, MdPalette, MdFolder, MdOutlineFolder, MdRestore, MdDe
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { MOBILE_QUERY } from '../../constants/breakpoints';
+import { placeMenu, useMenuPlacement, buttonAnchor, contextMenuKind, shutterMenuVariants, shutterItemVariants, TOUCH_MENU_ZOOM } from './menuPlacement';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'];
-
-const shutterMenuVariants = {
-    closed: {
-        opacity: 0,
-        scaleY: 0.82,
-        y: -8,
-        transition: {
-            duration: 0.12,
-            ease: [0.4, 0, 1, 1],
-        },
-    },
-    open: {
-        opacity: 1,
-        scaleY: 1,
-        y: 0,
-        transition: {
-            duration: 0.16,
-            ease: [0.16, 1, 0.3, 1],
-        },
-    },
-};
-
-const shutterItemVariants = {
-    closed: {
-        opacity: 0,
-        y: -4,
-        transition: {
-            duration: 0.1,
-            ease: [0.4, 0, 1, 1],
-        },
-    },
-    open: {
-        opacity: 1,
-        y: 0,
-        transition: {
-            duration: 0.15,
-            ease: [0.16, 1, 0.3, 1],
-        },
-    },
-};
 
 const FolderCard = ({
     folder,
@@ -70,6 +31,10 @@ const FolderCard = ({
     const [nameVal, setNameVal] = useState(folder.name);
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [coords, setCoords] = useState(null);
+    // The menu and the colour picker open by how the menu was opened (right-click, long-press, ⋮),
+    // from their real size, and unfold from the edge nearest that: see menuPlacement
+    const [measureMenu, menuPlace] = useMenuPlacement(coords);
+    const attachColorPicker = useCallback((el) => placeMenu(el, coords), [coords]);
 
     const [shouldAnimate, setShouldAnimate] = useState(true);
 
@@ -120,6 +85,9 @@ const FolderCard = ({
 
     const longPressTimerRef = useRef(null);
     const touchStartPosRef = useRef({ x: 0, y: 0 });
+    // Set when a long-press opens the menu: the tap some browsers send as the finger lifts must not
+    // close it again. Only that one tap: cleared when the next touch starts (most browsers send none).
+    const skipReleaseTapRef = useRef(false);
 
     useEffect(() => {
         return () => {
@@ -130,6 +98,7 @@ const FolderCard = ({
     }, [isDragging]);
 
     const handleTouchStart = (e) => {
+        skipReleaseTapRef.current = false;
         if (isDragging || isOverlay) return;
         const { activeDropdownNoteId, activeDropdownFolderId } = useFoldersStore.getState();
         if (activeDropdownNoteId !== null || activeDropdownFolderId !== null || showColorPicker) return;
@@ -139,8 +108,9 @@ const FolderCard = ({
         touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
 
         longPressTimerRef.current = setTimeout(() => {
+            skipReleaseTapRef.current = true;
             flushSync(() => {
-                setCoords({ x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
+                setCoords({ kind: 'touch', x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
                 setActiveDropdownFolderId(folder._id);
             });
         }, 500);
@@ -220,6 +190,31 @@ const FolderCard = ({
         { icon: <MdDelete size={13} />, label: "Delete", onClick: () => onDelete(folder), danger: true, dividerBefore: true }
     ];
 
+    // The menu's box and rows, as they always looked; touch screens get it scaled up evenly
+    // (TOUCH_MENU_ZOOM). `up` mirrors the rows' drift for a menu opening upwards.
+    const renderMenuBody = (up) => (
+        <div className={`bg-[#1e1e20] p-1 rounded-2xl shadow-2xl flex flex-col gap-[5px] min-w-[165px] border-0 outline-none overflow-hidden ${TOUCH_MENU_ZOOM}`}>
+            {menuItems.map((item, idx) => (
+                <motion.button
+                    key={idx}
+                    custom={up}
+                    variants={shutterItemVariants}
+                    onClick={() => {
+                        setActiveDropdownFolderId(null);
+                        item.onClick();
+                    }}
+                    className={`flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full ${item.danger
+                        ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
+                        : 'hover:bg-white/[0.15] hover:text-white text-stone-300'
+                        }`}
+                >
+                    <span>{item.label}</span>
+                    {React.cloneElement(item.icon, { className: "shrink-0" })}
+                </motion.button>
+            ))}
+        </div>
+    );
+
     const dragProps = isOverlay ? {} : { ...attributes, ...listeners };
 
     return (
@@ -248,14 +243,18 @@ const FolderCard = ({
                 if (e.target.closest('.no-card-click') || isDragging) return;
                 if (isTrash) return;
                 const { activeDropdownNoteId, activeDropdownFolderId, setActiveDropdownNoteId, setActiveDropdownFolderId } = useFoldersStore.getState();
+                // While a menu is open, a tap on a card closes it (and doesn't open the folder), this
+                // card's own menu included; only the tap that ends the long-press which opened it is skipped
                 if (activeDropdownNoteId !== null || activeDropdownFolderId !== null || showColorPicker) {
                     e.stopPropagation();
                     e.preventDefault();
-                    if (activeDropdownFolderId !== folder._id) {
-                        setActiveDropdownNoteId(null);
-                        setActiveDropdownFolderId(null);
-                        setShowColorPicker(false);
+                    if (skipReleaseTapRef.current && activeDropdownFolderId === folder._id) {
+                        skipReleaseTapRef.current = false;
+                        return;
                     }
+                    setActiveDropdownNoteId(null);
+                    setActiveDropdownFolderId(null);
+                    setShowColorPicker(false);
                     return;
                 }
                 if (!isEditing) navigate(`/folder/${folder._id}`);
@@ -264,7 +263,7 @@ const FolderCard = ({
                 e.preventDefault();
                 e.stopPropagation();
                 if (isOverlay || isDragging || showDropdown) return;
-                setCoords({ x: e.clientX, y: e.clientY });
+                setCoords({ kind: contextMenuKind(e), x: e.clientX, y: e.clientY });
                 setActiveDropdownFolderId(folder._id);
             }}
             className={`folder-card-wrapper relative select-none [touch-action:manipulation] [-webkit-touch-callout:none] ${showDropdown ? 'z-40' : 'z-10'} ${isDragging ? 'is-dragging-active touch-none' : ''}`}
@@ -305,9 +304,7 @@ const FolderCard = ({
                                     if (showDropdown) {
                                         setActiveDropdownFolderId(null);
                                     } else {
-                                        const rect = e.currentTarget.getBoundingClientRect();
-                                        // Default: align menu start (left edge) with button position, expanding to the right
-                                        setCoords({ x: rect.left, y: rect.bottom + 8 });
+                                        setCoords(buttonAnchor(e.currentTarget));
                                         setActiveDropdownFolderId(folder._id);
                                     }
                                 }}
@@ -358,92 +355,44 @@ const FolderCard = ({
 
             {/* Viewport-Aware Portal Context Menu */}
             {(showDropdown || coords) && createPortal(
-                <AnimatePresence onExitComplete={() => setCoords(null)}>
-                    {showDropdown && coords && (
-                        <motion.div
-                            key="folder-context-menu"
-                            initial="closed"
-                            animate="open"
-                            exit="closed"
-                            variants={shutterMenuVariants}
-                            style={(() => {
-                                const menuWidth = 165;
-                                const menuHeight = isTrash ? 85 : 130;
-                                const bottomMargin = window.matchMedia(MOBILE_QUERY).matches ? 76 : 16;
-                                let finalX = coords.x;
-                                if (finalX + menuWidth > window.innerWidth - 8) {
-                                    finalX = Math.max(8, window.innerWidth - menuWidth - 8);
-                                }
-                                finalX = Math.max(8, finalX);
-                                
-                                // Ensure Y flips if bottom overflows screen
-                                let finalY = coords.y;
-                                if (finalY + menuHeight > window.innerHeight - bottomMargin) {
-                                    finalY = Math.max(8, coords.y - menuHeight - 12);
-                                }
-
-                                return {
-                                    position: 'fixed',
-                                    left: `${finalX}px`,
-                                    top: `${finalY}px`,
-                                    zIndex: 9999,
-                                    transformOrigin: 'top',
-                                };
-                            })()}
-                            className="bg-[#1e1e20] p-1 rounded-2xl shadow-2xl flex flex-col gap-[5px] min-w-[165px] no-card-click border-0 outline-none overflow-hidden"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            {menuItems.map((item, idx) => (
-                                <motion.button
-                                    key={idx}
-                                    variants={shutterItemVariants}
-                                    onClick={() => {
-                                        setActiveDropdownFolderId(null);
-                                        item.onClick();
-                                    }}
-                                    className={`flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full ${item.danger
-                                        ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
-                                        : 'hover:bg-white/[0.15] hover:text-white text-stone-300'
-                                        }`}
-                                >
-                                    <span>{item.label}</span>
-                                    {React.cloneElement(item.icon, { className: "shrink-0" })}
-                                </motion.button>
-                            ))}
-                        </motion.div>
+                <>
+                    {/* Rendered hidden first, only to measure it, so it opens already placed and
+                        knows which way it unfolds (menuPlacement) */}
+                    {showDropdown && coords && !menuPlace && (
+                        <div ref={measureMenu} aria-hidden="true" style={{ position: 'fixed', left: 0, top: 0, visibility: 'hidden', pointerEvents: 'none' }}>
+                            {renderMenuBody(false)}
+                        </div>
                     )}
-                </AnimatePresence>,
+                    <AnimatePresence onExitComplete={() => setCoords(null)}>
+                        {showDropdown && menuPlace && (
+                            <motion.div
+                                key="folder-context-menu"
+                                initial="closed"
+                                animate="open"
+                                exit="closed"
+                                custom={menuPlace.up}
+                                variants={shutterMenuVariants}
+                                style={{ position: 'fixed', left: menuPlace.left, top: menuPlace.top, zIndex: 9999, originY: menuPlace.up ? 1 : 0 }}
+                                className="no-card-click"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {renderMenuBody(menuPlace.up)}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </>,
                 document.body
             )}
 
             {/* Viewport-Aware portal floating color picker */}
             {showColorPicker && coords && createPortal(
                 <div
-                    style={(() => {
-                        const pickerWidth = 175;
-                        const pickerHeight = 44;
-                        
-                        // Default to right of anchor point; flip left if it overflows right screen boundary
-                        let finalX = coords.x;
-                        if (finalX + pickerWidth > window.innerWidth - 8) {
-                            finalX = Math.max(8, window.innerWidth - pickerWidth - 8);
-                        }
-                        finalX = Math.max(8, finalX);
-
-                        let finalY = coords.y;
-                        if (finalY + pickerHeight > window.innerHeight - 8) {
-                            finalY = Math.max(8, coords.y - pickerHeight - 12);
-                        }
-                        return {
-                            position: 'fixed',
-                            left: `${finalX}px`,
-                            top: `${finalY}px`,
-                            zIndex: 9999,
-                        };
-                    })()}
-                    className="bg-[#1e1e20] p-2 rounded-2xl shadow-2xl flex items-center space-x-2 z-[9999] no-card-click color-picker-pop border-0 outline-none"
+                    ref={attachColorPicker}
+                    style={{ position: 'fixed', zIndex: 9999 }}
+                    className="no-card-click color-picker-pop"
                     onClick={(e) => e.stopPropagation()}
                 >
+                    <div className={`bg-[#1e1e20] p-2 rounded-2xl shadow-2xl flex items-center space-x-2 border-0 outline-none ${TOUCH_MENU_ZOOM}`}>
                     {COLORS.map(c => (
                         <div
                             key={c}
@@ -456,6 +405,7 @@ const FolderCard = ({
                             className="w-6 h-6 rounded-full cursor-pointer hover:scale-125 transition-transform shadow-inner border border-black/20"
                         />
                     ))}
+                    </div>
                 </div>,
                 document.body
             )}

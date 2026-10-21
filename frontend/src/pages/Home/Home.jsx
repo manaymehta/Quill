@@ -12,6 +12,9 @@ import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import { MdOutlineFolder } from 'react-icons/md';
 import './Modal.css';
 
+// A drag here changes Home's order
+const HOME_ORDER = { list: 'home' };
+
 const Home = () => {
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
@@ -39,7 +42,7 @@ const Home = () => {
   }, [allNotes, searchMode, searchQuery]);
 
   const [isAddingFolder, setIsAddingFolder] = useState(false);
-  const { openFolderDeleteModal } = useModalStore();
+  const openFolderDeleteModal = useModalStore((state) => state.openFolderDeleteModal);
 
   const { promptDelete } = useDeleteNoteMutation();
   const { promptToggleArchive } = useArchiveNoteMutation();
@@ -113,6 +116,7 @@ const Home = () => {
         ) : (
           <NotesGrid
             notes={displayedNotes}
+            orderList={HOME_ORDER}
             loading={isLoading}
             emptyMessage={"It's quiet here… Start by adding a note."}
             onEdit={handleEdit}

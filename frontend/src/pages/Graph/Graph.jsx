@@ -61,9 +61,10 @@ const Graph = () => {
   const fgRef = useRef();
   const containerRef = useRef(null);
   const queryClient = useQueryClient();
-  const { openTab } = useTabsStore();
-  const { showToast } = useToastStore();
-  const { activeDropdownNoteId, setActiveDropdownNoteId } = useFoldersStore();
+  const openTab = useTabsStore((state) => state.openTab);
+  const showToast = useToastStore((state) => state.showToast);
+  const activeDropdownNoteId = useFoldersStore((state) => state.activeDropdownNoteId);
+  const setActiveDropdownNoteId = useFoldersStore((state) => state.setActiveDropdownNoteId);
 
   const { mutateWithTabGuard: deleteNoteWithTabGuard } = useDeleteNoteMutation();
   const { promptToggleArchive } = useArchiveNoteMutation();
