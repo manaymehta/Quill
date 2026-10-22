@@ -13,6 +13,7 @@ import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useToastStore } from '../../store/useToastStore';
 import { editorRegistry } from '../../utils/editorRegistry';
 import { noteIndexingFailed } from '../../utils/noteIndexing';
+import { useKeyboardTop } from '../../utils/virtualKeyboard';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
 import FadeTitle from '../../components/TabDock/FadeTitle';
@@ -127,6 +128,32 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // The on-screen keyboard covers the page while the editor is open (utils/virtualKeyboard): the
+  // editor keeps its size and the part of the scroll area under the keyboard is made reachable (a
+  // spacer of that height at the end), so the line you're on can sit above it. CodeMirror keeps its
+  // cursor there (MarkdownEditor); other fields (checklist items, tags) are scrolled up on focus.
+  const keyboardTop = useKeyboardTop();
+  const [keyboardOverlap, setKeyboardOverlap] = useState(0);
+  useLayoutEffect(() => {
+    const el = scrollAreaRef.current;
+    const overlap = keyboardTop === null || !el ? 0 : Math.max(0, Math.round(el.getBoundingClientRect().bottom - keyboardTop));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setKeyboardOverlap(overlap);
+  }, [keyboardTop]);
+  useEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el || keyboardTop === null) return undefined;
+    const keepFieldVisible = () => {
+      const field = document.activeElement;
+      if (!field || !el.contains(field) || field.closest('.cm-editor')) return;
+      const overshoot = field.getBoundingClientRect().bottom + 24 - keyboardTop;
+      if (overshoot > 0) el.scrollBy({ top: overshoot, behavior: 'smooth' });
+    };
+    keepFieldVisible();
+    el.addEventListener('focusin', keepFieldVisible);
+    return () => el.removeEventListener('focusin', keepFieldVisible);
+  }, [keyboardTop]);
 
   const currentNoteId = noteData?._id;
 
@@ -929,6 +956,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                   viewRef={cmViewRef}
                   autoFocus={isActive && !isChecklist && !isMobileOrTouch()}
                   keepOnClose={canWriteBackOnClose}
+                  keyboardOverlap={keyboardOverlap}
                 />
               </Suspense>
             </div>
@@ -994,6 +1022,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           )}
         </div>
 
+        {/* Room to scroll the end of the note above the on-screen keyboard (0 when it's closed) */}
+        {keyboardOverlap > 0 && <div aria-hidden="true" className="shrink-0" style={{ height: keyboardOverlap }} />}
       </div>
 
       {/* slim line separator */}

@@ -380,7 +380,9 @@ const AgentPanel = () => {
     // relative z-[1]: above the particle canvas (a fixed layer), which otherwise paints over any part
     // of the panel that isn't positioned or transformed — e.g. the side panel once its slide-in ends
     // Placed from the page content's top (below the navbar's box), pulled up to `topClear`
-    <div className="agent-panel relative z-[1] px-2 md:px-4" style={{ marginTop: topClear - contentTop, height: `calc(100dvh - ${topClear}px - ${bottomClear}px)` }}>
+    // With the on-screen keyboard open the card ends `gap` above it instead of above the dock, which
+    // stays put behind the keyboard (utils/virtualKeyboard)
+    <div className="agent-panel relative z-[1] px-2 md:px-4" style={{ marginTop: topClear - contentTop, height: `calc(100dvh - ${topClear}px - max(${bottomClear}px, env(keyboard-inset-height, 0px) + ${gap}px))` }}>
       {/* The row: the card, and the side panel beside it on wider screens. Its max width widens as
           the panel opens (as the editor's row does for Summary), so the card slides aside. The card
           keeps a fixed width meanwhile (a size container measures the room): sized by what was left

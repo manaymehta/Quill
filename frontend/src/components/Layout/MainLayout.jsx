@@ -17,6 +17,7 @@ import { useSearchStore } from "../../store/useSearchStore";
 import { useAgentToast } from "../../hooks/useAgentToast";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { MOBILE_QUERY } from "../../constants/breakpoints";
+import { setKeyboardOverlaysContent } from "../../utils/virtualKeyboard";
 
 const MainLayout = () => {
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
@@ -84,6 +85,14 @@ const MainLayout = () => {
             document.body.style.overflow = '';
         };
     }, [isEditorActive, isAgentMode, isPhoneSidebarOpen]);
+
+    // While a note or the agent chat is open, the on-screen keyboard covers the page instead of
+    // resizing or dragging it; those screens make room for it themselves (utils/virtualKeyboard)
+    const isKeyboardOverlay = isEditorActive || isAgentMode;
+    useEffect(() => {
+        setKeyboardOverlaysContent(isKeyboardOverlay);
+        return () => setKeyboardOverlaysContent(false);
+    }, [isKeyboardOverlay]);
 
     return (
         <div className="relative min-h-screen min-h-dvh">

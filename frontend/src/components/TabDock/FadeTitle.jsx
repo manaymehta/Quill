@@ -7,6 +7,9 @@ import { motion } from 'framer-motion';
 // its last letters solid. Overflow can change without a React render (a pill's width cap animates
 // as the dock resizes; a title is edited), hence the ResizeObserver plus a check after every render.
 // `style` may hold motion values (e.g. an animated maxWidth).
+// The box is as tall as the text (line-height = font size) and clips, so descenders (g, y, p),
+// accents and emoji were cut off: padding gives them room inside the clip, and the matching
+// negative margin keeps the layout exactly as it was.
 const FadeTitle = ({ style, className = '', children }) => {
   const ref = useRef(null);
   const checkOverflow = () => {
@@ -20,7 +23,7 @@ const FadeTitle = ({ style, className = '', children }) => {
     return () => observer.disconnect();
   }, []);
   return (
-    <motion.span ref={ref} style={style} className={`tab-pill-label overflow-hidden whitespace-nowrap ${className}`}>
+    <motion.span ref={ref} style={style} className={`tab-pill-label overflow-hidden whitespace-nowrap py-[0.25em] -my-[0.25em] ${className}`}>
       {children}
     </motion.span>
   );

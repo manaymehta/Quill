@@ -403,8 +403,9 @@ const TabDock = () => {
 
   const handleTouchStart = (e) => {
     stopStripScroll(); // a finger on the strip takes over from any programmatic scroll
+    // Anywhere on the strip, a pill's ✕ included (it used to be skipped; lifting the finger after the
+    // hold doesn't press it, see handleTouchEnd)
     if (!isMobile || openTabs.length <= 1) return;
-    if (e.target.closest('button')) return;
 
     isHoldingAfterLongPressRef.current = false;
 
@@ -464,6 +465,9 @@ const TabDock = () => {
   }, []);
 
   const showHoldMenu = isHoldMenuOpen && isMobile && openTabs.length > 1;
+  // The list only shows with two or more notes open; closing one from it down to one hid it but left
+  // it "open", so opening another note brought it back for a moment. Down to one, it's closed.
+  if (isHoldMenuOpen && openTabs.length <= 1) setIsHoldMenuOpen(false);
 
   // Expanded from the dot: a tap outside the dock shrinks it back, and only does that (see
   // useOutsidePress: it can't focus the editor, open the keyboard or press anything under it).
@@ -583,8 +587,9 @@ const TabDock = () => {
     }
   };
 
+  // Picking a note in the list switches to it and leaves the list open (it used to close), so you
+  // can keep switching; a tap outside it closes it
   const handleSelectTabFromMenu = (tabId) => {
-    setIsHoldMenuOpen(false);
     setIsDockExpanded(true);
     setActiveTab(tabId);
   };

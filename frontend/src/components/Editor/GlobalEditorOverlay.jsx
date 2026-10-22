@@ -18,6 +18,7 @@ import { preloadMarkdownEditor } from './markdownEditorLoader';
 const EDITOR_GAP_PX   = { phone: 8, desktop: 16 };
 const EDITOR_MAX_W_PX = { phone: 768, desktop: 790 };
 const EDITOR_ROW_MAX_WITH_PANEL_PX = 1170; // card + side panel (desktop)
+const EDITOR_SIDE_PANEL_SPACE_PX = 350 + 16;  // the side panel (md:w-[350px]) and the row's gap (gap-4)
 // Card ↔ full screen. A large surface: a touch of bounce so it lands rather than crawls in.
 const FULLSCREEN_SPRING = { type: 'spring', visualDuration: 0.32, bounce: 0.12 };
 
@@ -283,10 +284,17 @@ const GlobalEditorOverlay = () => {
             className="editor-row flex flex-col md:flex-row gap-4 h-full pointer-events-auto w-full"
             style={{ '--editor-row-max': isMockPanelOpen && !isBelowTablet ? `${EDITOR_ROW_MAX_WITH_PANEL_PX}px` : 'var(--editor-max-w)' }}
           >
-            {/* Main Editor */}
+            {/* Main Editor. In card mode it keeps its width while the row widens or narrows for the
+                panel (min-width: the card width that fits beside the panel, so it only narrows where
+                the window can't fit both, once, without animating); it used to shrink with the row,
+                squeezed to ~420px and re-wrapping its text on every frame of the panel's open and
+                close. In full screen (--fs → 1) the floor goes to 0 and it makes room for the panel. */}
             <div
-              className="h-full w-full min-w-0"
-              style={{ maxWidth: 'calc(var(--editor-max-w) + (100vw - var(--editor-max-w)) * var(--fs))' }}
+              className="h-full w-full"
+              style={{
+                maxWidth: 'calc(var(--editor-max-w) + (100vw - var(--editor-max-w)) * var(--fs))',
+                minWidth: `calc(min(var(--editor-max-w), 100cqw - 2 * var(--editor-gap) - ${isMockPanelOpen && !isBelowTablet ? EDITOR_SIDE_PANEL_SPACE_PX : 0}px) * (1 - var(--fs)))`,
+              }}
             >
               {/* externalRev in the key: an outside change (agent edit, revert)
                   remounts the editor so it picks up the new contents. */}
