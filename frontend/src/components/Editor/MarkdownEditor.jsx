@@ -16,6 +16,35 @@ const KEYBOARD_GAP_PX = 24;
 let keyboardMarginPx = 0;
 const keyboardScrollMargin = EditorView.scrollMargins.of(() => ({ bottom: keyboardMarginPx }));
 
+// Phones (Chrome on Android): the keyboard opens only on a tap that places the cursor, not when you
+// long-press or drag to select text (it used to open on any focus, shifting the text you were
+// selecting up above it). The text area asks for the keyboard itself (virtualkeyboardpolicy=manual);
+// a long-press is taken over by the browser's selection (pointercancel) or lasts too long to count
+// as a tap. Other browsers keep their own behaviour.
+const TAP_MAX_MS = 400;
+const TAP_MAX_MOVE_PX = 10;
+const showKeyboard = () => navigator.virtualKeyboard?.show();
+const keyboardOnTapOnly = (view) => {
+  if (!navigator.virtualKeyboard) return;
+  const dom = view.contentDOM;
+  dom.setAttribute('virtualkeyboardpolicy', 'manual');
+  let down = null;
+  dom.addEventListener('pointerdown', (e) => {
+    down = e.pointerType === 'touch' ? { at: e.timeStamp, x: e.clientX, y: e.clientY } : null;
+  });
+  dom.addEventListener('pointercancel', () => { down = null; });
+  dom.addEventListener('pointerup', (e) => {
+    if (!down || e.pointerType !== 'touch') return;
+    const isTap = e.timeStamp - down.at < TAP_MAX_MS && Math.hypot(e.clientX - down.x, e.clientY - down.y) < TAP_MAX_MOVE_PX;
+    down = null;
+    if (!isTap) return;
+    // After the tap has placed the cursor; a tap that left text selected doesn't open it
+    setTimeout(() => {
+      if (view.hasFocus && view.state.selection.main.empty) showKeyboard();
+    }, 0);
+  });
+};
+
 // State fields persisted in editor snapshots (used for both toJSON and fromJSON)
 const SNAPSHOT_FIELDS = { history: historyField };
 
@@ -84,6 +113,7 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
       onChange={onChange}
       onCreateEditor={(view) => {
         viewRef.current = view;
+        keyboardOnTapOnly(view);
         if (autoFocus) view.focus();
       }}
       onUpdate={(viewUpdate) => {

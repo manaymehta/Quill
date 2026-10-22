@@ -464,10 +464,11 @@ const TabDock = () => {
     };
   }, []);
 
-  const showHoldMenu = isHoldMenuOpen && isMobile && openTabs.length > 1;
-  // The list only shows with two or more notes open; closing one from it down to one hid it but left
-  // it "open", so opening another note brought it back for a moment. Down to one, it's closed.
-  if (isHoldMenuOpen && openTabs.length <= 1) setIsHoldMenuOpen(false);
+  // Opening the list takes two or more notes (handleTouchStart), but once open it stays open as you
+  // close notes from it, down to the last one; it used to close at one note left (so with two open,
+  // its ✕ always closed it). With none left it's closed, so a note opened later can't bring it back.
+  const showHoldMenu = isHoldMenuOpen && isMobile && openTabs.length > 0;
+  if (isHoldMenuOpen && openTabs.length === 0) setIsHoldMenuOpen(false);
 
   // Expanded from the dot: a tap outside the dock shrinks it back, and only does that (see
   // useOutsidePress: it can't focus the editor, open the keyboard or press anything under it).
@@ -482,7 +483,7 @@ const TabDock = () => {
   // the editor's text to close the list doesn't also focus it and open the keyboard (see
   // useOutsidePress). The finger still down from the long press that opened it doesn't count.
   useOutsidePress(showHoldMenu, {
-    isInside: (target) => Boolean(target.closest?.('.no-card-click')),
+    isInside: (target) => Boolean(target.closest?.('.no-card-click, [data-confirm-modal]')),
     onPress: () => setIsHoldMenuOpen(false),
     ignore: () => isHoldingAfterLongPressRef.current,
   });
@@ -501,7 +502,7 @@ const TabDock = () => {
         e.preventDefault();
         return;
       }
-      if (e.target.closest?.('.no-card-click')) return;
+      if (e.target.closest?.('.no-card-click, [data-confirm-modal]')) return;
       e.stopPropagation();
       e.preventDefault();
       setIsHoldMenuOpen(false);
@@ -587,9 +588,10 @@ const TabDock = () => {
     }
   };
 
-  // Picking a note in the list switches to it and leaves the list open (it used to close), so you
-  // can keep switching; a tap outside it closes it
+  // Picking a note in the list switches to it and closes the list; closing notes from it (their ✕)
+  // leaves it open
   const handleSelectTabFromMenu = (tabId) => {
+    setIsHoldMenuOpen(false);
     setIsDockExpanded(true);
     setActiveTab(tabId);
   };

@@ -32,6 +32,9 @@ const ConfirmModal = () => {
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15 }}
                     className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-[2px]"
+                    // Taps here don't count as "outside" for the dock list (TabDock): closing an unsaved
+                    // note from the list asks here first, and the list stays open through it
+                    data-confirm-modal
                     onPointerDown={(e) => e.stopPropagation()}
                     onTouchStart={(e) => e.stopPropagation()}
                     onClick={(e) => {

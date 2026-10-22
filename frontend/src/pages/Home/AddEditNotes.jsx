@@ -138,7 +138,6 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   useLayoutEffect(() => {
     const el = scrollAreaRef.current;
     const overlap = keyboardTop === null || !el ? 0 : Math.max(0, Math.round(el.getBoundingClientRect().bottom - keyboardTop));
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setKeyboardOverlap(overlap);
   }, [keyboardTop]);
   useEffect(() => {
@@ -936,6 +935,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                    view.dispatch({
                      selection: { anchor: view.state.doc.length },
                    });
+                   // On phones the text area only asks for the keyboard on a tap that places the
+                   // cursor (MarkdownEditor); a tap below the text does that too
+                   if (e.nativeEvent.pointerType === 'touch') navigator.virtualKeyboard?.show();
                  }
                }}
                onPaste={(event) => {
