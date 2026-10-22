@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useUIStore } from '../../store/useUIStore';
 import { MdOutlineStickyNote2, MdOutlineDelete, MdOutlineAutoGraph, MdOutlineArchive, MdAdd, MdOutlineFolder } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
+import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersQuery } from '../../hooks/useNotesQuery';
 import { useCreateFolderMutation } from '../../hooks/useFolderMutations';
@@ -82,6 +83,9 @@ const Sidebar = forwardRef((props, ref) => {
                 
                 if (isActive) {
                   useTabsStore.getState().setActiveTab('home');
+                  // The agent chat shows on this same page; with no navigation it stayed open (leaving
+                  // the chat is otherwise tied to the URL changing, see MainLayout)
+                  if (useSearchStore.getState().searchMode === 'agent') useSearchStore.getState().setSearchMode('keyword');
                 } else {
                   navigate(item.path);
                 }

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useUIStore } from '../../store/useUIStore';
 import { useTabsStore } from '../../store/useTabsStore';
+import { useSearchStore } from '../../store/useSearchStore';
 import { useModalStore } from '../Modals/useModalStore';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -139,6 +140,8 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
                     const targetPath = `/folder/${folder._id}`;
                     if (location.pathname === targetPath) {
                         useTabsStore.getState().setActiveTab('home');
+                        // The agent chat may be showing on this same page: leave it (see Sidebar)
+                        if (useSearchStore.getState().searchMode === 'agent') useSearchStore.getState().setSearchMode('keyword');
                     } else {
                         navigate(targetPath);
                     }

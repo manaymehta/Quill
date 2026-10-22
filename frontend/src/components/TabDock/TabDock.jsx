@@ -508,18 +508,25 @@ const TabDock = () => {
       setIsHoldMenuOpen(false);
     };
 
-    const handleScroll = (e) => {
-      if (e?.target?.closest?.('.no-card-click')) return;
+    // You scrolling outside the list (a finger dragging, a wheel) closes it. Not any scroll event:
+    // closing a note from the list makes the app scroll on its own (the pill strip keeps the new
+    // active pill in view, the list settles a row shorter), and that closed it on every ✕. The
+    // finger still down from the long press that opened it doesn't count (handleTouchMove).
+    const handleUserScroll = (e) => {
+      if (isHoldingAfterLongPressRef.current) return;
+      if (e.target?.closest?.('.no-card-click')) return;
       setIsHoldMenuOpen(false);
     };
 
     document.addEventListener('click', handleOutsideClick, true);
     document.addEventListener('contextmenu', handleOutsideClick, true);
-    document.addEventListener('scroll', handleScroll, { passive: true, capture: true });
+    document.addEventListener('touchmove', handleUserScroll, { passive: true, capture: true });
+    document.addEventListener('wheel', handleUserScroll, { passive: true, capture: true });
     return () => {
       document.removeEventListener('click', handleOutsideClick, true);
       document.removeEventListener('contextmenu', handleOutsideClick, true);
-      document.removeEventListener('scroll', handleScroll, { capture: true });
+      document.removeEventListener('touchmove', handleUserScroll, { capture: true });
+      document.removeEventListener('wheel', handleUserScroll, { capture: true });
     };
   }, [showHoldMenu]);
 

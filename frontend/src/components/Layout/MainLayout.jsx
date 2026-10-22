@@ -98,8 +98,9 @@ const MainLayout = () => {
         <div className="relative min-h-screen min-h-dvh">
             <ParticleBackground isPaused={isEditorActive || isAgentMode} />
             
-            {/* Navbar rendered on normal pages at z-[100] */}
-            {!isEditorActive && <Navbar />}
+            {/* Navbar rendered on normal pages at z-[100]; hidden while a note or the agent chat is
+                open, with a floating ☰ in its place (GlobalEditorOverlay) */}
+            {!isEditorActive && !isAgentMode && <Navbar />}
 
             {/* Main Outlet content (hidden when editor is active) */}
             <div className={`transition-[padding] ${isSidebarOpen ? "pl-0 sm:pl-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "pl-0 sm:pl-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]"} pt-[60px] md:pt-[72px] ${isEditorActive ? "hidden" : ""}`}>

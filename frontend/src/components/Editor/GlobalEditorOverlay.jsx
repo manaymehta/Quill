@@ -3,6 +3,7 @@ import { motion as Motion, AnimatePresence, useMotionValue, useSpring, useTransf
 import { FiMenu } from 'react-icons/fi';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
+import { useSearchStore } from '../../store/useSearchStore';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
 import { DOCK_METRICS, DOCK_MOBILE_QUERY, getEditorClearance } from '../TabDock/dockMetrics';
@@ -93,6 +94,7 @@ const GlobalEditorOverlay = () => {
   const [panelContent, setPanelContent] = useState('');
 
   const isEditorOpen = activeTabId !== 'home';
+  const isAgentMode = useSearchStore((state) => state.searchMode === 'agent');
   const activeIndex = openTabs.findIndex((t) => t._id === activeTabId);
   const activeTab = openTabs.find((t) => t._id === activeTabId);
 
@@ -154,14 +156,16 @@ const GlobalEditorOverlay = () => {
     </>
   );
 
-  if (!isEditorOpen && openTabs.length === 0) {
+  // (kept while the agent chat is open: the floating ☰ below stands in for the hidden navbar)
+  if (!isEditorOpen && openTabs.length === 0 && !isAgentMode) {
     return null;
   }
 
   return (
     <>
-      {/* Persistent Sidebar Hamburger Toggle in Editor Mode (aligned to exact Home Navbar coordinates) */}
-      {isEditorOpen && (
+      {/* Persistent Sidebar Hamburger Toggle in Editor Mode, and with the agent chat open (both hide the
+          navbar; aligned to exact Home Navbar coordinates) */}
+      {(isEditorOpen || isAgentMode) && (
         <div className="fixed top-2.5 md:top-4 left-3 z-[90] flex items-center">
           <button
             onClick={toggleSidebar}

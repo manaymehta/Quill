@@ -216,7 +216,11 @@ const HoldMenu = ({ openTabs, activeTabId, onSelect, onClose }) => (
                   e.stopPropagation();
                   onClose(tab._id);
                 }}
+                // before: an invisible tap area the row's full height and ~40px wide (the ✕ is 24px):
+                // a finger aimed at it often landed on the row instead, which picks the note and
+                // closes the list
                 className={`
+                  relative before:absolute before:content-[''] before:-inset-x-2 before:-inset-y-[7px]
                   ml-1.5 p-1.5 rounded-full shrink-0 flex items-center justify-center transition-colors duration-150
                   ${isActive
                     ? 'text-stone-400 hover:text-red-500 active:text-red-500 active:bg-red-500/10'

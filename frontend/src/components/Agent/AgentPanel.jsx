@@ -220,32 +220,11 @@ const AgentPanel = () => {
   const gap = isBelowTablet ? PANEL_GAP.phone : PANEL_GAP.desktop;
   // The dock compacts while the chat is open (as for a note): the card ends `gap` above it
   const bottomClear = dock.height[1] + dock.paddingBottom[1] + gap;
-  // …and starts `gap` below the navbar's search row — measured, since the navbar's own box is
-  // taller than what you see of it (the "Quill" title's padding), which left a bigger gap on top
+  // …and starts `gap` below the top of the window: the navbar is hidden while the chat is open, as
+  // for a note (MainLayout), with the same floating ☰ in its place (GlobalEditorOverlay). The card
+  // sits in the page's content, below the navbar's space (`contentTop`), so it's pulled up into it.
   const contentTop = isBelowTablet ? NAVBAR_H.phone : NAVBAR_H.desktop;
-  const [navBottom, setNavBottom] = useState(null);
-  // The navbar is removed while a note is open in the editor and comes back as a new element, so
-  // it's looked up again each time the editor closes; a size of 0 (a row going away) is ignored —
-  // read as 0, it put the card up under the navbar after opening a note from the chat.
-  const isEditorActive = useTabsStore((s) => s.activeTabId !== 'home');
-  useLayoutEffect(() => {
-    if (isEditorActive) return undefined;
-    const row = document.querySelector('[data-navbar-search]');
-    if (!row) return undefined;
-    const measure = () => {
-      const rect = row.getBoundingClientRect();
-      if (rect.height > 0) setNavBottom(Math.round(rect.bottom));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(row);
-    window.addEventListener('resize', measure);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-  }, [isEditorActive]);
-  const topClear = (navBottom ?? contentTop - gap) + gap;
+  const topClear = gap;
 
   const [sideTab, setSideTab] = useState(null); // null | 'chats' | 'activity' | 'settings'
   const [openingNoteId, setOpeningNoteId] = useState(null);
@@ -379,7 +358,7 @@ const AgentPanel = () => {
   return (
     // relative z-[1]: above the particle canvas (a fixed layer), which otherwise paints over any part
     // of the panel that isn't positioned or transformed — e.g. the side panel once its slide-in ends
-    // Placed from the page content's top (below the navbar's box), pulled up to `topClear`
+    // Placed from the page content's top (below the navbar's space), pulled up to `topClear`
     // With the on-screen keyboard open the card ends `gap` above it instead of above the dock, which
     // stays put behind the keyboard (utils/virtualKeyboard)
     <div className="agent-panel relative z-[1] px-2 md:px-4" style={{ marginTop: topClear - contentTop, height: `calc(100dvh - ${topClear}px - max(${bottomClear}px, env(keyboard-inset-height, 0px) + ${gap}px))` }}>
@@ -399,7 +378,9 @@ const AgentPanel = () => {
         >
           {/* Header: one row — the chat's name in the editor title's serif, how long it's kept as a
               quiet note beside it (in History on phones, where the row is short), the buttons */}
-          <div className="shrink-0 flex items-center gap-3 px-5 md:px-7 pt-4 md:pt-5 pb-2">
+          {/* On phones the card spans the screen and the floating ☰ sits over its top-left corner,
+              so the header starts clear of it (pl-14) */}
+          <div className="shrink-0 flex items-center gap-3 pl-14 pr-5 md:px-7 pt-4 md:pt-5 pb-2">
             <div className="group/title flex-1 min-w-0 flex items-baseline gap-2.5">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div key={activeChat?.chatId || 'new'} {...SWAP} className="min-w-0 has-[input]:flex-1">
