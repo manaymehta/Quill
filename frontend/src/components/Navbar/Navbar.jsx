@@ -91,7 +91,7 @@ const Navbar = () => {
         isEffectiveVisible ? 'translate-y-0' : '-translate-y-full'
       } sm:translate-y-0`}
     >
-      <div className="flex items-center gap-4 text-[#dd5e57]">
+      <div className="flex items-center gap-4 text-[#e85d56]">
         {isLoggedIn && (
           <FiMenu
             className="text-2xl cursor-pointer sidebar-toggle-btn"

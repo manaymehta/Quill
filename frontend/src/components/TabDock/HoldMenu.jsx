@@ -223,8 +223,8 @@ const HoldMenu = ({ openTabs, activeTabId, onSelect, onClose }) => (
                   relative before:absolute before:content-[''] before:-inset-x-2 before:-inset-y-[7px]
                   ml-1.5 p-1.5 rounded-full shrink-0 flex items-center justify-center transition-colors duration-150
                   ${isActive
-                    ? 'text-stone-400 hover:text-red-500 active:text-red-500 active:bg-red-500/10'
-                    : 'text-stone-500 hover:text-red-400 active:text-red-400 active:bg-red-400/15'
+                    ? 'text-stone-400 hover:text-[#e85d56] active:text-[#e85d56] active:bg-[#e85d56]/10'
+                    : 'text-stone-500 hover:text-[#e85d56] active:text-[#e85d56] active:bg-[#e85d56]/15'
                   }
                 `}
                 title="Close tab"

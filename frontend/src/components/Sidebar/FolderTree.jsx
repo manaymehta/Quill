@@ -116,7 +116,7 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
                 custom={up}
                 variants={shutterItemVariants}
                 onClick={(e) => { e.stopPropagation(); setContextMenu(null); openFolderDeleteModal(folder); }}
-                className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-red-500/15 hover:text-red-400 text-red-400"
+                className="flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full hover:bg-[#e85d56]/15 hover:text-[#e85d56] text-[#e85d56]"
             >
                 <span>Delete</span>
                 <MdDelete size={13} className="shrink-0" />

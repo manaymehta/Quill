@@ -151,7 +151,7 @@ const FolderDeleteModal = () => {
                                     </button>
                                     <button
                                         onClick={handleConfirm}
-                                        className="flex-1 py-2.5 bg-[#e85d56] text-white text-sm font-medium rounded-xl hover:bg-opacity-90 shadow-lg shadow-[#e85d56]/20 transition-colors"
+                                        className="flex-1 py-2.5 bg-[#e85d56] text-white text-sm font-medium rounded-xl hover:bg-[#fb6d65] shadow-lg shadow-[#e85d56]/20 transition-colors"
                                     >
                                         Yes
                                     </button>
@@ -188,7 +188,7 @@ const FolderDeleteModal = () => {
                                         onClick={handleConfirm}
                                         className={`flex-1 py-2.5 text-white text-sm font-medium rounded-xl transition-colors ${isConfirmDisabled
                                             ? 'bg-stone-700 text-stone-500 cursor-not-allowed'
-                                            : 'bg-[#e85d56] hover:bg-opacity-90 shadow-lg shadow-[#e85d56]/20'
+                                            : 'bg-[#e85d56] hover:bg-[#fb6d65] shadow-lg shadow-[#e85d56]/20'
                                             }`}
                                     >
                                         Yes

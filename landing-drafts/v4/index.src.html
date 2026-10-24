@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quill — write it down, ask it later</title>
+<meta name="description" content="Quill is a calm place to keep your notes, with an agent that answers from them and changes nothing without your yes.">
+<link rel="icon" href="quill-icon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400&family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+/* Quill at night: a warm dark desk under a drifting constellation, one coral light (the quill's), and cream paper
+   for the things you read. Built from the app's own materials; motion is ambient, scrolling stays normal. */
+:root{
+  --desk:#1d1c1a; --desk-2:#232220; --glass:#2a2a2a;
+  --text:#f2ede6; --muted:#aaa49b; --dim:#77716a; --hair:rgba(244,234,220,.08);
+  --paper:#f4eadc; --card:#f8ecdc; --paper-ink:#2b2a28; --paper-soft:#6b655e; --chip:#ebe0d3; --chip-line:#e0d2bf; --terra:#d97757;
+  --coral:#e85d56; --coral-hi:#fb6d65;
+  --display:"Playfair Display",Georgia,serif; --sans:"Poppins",system-ui,sans-serif; --serif:"Lora",Georgia,serif;
+  --ease-out:cubic-bezier(.16,1,.3,1); --spring:cubic-bezier(.34,1.28,.64,1);
+  --m:clamp(20px,4vw,56px);
+}
+*{box-sizing:border-box}
+html{background:var(--desk);-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--desk);color:var(--text);font:400 17px/1.65 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+img{display:block;max-width:100%}
+p{margin:0;text-wrap:pretty}
+h1,h2,h3{margin:0;font-weight:500;text-wrap:balance}
+:focus-visible{outline:2px solid var(--coral-hi);outline-offset:3px;border-radius:6px}
+::selection{background:rgba(232,93,86,.35);color:#fff}
+.wrap{width:100%;max-width:1240px;margin:0 auto;padding-left:max(var(--m),env(safe-area-inset-left,0px));padding-right:max(var(--m),env(safe-area-inset-right,0px))}
+
+#sky{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.6}
+.page{position:relative;z-index:1;overflow-x:clip} /* glows and sliding rows may reach past the sides; clipped, so a phone never zooms the page out */
+
+/* Buttons: the app's own pill */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:48px;padding:0 24px;border-radius:999px;background:var(--coral);color:#fff;font:600 15px/1 var(--sans);box-shadow:0 10px 30px -12px rgba(232,93,86,.75);transition:background .18s,transform .2s var(--spring),box-shadow .2s}
+.btn:hover{background:var(--coral-hi);transform:translateY(-1px);box-shadow:0 14px 34px -12px rgba(251,109,101,.85)}
+.btn:active{transform:scale(.97)}
+.link{font:500 15px/1 var(--sans);color:var(--muted);padding:10px 6px;transition:color .15s}
+.link:hover{color:var(--text)}
+
+/* Nav: the mark and the name, then two ways in */
+header{position:fixed;top:0;left:0;right:0;z-index:20;padding-top:env(safe-area-inset-top,0px);transition:transform .38s var(--ease-out),background .3s,backdrop-filter .3s,box-shadow .3s}
+header.away{transform:translateY(-105%)}
+main{padding-top:76px}
+header.lifted{background:color-mix(in srgb,var(--desk) 94%,transparent);backdrop-filter:blur(20px) saturate(1.1);-webkit-backdrop-filter:blur(20px) saturate(1.1);box-shadow:0 1px 0 var(--hair)}
+.nav{display:flex;align-items:center;justify-content:space-between;height:76px;transition:height .3s var(--ease-out)}
+header.lifted .nav{height:62px}
+.brand{display:flex;align-items:center;gap:8px;font:700 24px/1 var(--sans);letter-spacing:-.01em}
+.brand img{height:34px;width:auto;margin:-4px -2px -4px -6px}
+.nav-r{display:flex;align-items:center;gap:14px}
+.nav-r .btn{height:42px;padding:0 20px;font-size:14.5px}
+
+/* Hero */
+.hero{min-height:min(calc(100svh - 76px),980px);display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);align-items:center;gap:40px;padding-bottom:48px}
+.hero h1{font:500 clamp(46px,6vw,88px)/1.03 var(--display);letter-spacing:-.02em;color:var(--paper)}
+.hero h1 span{display:block}
+.hero .lead{margin-top:26px;max-width:30em;font-size:18px;color:var(--muted)}
+.hero .lead b{color:var(--text);font-weight:500}
+.ctas{display:flex;align-items:center;gap:18px;margin-top:36px;flex-wrap:wrap}
+.desk{position:relative;justify-self:center;width:min(100%,66svh);aspect-ratio:354/388}
+.glow{position:absolute;left:-22%;top:-16%;width:144%;height:132%;background:radial-gradient(closest-side,rgba(232,93,86,.34),rgba(214,78,66,.24) 28%,rgba(180,50,40,.12) 52%,rgba(150,40,30,.045) 74%,transparent);pointer-events:none;animation:breathe 6s ease-in-out infinite alternate}
+@keyframes breathe{from{opacity:.72;transform:scale(.96)}to{opacity:1;transform:scale(1.03)}}
+.mark{position:absolute;inset:0;z-index:3;width:100%;height:100%;display:block}
+
+/* Sections */
+section.block{padding-top:clamp(120px,16vh,200px)}
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:72px;align-items:center}
+.split.flip > .copy{order:2}
+h2{font:500 clamp(36px,4.2vw,58px)/1.08 var(--display);letter-spacing:-.015em;color:var(--paper)}
+.copy p{margin-top:22px;max-width:31em;color:var(--muted)}
+.copy p b{color:var(--text);font-weight:500}
+
+/* Notes: the Home wall, as the app draws it */
+.wall{columns:3 200px;column-gap:14px}
+.nc{break-inside:avoid;margin-bottom:14px;position:relative;background:var(--card);color:var(--paper-ink);border:1px solid #4a4b50;border-radius:22px;padding:15px 16px 14px;transition:transform .15s cubic-bezier(.25,1,.5,1),box-shadow .15s cubic-bezier(.25,1,.5,1)}
+.nc::after{content:"";position:absolute;inset:0;border-radius:inherit;background:rgba(0,0,0,.12);opacity:0;transition:opacity .15s cubic-bezier(.25,1,.5,1);pointer-events:none}
+/* the lift only with a real pointer: on a phone a tapped card would otherwise stay lifted and darkened */
+@media (hover:hover){
+  .nc:hover{transform:translateY(-4px);box-shadow:0 20px 25px -5px rgba(0,0,0,.35),0 8px 10px -6px rgba(0,0,0,.3)}
+  .nc:hover::after{opacity:1}
+}
+.nc:has(.ck:hover)::after{opacity:0}
+.nc h4{margin:0;font:600 20px/1.2 var(--sans);letter-spacing:-.015em;color:var(--coral)}
+.nc p{margin-top:7px;font:500 13.5px/1.55 var(--sans);color:#494949}
+/* the card's ⋮ and its menu, as on a card in the app: shown on hover with a mouse, always on touch */
+.nc h4{padding-right:26px}
+.more{all:unset;position:absolute;top:11px;right:10px;z-index:12;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:#a8a29e;cursor:pointer;opacity:0;transition:opacity .15s,color .15s,background .15s}
+.nc:hover .more,.more:focus-visible,.nc.menu-open .more{opacity:1}
+.more:hover{color:#44403c;background:rgba(0,0,0,.05)}
+.more:focus-visible{outline:2px solid var(--coral)}
+@media (hover:none){.more{opacity:1}}
+/* fingers: as the app does, an invisible 44px tap area round the ⋮ and the menu scaled up evenly; the tags get taller tap areas too */
+@media (pointer:coarse){
+  .more::before{content:"";position:absolute;inset:-9px}
+  .nmenu{zoom:1.25}
+  .nc .tgs span::before{content:"";position:absolute;inset:-10px -3px}
+}
+.nc.menu-open{z-index:30}
+.nmenu{position:absolute;top:40px;right:8px;z-index:31;min-width:165px;padding:4px;border-radius:16px;background:#1e1e20;box-shadow:0 25px 50px -12px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:5px;transform-origin:top;opacity:0;transform:translateY(-8px) scaleY(.82);pointer-events:none;transition:opacity .12s cubic-bezier(.4,0,1,1),transform .12s cubic-bezier(.4,0,1,1)}
+.nmenu.open{opacity:1;transform:none;pointer-events:auto;transition:opacity .16s cubic-bezier(.16,1,.3,1),transform .16s cubic-bezier(.16,1,.3,1)}
+.nmenu button{all:unset;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 8px;border-radius:12px;font:500 13px/1.3 var(--sans);color:#d6d3d1;cursor:pointer;opacity:0;transform:translateY(-4px);transition:background 75ms,color 75ms,opacity .1s,transform .1s}
+.nmenu.open button{opacity:1;transform:none;transition:background 75ms,color 75ms,opacity .15s cubic-bezier(.16,1,.3,1),transform .15s cubic-bezier(.16,1,.3,1)}
+.nmenu button:hover,.nmenu button:focus-visible{background:rgba(255,255,255,.15);color:#fff}
+.nmenu button.danger{color:var(--coral)}
+.nmenu button.danger:hover,.nmenu button.danger:focus-visible{background:rgba(232,93,86,.2);color:var(--coral)}
+.nc .tgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.nc .tgs span{font:600 12px/1 var(--sans);padding:5px 8px;border-radius:999px;background:rgba(0,0,0,.05);color:#57534e;cursor:pointer;position:relative;z-index:11;transition:background .15s,color .15s}
+.nc .tgs span:hover{background:rgba(0,0,0,.09)}
+.nc .tgs span:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+/* a tag picked on the wall: its notes stay, the rest step back, as the graph's tag filter does */
+.nc .tgs span.on{background:var(--coral);color:#fff}
+.nc{transition:transform .15s cubic-bezier(.25,1,.5,1),box-shadow .15s cubic-bezier(.25,1,.5,1),filter .3s ease}
+.wall.picking .nc:not(.match){filter:brightness(.3) saturate(.5)}
+.nc:has(.tgs span:hover)::after{opacity:0}
+.ck{all:unset;display:flex;align-items:flex-start;gap:9px;margin-top:6px;font:500 13.5px/1.45 var(--sans);color:#494949;cursor:pointer;position:relative;z-index:11}
+.ck i{flex:none;width:15px;height:15px;margin-top:2px;border-radius:3px;box-shadow:inset 0 0 0 1.6px #a8a29e;display:grid;place-items:center;transition:background .15s,box-shadow .15s}
+.ck i::after{content:"";width:7px;height:3.5px;border:solid #fff;border-width:0 0 1.8px 1.8px;transform:translateY(-1px) rotate(-45deg) scale(0);transition:transform .22s var(--spring)}
+.ck[aria-checked="true"]{color:#9a948d;text-decoration:line-through}
+.ck[aria-checked="true"] i{background:var(--coral);box-shadow:none}
+.ck[aria-checked="true"] i::after{transform:translateY(-1px) rotate(-45deg) scale(1)}
+.ck:focus-visible{outline:2px solid var(--coral);outline-offset:2px;border-radius:4px}
+.lp{display:flex;align-items:center;gap:11px;margin:12px -16px -14px;padding:11px 16px;background:rgba(0,0,0,.06);border-top:1px solid rgba(0,0,0,.06);border-radius:0 0 21px 21px}
+.lp svg{flex:none;color:rgba(0,0,0,.3);transition:color .2s}
+.nc:hover .lp svg{color:rgba(0,0,0,.5)}
+.lp .t{min-width:0}
+.lp b{display:block;font:700 12.5px/1.35 var(--sans);color:rgba(0,0,0,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp .t>span{display:block;margin-top:2px;font:700 10.5px/1.3 var(--sans);letter-spacing:.05em;text-transform:uppercase;color:rgba(0,0,0,.5)}
+.feats{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:26px;padding:0;list-style:none}
+.feats li{font:500 14.5px/1.4 var(--sans);color:var(--text);display:flex;align-items:center;gap:8px}
+.feats li::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--coral);box-shadow:0 0 8px rgba(232,93,86,.8)}
+
+/* Ask: an answer joined to the notes it came from */
+.ask{position:relative;min-height:440px}
+.q{position:absolute;right:0;top:0;max-width:78%;background:rgba(42,42,42,.85);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--hair);border-radius:20px 20px 6px 20px;padding:12px 18px;font:500 15.5px/1.5 var(--sans);color:var(--text)}
+.a{position:absolute;left:0;top:92px;width:min(86%,460px);background:var(--paper);color:#333;border-radius:20px 20px 20px 6px;padding:16px 20px;font:400 15.5px/1.65 var(--sans);box-shadow:0 24px 50px -24px rgba(0,0,0,.8)}
+.a b{font-weight:600}
+.cite{position:absolute;width:236px;background:var(--card);color:var(--paper-ink);border-radius:18px;padding:13px 15px;box-shadow:0 24px 50px -24px rgba(0,0,0,.8),0 0 0 1px rgba(0,0,0,.25);font-family:var(--sans)}
+.cite h4{margin:0;font:600 15px/1.25 var(--sans);color:var(--coral)}
+.cite p{margin-top:5px;font:500 12.5px/1.5 var(--sans);color:#494949}
+.cite .tg{display:flex;gap:6px;margin-top:8px}
+.cite .tg span{font:600 12px/1 var(--sans);padding:5px 8px;border-radius:999px;background:rgba(0,0,0,.05);color:#57534e}
+.c1{left:6%;bottom:0;--r:-2deg}
+.c2{right:0;bottom:34px;--r:2.5deg}
+.cite{transform:rotate(var(--r));cursor:default;outline:none;transition:transform .3s var(--spring),box-shadow .2s ease}
+/* pointing at a cited note: its thread and the words it backs light up, the other thread steps back */
+.cite.lit{transform:rotate(var(--r)) translateY(-4px);box-shadow:0 30px 50px -22px rgba(0,0,0,.85),0 0 0 1.5px var(--coral)}
+.a [data-src]{border-radius:5px;transition:background .2s ease,box-shadow .2s ease}
+.a [data-src].lit{background:rgba(232,93,86,.16);box-shadow:0 0 0 3px rgba(232,93,86,.16)}
+.threads{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.threads path{fill:none;stroke:rgba(232,93,86,.7);stroke-width:1.2;stroke-linecap:round;stroke-dasharray:var(--len);stroke-dashoffset:var(--len);transition:stroke-dashoffset 1.2s var(--ease-out),stroke .2s ease,stroke-width .2s ease}
+.threads path.lit{stroke:var(--coral);stroke-width:2}
+.threads path.dim{stroke:rgba(232,93,86,.22)}
+.threads circle{fill:var(--paper);filter:drop-shadow(0 0 5px rgba(232,93,86,.9));opacity:0;transition:opacity .3s ease}
+.threads circle.end{transition-delay:.8s}
+.linked .threads path{stroke-dashoffset:0}
+.linked .threads circle{opacity:1}
+
+/* Your yes: the review sheet and the undo */
+.sheet{position:relative;background:var(--card);color:var(--paper-ink);border-radius:22px;overflow:hidden;box-shadow:0 30px 60px -26px rgba(0,0,0,.85);transform:rotate(-1.2deg);font-family:var(--sans)}
+.sh{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 12px;padding:18px 22px 10px}
+.sh b{font:600 16px/1.2 var(--sans)}
+.sh span{font:500 12.5px/1 var(--sans);color:#78716c}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 22px;font:600 14.5px/1.3 var(--sans);flex-wrap:wrap}
+.tk{all:unset;display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px 0 9px;border-radius:999px;background:rgba(0,0,0,.05);font:500 13px var(--sans);color:#57534e;cursor:pointer;transition:background .15s,color .15s}
+.tk:hover{background:rgba(0,0,0,.08)}
+.tk:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+.tk i{width:15px;height:15px;border-radius:4px;background:var(--coral);display:grid;place-items:center;transition:background .15s,box-shadow .15s}
+.tk i::after{content:"";width:7px;height:3.5px;border:solid #fff;border-width:0 0 1.8px 1.8px;transform:translateY(-1px) rotate(-45deg);transition:transform .22s var(--spring)}
+.tk[aria-checked="false"]{color:#9a948d}
+.tk[aria-checked="false"] i{background:transparent;box-shadow:inset 0 0 0 1.6px #b8b2aa}
+.tk[aria-checked="false"] i::after{transform:translateY(-1px) rotate(-45deg) scale(0)}
+.sf{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px 18px}
+.sf button{all:unset;cursor:pointer;height:38px;padding:0 16px;border-radius:10px;font:600 13.5px/38px var(--sans);transition:background .15s}
+.sf .ds{color:#78716c}.sf .ds:hover{background:rgba(0,0,0,.05)}
+.sf .ap{background:var(--coral);color:#fff}.sf .ap:hover{background:var(--coral-hi)}
+.sf button:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+/* the review and its "done" share one spot, so the card keeps its size and nothing below it moves */
+.sheet{display:grid}
+.sheet>*{grid-area:1/1}
+.rvw{transition:opacity .2s ease,visibility 0s}
+.done{display:flex;align-items:center;justify-content:center;padding:20px 22px;font:600 16px/1.3 var(--sans);opacity:0;visibility:hidden;transition:opacity .15s ease,visibility 0s .15s}
+.done>span{display:flex;flex-direction:column;align-items:center;gap:14px}
+.done i{width:44px;height:44px;border-radius:50%;background:var(--coral);display:grid;place-items:center;box-shadow:0 0 0 8px rgba(232,93,86,.12)}
+.done i::after{content:"";width:16px;height:8px;border:solid #fff;border-width:0 0 2.6px 2.6px;transform:translateY(-2px) rotate(-45deg)}
+.sheet.applied .rvw{opacity:0;visibility:hidden;transition:opacity .15s ease,visibility 0s .15s}
+.sheet.applied .done{opacity:1;visibility:visible;transition:opacity .25s ease .05s,visibility 0s}
+.sheet.applied .done i{animation:pop .55s var(--spring) .05s backwards}
+@keyframes pop{from{transform:scale(.4)}}
+/* applying: the ticked rows leave one after another, the way archived notes leave a list */
+.row{transition:opacity .3s ease,transform .45s var(--ease-out)}
+.js .sheet.archiving .row.go{opacity:0;transform:translateX(32px);transition:opacity .22s ease-in calc(var(--j) * 70ms),transform .28s cubic-bezier(.4,0,1,1) calc(var(--j) * 70ms)}
+.yesvis{position:relative}
+.dockzone{position:absolute;left:0;right:0;top:calc(100% + 80px);display:flex;flex-direction:column;align-items:center;pointer-events:none;opacity:0;transform:translateY(10px);transition:opacity .2s ease,transform .2s ease}
+.dockzone:has(.toast.show){pointer-events:auto;opacity:1;transform:none;transition:opacity .12s var(--ease-out),transform .34s var(--spring)}
+.dockzone .toast{position:absolute;bottom:62px}
+.toast{display:flex;align-items:center;gap:10px;height:44px;padding:0 6px 0 16px;border-radius:999px;background:color-mix(in srgb,var(--glass) 88%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 0 0 1px var(--hair);font:600 13.5px/1 var(--sans);opacity:0;transform:translateY(12px) scale(.5);transition:opacity .07s ease,transform .12s ease}
+.toast.show{opacity:1;transform:none;transition:opacity .08s var(--ease-out),transform .34s var(--spring)}
+.toast button{all:unset;cursor:pointer;width:32px;height:32px;border-radius:50%;background:var(--paper);color:#333;display:grid;place-items:center}
+.dock{display:flex;align-items:center;gap:8px;height:52px;padding:0 6px;border-radius:28px;background:color-mix(in srgb,var(--glass) 88%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 0 0 1px var(--hair)}
+.dock .h{width:40px;height:40px;border-radius:50%;background:var(--paper);color:#333;display:grid;place-items:center}
+.dock .s{width:1px;height:20px;background:rgba(255,255,255,.15)}
+.dock .p{width:40px;height:40px;border-radius:50%;background:var(--coral);color:#fff;display:grid;place-items:center}
+
+/* The graph: as Quill's Graph page draws it */
+.skyhead{display:flex;justify-content:space-between;align-items:flex-end;gap:48px;flex-wrap:wrap}
+.skyhead p{max-width:28em;color:var(--muted)}
+.graph{position:relative;height:min(60vh,470px);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.graph canvas{position:absolute;inset:0;width:100%;height:100%}
+.hint{font:italic 400 16px/1.5 var(--serif,Lora,serif);color:var(--muted);margin-top:18px}
+.gfilter{position:absolute;top:0;right:0;z-index:2}
+.gbtn{display:flex;align-items:center;height:40px;border-radius:999px;border:1px solid rgba(255,255,255,.15);background:rgba(32,33,36,.8);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 10px 15px -3px rgba(0,0,0,.3);color:#d6d3d1;overflow:hidden;transition:background .15s,color .15s,border-color .15s}
+.gbtn.icon{width:40px;justify-content:center;cursor:pointer}
+.gbtn.icon:hover{background:#2c2d30;color:#fff}
+.gbtn.icon.open{background:var(--coral);border-color:var(--coral);color:#fff}
+.gbtn.pill{border-color:rgba(232,93,86,.6);color:#fff;padding:0 8px 0 14px;gap:8px;font:500 14px/1 var(--sans)}
+.gbtn.pill i{width:8px;height:8px;border-radius:50%;background:var(--coral)}
+.gbtn.pill button{all:unset;cursor:pointer;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;color:#a8a29e}
+.gbtn.pill button:hover{background:rgba(255,255,255,.1);color:#fff}
+/* a note opened from the graph: its card beside the point, as a note opens from the app's graph */
+.gcard{position:absolute;left:0;top:0;z-index:3;width:210px;padding:13px 15px 12px;border-radius:18px;background:var(--card);color:var(--paper-ink);box-shadow:0 24px 50px -20px rgba(0,0,0,.85),0 0 0 1px rgba(0,0,0,.25);font-family:var(--sans);pointer-events:none;opacity:0;scale:.94;transition:opacity .12s ease,scale .12s ease}
+.gcard.open{opacity:1;scale:1;transition:opacity .1s var(--ease-out),scale .32s var(--spring)}
+.gcard h4{margin:0;font:600 15px/1.25 var(--sans);color:var(--coral)}
+.gcard p{margin-top:5px;font:500 12.5px/1.5 var(--sans);color:#494949}
+.gcard .tg{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.gcard .tg span{font:600 12px/1 var(--sans);padding:5px 8px;border-radius:999px;background:rgba(0,0,0,.05);color:#57534e}
+.gmenu{position:absolute;right:0;top:48px;width:200px;padding:6px;border-radius:16px;background:#1e1e20;box-shadow:0 25px 50px -12px rgba(0,0,0,.6);display:none;flex-direction:column;gap:2px}
+.gmenu.open{display:flex}
+.gmenu button{all:unset;cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:12px;font:500 14px/1.2 var(--sans);color:#d6d3d1;transition:background .1s,color .1s}
+.gmenu button:hover{background:rgba(255,255,255,.08);color:#fff}
+.gmenu button span{font-size:12px;color:#78716c}
+.gbtn:focus-visible,.gmenu button:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+
+/* Close */
+.close{padding-top:clamp(140px,18vh,220px);padding-bottom:120px;text-align:center;display:flex;flex-direction:column;align-items:center}
+/* the closing quill keeps a smaller share of the hero's light */
+.small-desk{position:relative;width:110px}
+.small-desk .glow{left:-80%;top:-55%;width:260%;height:210%;opacity:.8}
+.close .small-mark{position:relative;z-index:1;display:block;width:110px;height:auto}
+.close h2{margin-top:24px}
+.close p{margin-top:16px;color:var(--muted);max-width:30em}
+.close .ctas{justify-content:center}
+footer{border-top:1px solid var(--hair);padding-block:28px calc(28px + env(safe-area-inset-bottom,0px));color:var(--muted);font-size:14px}
+footer .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+footer .brand{font-size:18px;color:var(--text)}
+footer .brand img{height:26px}
+footer nav{display:flex;gap:22px}
+footer nav a:hover{color:var(--text)}
+
+/* Reveal on arrival: content shows without script; only with it do parts rise */
+.js .rv{opacity:0;transform:translateY(22px)}
+.js .rv.in{opacity:1;transform:none;transition:opacity .7s var(--ease-out),transform .9s var(--ease-out);transition-delay:calc(var(--i,0) * 90ms)}
+
+/* Arrivals: each section's picture plays into its state once, the first time it's well in view.
+   Opacity eases plainly; only movement gets the spring. Hidden starting states apply only with script. */
+@keyframes fadeIn{from{opacity:0}}
+/* hero: each line rises out of its own slot */
+.hero h1.rv{opacity:1;transform:none}
+.hero h1 .ln{display:block;overflow:hidden;padding-bottom:.1em;margin-bottom:-.1em}
+.js .hero h1 .ln>span{display:block;transform:translateY(110%)}
+.hero h1.in .ln>span{transform:none;transition:transform 1.1s var(--ease-out) calc(var(--l) * 120ms)}
+@keyframes glowOn{from{opacity:0;transform:scale(.7)}}
+.desk .glow{animation:glowOn 1.8s var(--ease-out) backwards,breathe 6s ease-in-out 1.8s infinite alternate}
+/* notes: the cards are set down on the wall one after another */
+.js .wall:not(.in) .nc{opacity:0}
+.wall.in .nc{animation:fadeIn .35s ease-out backwards,setDown .8s var(--spring) backwards;animation-delay:calc(var(--k) * 75ms)}
+@keyframes setDown{from{transform:translateY(36px) rotate(var(--tilt)) scale(.96)}}
+/* ask: the question, Quill typing, the answer, then the notes it used, then the threads between them */
+.js .ask .q,.js .ask .a,.js .ask .cite{opacity:0}
+.ask.in .q{opacity:1;transform-origin:100% 100%;animation:fadeIn .25s ease-out backwards,bubble .5s var(--spring) backwards}
+@keyframes bubble{from{transform:translateY(12px) scale(.94)}}
+.dots{position:absolute;left:0;top:92px;display:flex;gap:5px;padding:16px 18px;border-radius:20px 20px 20px 6px;background:var(--paper);opacity:0;transform:scale(.8);transform-origin:0 100%;transition:opacity .15s ease,transform .15s ease}
+.dots i{width:7px;height:7px;border-radius:50%;background:#a8a29e;animation:dot 1s ease-in-out infinite}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes dot{0%,60%,100%{transform:none;opacity:.5}30%{transform:translateY(-4px);opacity:1}}
+.ask.typing .dots{opacity:1;transform:none;transition:opacity .15s ease,transform .45s var(--spring)}
+.ask.said .dots{opacity:0;transform:scale(.9);transition:opacity .12s ease,transform .12s ease}
+.ask.said .a{opacity:1;transform-origin:0 100%;animation:fadeIn .2s ease-out backwards,bubble .55s var(--spring) backwards}
+.js .ask .a [data-src]{opacity:0}
+.ask.said .a [data-src]{opacity:1;transition:opacity .35s ease var(--wd,.06s),background .2s ease,box-shadow .2s ease}
+.ask.said .a [data-src="c1"]{--wd:.18s}
+.ask.cited .cite{opacity:1;animation:fadeIn .3s ease-out backwards,citeIn .75s var(--spring) backwards}
+.ask.cited .c1{animation-delay:.16s}
+@keyframes citeIn{from{transform:translateY(44px) rotate(0deg) scale(.95)}}
+/* your yes: Quill lays out its suggestions one by one and ticks each, then offers Apply */
+.js .sheet:not(.ready) .row,.js .sheet:not(.ready) .sf{opacity:0;transform:translateY(8px)}
+.js .sheet .row.shown,.sheet.ready .sf{opacity:1;transform:none}
+.sf{transition:opacity .3s ease,transform .45s var(--ease-out)}
+/* close: the small quill's light comes on */
+.js .small-desk:not(.in) .glow{animation:none;opacity:0}
+.small-desk.in .glow{animation:glowOn 1.6s var(--ease-out) .3s backwards,breathe 6s ease-in-out 1.9s infinite alternate}
+
+@media (max-width:900px){
+  .hero{grid-template-columns:minmax(0,1fr);gap:8px;padding-top:12px}
+  .hero .desk{order:-1;width:min(100%,420px,44svh)}
+  .split{grid-template-columns:minmax(0,1fr);gap:48px}
+  .split.flip > .copy{order:0}
+}
+@media (max-width:560px){
+  .nav-r .link{display:none}
+  /* hero: one centred column under the centred quill, the spare height split above and below rather than between */
+  .hero{align-content:center;gap:0;text-align:center;padding-top:0;padding-bottom:28px}
+  .hero h1{font-size:clamp(40px,11.5vw,56px)}
+  .hero .lead{font-size:16.5px;margin:20px auto 0}
+  .hero .ctas{justify-content:center;margin-top:28px}
+  .hero .desk{width:min(80%,320px,36svh);margin-bottom:6px}
+  /* one even rhythm between sections */
+  section.block{padding-top:104px}
+  .split{gap:40px}
+  .close{padding-top:112px;padding-bottom:96px}
+  /* ask: the two notes stacked clear of each other, the threads still landing on each */
+  .ask{min-height:560px}
+  .a,.dots{top:110px}
+  .a{width:100%}
+  .c1{left:4px;bottom:4px;width:210px}
+  .c2{right:0;bottom:150px;width:200px}
+  /* your yes: room under the card for the toast and dock that rise after Apply */
+  .yesvis{margin-bottom:56px}
+  .graph{height:480px}
+  footer .wrap{flex-direction:column;align-items:center;text-align:center;gap:12px}
+  footer nav a{padding:12px 4px}
+  footer nav{margin-block:-12px}
+  .nc h4{text-wrap:balance}
+  .wall{columns:2;column-gap:10px}
+  .wall .nc:nth-child(n+5){display:none}
+  .wall .nc{margin-bottom:10px}
+  .nc{padding:12px 12px 11px;border-radius:18px}
+  .nc h4{font-size:15.5px;padding-right:20px}
+  .nc p,.ck{font-size:12.5px}
+  .more{top:7px;right:5px;width:26px;height:26px}
+  .more svg{width:18px;height:18px}
+  .nmenu{top:36px}
+  .lp{margin:10px -12px -11px;padding:9px 12px;border-radius:0 0 17px 17px}
+}
+/* big screens: the page widens and the headline grows, so the hero fills the screen instead of floating in it */
+@media (min-width:1600px){
+  .wrap{max-width:1440px}
+  .hero h1{font-size:clamp(88px,4.8vw,98px)}
+  .hero h1 .ln{white-space:nowrap}
+}
+/* a phone on its side (any width): the hero keeps two columns, quill beside the words, so it fits the short screen */
+@media (max-height:500px) and (orientation:landscape){
+  .hero{grid-template-columns:minmax(0,1fr) minmax(0,.75fr);gap:24px;padding-top:0;padding-bottom:16px;text-align:left}
+  .hero .desk{order:0;width:min(100%,64svh)}
+  .hero h1{font-size:clamp(34px,5.2vw,46px)}
+  .hero .lead{margin-top:16px}
+  .hero .ctas{margin-top:22px}
+}
+@media (prefers-reduced-motion:reduce){
+  .glow{animation:none}
+  .js .rv{opacity:1;transform:none}
+  .threads path{stroke-dashoffset:0}.threads circle{opacity:1}
+  *{transition-duration:.01ms!important;transition-delay:0s!important}
+  .wall .nc,.ask *,.desk .glow,.small-desk .glow,.sheet .done i{animation:none!important}
+  .dots i{animation:none!important}
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add('js')</script>
+<canvas id="sky" aria-hidden="true"></canvas>
+<div class="page">
+<header id="hdr">
+  <div class="wrap nav">
+    <a class="brand" href="#" aria-label="Quill, home"><img src="quill-logo.png" width="99" height="120" alt="">Quill</a>
+    <div class="nav-r"><a class="link" href="/login">Log in</a><a class="btn" href="/signup">Start writing</a></div>
+  </div>
+</header>
+
+<main>
+  <section class="wrap hero">
+    <div>
+      <h1 class="rv"><span class="ln"><span style="--l:0">Write it down.</span></span><span class="ln"><span style="--l:1">Ask it later.</span></span></h1>
+      <p class="lead rv" style="--i:1">A quiet place for everything you write. When you need it back, just ask, and Quill <b>answers from your own notes</b>.</p>
+      <div class="ctas rv" style="--i:2"><a class="btn" href="/signup">Start writing</a><a class="link" href="/login">I have an account</a></div>
+    </div>
+    <div class="desk" aria-hidden="true">
+      <div class="glow"></div>
+      <img class="mark" src="quill-animated.svg" width="354" height="388" alt="">
+    </div>
+  </section>
+
+  <section class="wrap block" aria-labelledby="notesH">
+    <div class="split flip">
+      <div class="copy">
+        <h2 id="notesH" class="rv">Every kind of note, in one calm place</h2>
+        <p class="rv" style="--i:1">A grocery list, a half-formed idea, forty pages of thesis. They all live here, and <b>they all read like paper</b>.</p>
+        <ul class="feats rv" style="--i:2"><li>Checklists</li><li>Tags and folders</li><li>Link previews</li><li>Markdown</li><li>One-tap summaries</li></ul>
+      </div>
+      <div class="wall" aria-label="Notes on Quill's Home">
+        <article class="nc"><h4>Lisbon in May</h4><p>Flights are cheapest on a Tuesday. Two nights in Alfama, then somewhere by the river.</p><div class="tgs"><span>#travel</span><span>#plans</span></div></article>
+        <article class="nc"><h4>Weekend</h4>
+          <button class="ck" role="checkbox" aria-checked="true"><i></i>Book the train to Leeds</button>
+          <button class="ck" role="checkbox" aria-checked="false"><i></i>Return the library books</button>
+          <button class="ck" role="checkbox" aria-checked="false"><i></i>Call Mum about Sunday</button>
+          <div class="tgs"><span>#home</span></div></article>
+        <article class="nc"><h4>Thesis, chapter 2</h4><p>Lead with the field notes from weeks three to six. The literature comes after, as a reply.</p><div class="tgs"><span>#college</span></div></article>
+        <article class="nc"><h4>Lemon pasta</h4><p>Zest both lemons before you juice them. Pasta water does the rest.</p><div class="tgs"><span>#recipes</span></div></article>
+        <article class="nc"><h4>Leeds weekend</h4><p>Staying with Priya near Hyde Park. Market on Saturday.</p><div class="tgs"><span>#travel</span></div><div class="lp"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6v2h8.59L5 17.59 6.41 19 16 9.41V18h2V6z"/></svg><span class="t"><b>Kirkgate Market, Leeds</b><span>visitleeds.co.uk</span></span></div></article>
+        <article class="nc"><h4>Reading list</h4>
+          <button class="ck" role="checkbox" aria-checked="true"><i></i>Middlemarch</button>
+          <button class="ck" role="checkbox" aria-checked="false"><i></i>The Overstory</button>
+          <button class="ck" role="checkbox" aria-checked="false"><i></i>Thinking in Systems</button>
+          <div class="tgs"><span>#books</span></div></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap block" aria-labelledby="askH">
+    <div class="split">
+      <div class="copy">
+        <h2 id="askH" class="rv">Ask, and it answers from your notes</h2>
+        <p class="rv" style="--i:1">Ask the way you'd ask a friend. Quill finds the right notes, answers, and <b>shows you where it looked</b>.</p>
+        <p class="rv" style="--i:2">Never wrote it down? It'll say so. No guessing.</p>
+      </div>
+      <div class="ask" id="ask">
+        <svg class="threads" id="threads" aria-hidden="true"></svg>
+        <div class="q">When's my train to Leeds?</div>
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="a" id="ans"><span data-src="c2">Saturday at <b>08:12</b> from King's Cross</span>, <span data-src="c1">coach C, seat 41. You noted the return is an open ticket.</span></div>
+        <div class="cite c1" id="c1" tabindex="0"><h4>Train tickets</h4><p>08:12, coach C, seat 41. Return open.</p><div class="tg"><span>#travel</span></div></div>
+        <div class="cite c2" id="c2" tabindex="0"><h4>Weekend</h4><p>Train to Leeds, 08:12 from King's Cross…</p><div class="tg"><span>#home</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap block" aria-labelledby="yesH">
+    <div class="split flip">
+      <div class="copy">
+        <h2 id="yesH" class="rv">Nothing changes without your yes</h2>
+        <p class="rv" style="--i:1">Ask Quill to tidy up and it only suggests. <b>You pick what actually happens</b>, and anything it did can be undone.</p>
+      </div>
+      <div class="rv yesvis" style="--i:1">
+        <div class="sheet" id="sheet">
+          <div class="rvw">
+            <div class="sh"><b id="count">3 changes, 3 notes</b><span>Review before applying</span></div>
+            <div class="row">Untitled, 12 March<button class="tk" role="checkbox" aria-checked="true"><i></i>Archive</button></div>
+            <div class="row">Untitled, 2 April<button class="tk" role="checkbox" aria-checked="true"><i></i>Archive</button></div>
+            <div class="row">Untitled, 19 June<button class="tk" role="checkbox" aria-checked="true"><i></i>Archive</button></div>
+            <div class="sf"><button class="ds" type="button" id="discard">Discard</button><button class="ap" type="button" id="apply">Apply to 3 notes</button></div>
+          </div>
+          <div class="done"><span><i></i><span id="doneTxt">Done. 3 notes archived.</span></span></div>
+        </div>
+        <div class="dockzone">
+          <div class="toast" id="toast" role="status"><span id="toastTxt"></span><button type="button" id="undo" aria-label="Undo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button></div>
+          <div class="dock" aria-hidden="true"><span class="h"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 3 10.5V21h6v-6h6v6h6V10.5z"/></svg></span><span class="s"></span><span class="p"><svg width="15" height="15" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap block" aria-labelledby="skyH">
+    <div class="split">
+      <div class="copy">
+        <h2 id="skyH" class="rv">See how your notes connect</h2>
+        <p class="rv" style="--i:1">Notes that share a tag find each other. Your trips, your recipes and your thesis each form <b>their own little constellation</b>.</p>
+            <p class="hint rv" style="--i:2">Go on, drag one.</p>
+      </div>
+      <div class="graph rv" style="--i:1" id="graph">
+        <canvas id="gcv" role="img" aria-label="Your notes as a graph: notes that share a tag are joined by a line"></canvas>
+        <div class="gfilter" id="gfilter"></div>
+            <div class="gcard" id="gcard" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap close" aria-labelledby="endH">
+    <div class="small-desk rv"><div class="glow" aria-hidden="true"></div><img class="small-mark" src="quill-logo.png" width="99" height="120" alt=""></div>
+    <h2 id="endH" class="rv" style="--i:1">Start with one note</h2>
+    <p class="rv" style="--i:2">The rest will find each other.</p>
+    <div class="ctas rv" style="--i:3"><a class="btn" href="/signup">Start writing</a><a class="link" href="/login">Log in</a></div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#" aria-label="Quill, back to top"><img src="quill-logo.png" width="99" height="120" alt="">Quill</a>
+    <span>Notes that answer back.</span>
+    <nav aria-label="Account"><a href="/signup">Sign up</a><a href="/login">Log in</a></nav>
+  </div>
+</footer>
+</div>
+
+<script>
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// The app's own sky: drifting points, a few of them coral, joined when they come close
+(() => {
+  const cv = document.getElementById('sky'), ctx = cv.getContext('2d');
+  let W, H, nodes = [], dpr = 1;
+  const make = (w, h, sp) => ({ x: Math.random() * w, y: Math.random() * h, vx: (Math.random() - .5) * sp, vy: (Math.random() - .5) * sp, r: Math.random() * 1.2 + .5, accent: Math.random() < .2 });
+  function size(){
+    dpr = Math.min(devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.max(15, Math.min(50, Math.round(W * H / 35000))), sp = W < 768 ? .28 : .5;
+    while (nodes.length < n) nodes.push(make(W, H, sp)); nodes.length = n;
+  }
+  addEventListener('resize', size); size();
+  function tick(){
+    const maxD = W < 768 ? 115 : 165;
+    ctx.clearRect(0, 0, W, H);
+    for (const p of nodes) {
+      if (!reduce) { p.x += p.vx; p.y += p.vy; if (p.x < 0 || p.x > W) p.vx *= -1; if (p.y < 0 || p.y > H) p.vy *= -1; }
+      ctx.fillStyle = p.accent ? 'rgba(255,107,107,.5)' : 'rgba(244,234,220,.3)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
+    }
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < maxD) { const o = 1 - d / maxD; ctx.lineWidth = .75; ctx.strokeStyle = (a.accent || b.accent) ? `rgba(255,107,107,${o * .65})` : `rgba(244,234,220,${o * .35})`; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+    }
+    requestAnimationFrame(tick);
+  }
+  tick();
+})();
+
+// Header lifts into glass once the page moves
+const hdr = document.getElementById('hdr');
+let lastY = scrollY, ticking = false;
+function onScroll(){
+  ticking = false;
+  const y = Math.max(0, scrollY), dy = y - lastY;
+  hdr.classList.toggle('lifted', y > 10);
+  if (y < 120 || dy < -6) hdr.classList.remove('away');
+  else if (dy > 6 && !hdr.contains(document.activeElement)) hdr.classList.add('away');
+  if (Math.abs(dy) > 6) lastY = y;
+}
+addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
+onScroll();
+
+// Reveal on arrival (normal scrolling, nothing pinned)
+const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -10% 0px' });
+// the hero is always on the first screen: it plays on load (a frame later, so the rise is seen), not by the scroll trigger,
+// whose bottom margin would leave a short phone's buttons hidden until someone scrolls
+const heroRv = document.querySelectorAll('.hero .rv');
+requestAnimationFrame(() => requestAnimationFrame(() => heroRv.forEach((el) => el.classList.add('in'))));
+document.querySelectorAll('.rv').forEach((el) => { if (!el.closest('.hero')) io.observe(el); });
+// Arrivals: play a picture once, when it's well in view; with reduced motion, go straight to its end state
+const arrive = (el, play, th = .35) => {
+  if (reduce) return play(true);
+  const o = new IntersectionObserver(([e]) => { if (e.isIntersecting) { o.disconnect(); play(false); } }, { threshold: th });
+  o.observe(el);
+};
+const later = (now, ms, fn) => (now ? fn() : setTimeout(fn, ms));
+
+
+// Ask: fine lines from the answer to the notes it used, drawn when the section arrives
+(() => {
+  const box = document.getElementById('ask'), svg = document.getElementById('threads'), NS = 'http://www.w3.org/2000/svg';
+  function draw(){
+    svg.innerHTML = '';
+    const b = box.getBoundingClientRect(), a = document.getElementById('ans').getBoundingClientRect();
+    for (const id of ['c1', 'c2']) {
+      const c = document.getElementById(id).getBoundingClientRect();
+      const x1 = a.left - b.left + a.width * (id === 'c1' ? .3 : .78), y1 = a.bottom - b.top;
+      const x2 = c.left - b.left + c.width * .5, y2 = c.top - b.top;
+      const p = document.createElementNS(NS, 'path'); p.dataset.for = id;
+      const midY = (y1 + y2) / 2;
+      p.setAttribute('d', `M${x1} ${y1} C${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`);
+      svg.appendChild(p);
+      const len = p.getTotalLength(); p.style.setProperty('--len', len);
+      for (const [x, y, end] of [[x1, y1], [x2, y2, true]]) { const c0 = document.createElementNS(NS, 'circle'); c0.setAttribute('cx', x); c0.setAttribute('cy', y); c0.setAttribute('r', 3.2); if (end) c0.classList.add('end'); svg.appendChild(c0); }
+    }
+  }
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(draw);
+  addEventListener('resize', draw);
+  // arrival: the question, Quill typing, its answer, the notes it used, then the threads to them
+  arrive(box, (now) => [['in', 0], ['typing', 100], ['said', 350], ['cited', 600], ['linked', 950]].forEach(([c, ms]) => later(now, ms, () => box.classList.add(c))), .5);
+  // light one source: the card, its thread and the words of the answer it backs
+  const light = (id) => {
+    for (const c of ['c1', 'c2']) document.getElementById(c).classList.toggle('lit', c === id);
+    box.querySelectorAll('#ans [data-src]').forEach((e) => e.classList.toggle('lit', e.dataset.src === id));
+    svg.querySelectorAll('path').forEach((p) => { p.classList.toggle('lit', p.dataset.for === id); p.classList.toggle('dim', !!id && p.dataset.for !== id); });
+  };
+  for (const id of ['c1', 'c2']) {
+    const c = document.getElementById(id);
+    c.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') light(id); });
+    c.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') light(null); });
+    c.addEventListener('focus', () => { if (c.matches(':focus-visible')) light(id); }); c.addEventListener('blur', () => light(null));
+    c.addEventListener('click', (e) => { if (e.pointerType !== 'mouse') light(c.classList.contains('lit') ? null : id); });
+  }
+  document.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse' && !e.target.closest('.cite')) light(null); });
+})();
+
+// Your yes: ticks, apply, undo from the dock
+(() => {
+  const sheet = document.getElementById('sheet'), ticks = [...sheet.querySelectorAll('.row .tk')], count = document.getElementById('count'), apply = document.getElementById('apply');
+  const toast = document.getElementById('toast'), tTxt = document.getElementById('toastTxt');
+  const n = () => ticks.filter((t) => t.getAttribute('aria-checked') === 'true').length;
+  const pl = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
+  const refresh = () => { const k = n(); count.textContent = `${pl(k, 'change')}, ${pl(k, 'note')}`; apply.textContent = k ? `Apply to ${pl(k, 'note')}` : 'Nothing ticked'; apply.style.opacity = k ? 1 : .5; };
+  ticks.forEach((t) => t.addEventListener('click', () => { t.setAttribute('aria-checked', String(t.getAttribute('aria-checked') !== 'true')); refresh(); }));
+  let timer;
+  const show = (text) => { tTxt.textContent = text; toast.classList.remove('show'); void toast.offsetWidth; toast.classList.add('show'); clearTimeout(timer); timer = setTimeout(() => toast.classList.remove('show'), 5000); };
+  let leaving;
+  apply.addEventListener('click', () => {
+    const k = n(); if (!k || sheet.classList.contains('archiving')) return;
+    document.getElementById('doneTxt').textContent = `Done. ${pl(k, 'note')} archived.`;
+    let j = 0; ticks.forEach((t) => { const r = t.closest('.row'), go = t.getAttribute('aria-checked') === 'true'; r.classList.toggle('go', go); if (go) r.style.setProperty('--j', j++); });
+    sheet.classList.add('archiving');
+    leaving = setTimeout(() => { sheet.classList.add('applied'); show(`Archived ${pl(k, 'note')}`); }, reduce ? 0 : 300 + (k - 1) * 70);
+  });
+  const undo = () => { if (!sheet.classList.contains('applied')) return; clearTimeout(leaving); sheet.classList.remove('applied', 'archiving'); show('Undone. Notes are back.'); };
+  document.getElementById('undo').addEventListener('click', undo);
+  document.getElementById('discard').addEventListener('click', () => { ticks.forEach((t) => t.setAttribute('aria-checked', 'false')); refresh(); });
+  // arrival: Quill lays out each suggestion and ticks it as it lands, then offers Apply (the card's size never changes)
+  const rows = ticks.map((t) => t.closest('.row'));
+  if (!reduce) { ticks.forEach((t) => t.setAttribute('aria-checked', 'false')); refresh(); count.textContent = 'Looking through your notes…'; }
+  arrive(sheet, (now) => {
+    rows.forEach((r, i) => {
+      later(now, 300 + i * 340, () => r.classList.add('shown'));
+      later(now, 300 + i * 340 + 280, () => { ticks[i].setAttribute('aria-checked', 'true'); refresh(); });
+    });
+    later(now, 300 + rows.length * 340 + 200, () => sheet.classList.add('ready'));
+  }, .6);
+})();
+
+// The graph, drawn as Quill's Graph page draws it: cream nodes, faint white links between notes that share a tag,
+// a small force simulation, dragging, hover and the tag filter
+(() => {
+  const NOTES = [
+    ['Packing list', ['travel']], ['Train tickets', ['travel']], ['Lisbon in May', ['travel']], ['Leeds weekend', ['travel', 'home']],
+    ['Thesis, chapter 2', ['college']], ['Supervisor meeting', ['college']], ['Reading for Tuesday', ['college', 'books']], ['Reading list', ['books']],
+    ['Weekend', ['home']], ['Fridge right now', ['home', 'recipes']], ['Lemon pasta', ['recipes']], ['Dal tadka', ['recipes']],
+  ].map(([name, tags], i) => ({ id: i, name, tags, x: 0, y: 0, vx: 0, vy: 0, op: 1, rad: 9 }));
+  const LINKS = [];
+  NOTES.forEach((a, i) => NOTES.slice(i + 1).forEach((b) => { const sh = a.tags.filter((t) => b.tags.includes(t)); if (sh.length) LINKS.push({ a, b, sh, op: .2 }); }));
+  const TAGS = [...new Set(NOTES.flatMap((n) => n.tags))];
+  const box = document.getElementById('graph'), cv = document.getElementById('gcv'), ctx = cv.getContext('2d');
+  let W, H, dpr, scale, maxScale, cx = 0, cy = 0, tag = null, hover = null, drag = null, alpha = 1;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  function size(){ dpr = Math.min(devicePixelRatio || 1, 2); W = box.clientWidth; H = box.clientHeight; cv.width = W * dpr; cv.height = H * dpr; maxScale = innerWidth < 640 ? 2 : 2.4; scale = scale || maxScale; }
+  new ResizeObserver(() => { size(); alpha = Math.max(alpha, .3); }).observe(box); size();
+  // start each note near the others of its first tag, so the layout settles untangled (graph units; the canvas is drawn zoomed, as the app's view is)
+  NOTES.forEach((n, i) => { const g = TAGS.indexOf(n.tags[0]), a = g / TAGS.length * 6.283, j = i * 2.39996; const sx = innerWidth < 640 ? 40 : 90, sy = innerWidth < 640 ? 120 : 90; n.x = Math.cos(a) * sx + Math.cos(j) * 14; n.y = Math.sin(a) * sy + Math.sin(j) * 14; });
+  // the app's forces: charge -50 (-40 phone), links 50 long (45) at strength 1, a gentle pull to the centre, collision 16
+  function step(){
+    const phone = innerWidth < 640, charge = phone ? -40 : -50, dist = phone ? 45 : 50, centre = phone ? .035 : .06, cxk = phone ? .055 : centre, cyk = phone ? .025 : centre;
+    for (let i = 0; i < NOTES.length; i++) for (let j = i + 1; j < NOTES.length; j++) {
+      const a = NOTES[i], b = NOTES[j]; let dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy || 1, d = Math.sqrt(d2);
+      const fr = charge * alpha / d2; a.vx += dx * fr; a.vy += dy * fr; b.vx -= dx * fr; b.vy -= dy * fr;
+      if (d < 46) { const push = (46 - d) / d * .5; a.vx -= dx * push * .5; a.vy -= dy * push * .5; b.vx += dx * push * .5; b.vy += dy * push * .5; }
+    }
+    for (const l of LINKS) { const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y, d = Math.hypot(dx, dy) || 1, k = (d - dist) / d * alpha * .5 / Math.min(degree(l.a), degree(l.b)); l.a.vx += dx * k; l.a.vy += dy * k; l.b.vx -= dx * k; l.b.vy -= dy * k; }
+    const ax = W / scale / 2 * 0, ay = 0;
+    for (const n of NOTES) { n.vx += (ax - n.x) * cxk * alpha; n.vy += (ay - n.y) * cyk * alpha; if (n === drag) { n.vx = n.vy = 0; continue; } n.vx *= .6; n.vy *= .6; n.x += n.vx; n.y += n.vy; }
+    alpha = Math.max(alpha * .985, drag ? .3 : .002);
+  }
+  const deg = new Map(); const degree = (n) => deg.get(n) || 1;
+  LINKS.forEach((l) => { deg.set(l.a, (deg.get(l.a) || 0) + 1); deg.set(l.b, (deg.get(l.b) || 0) + 1); });
+  for (let i = 0; i < 300; i++) step();
+  alpha = .02; fit(true);
+  // arrival: the constellation forms. Each tag's notes spread out from the middle to where the layout above settled them,
+  // one group after another, overshooting a touch; links fade in as both their ends arrive, labels last
+  const FIN = NOTES.map((n) => [n.x, n.y]), mid = [0, 1].map((k) => FIN.reduce((s, p) => s + p[k], 0) / FIN.length);
+  const inGroup = {};
+  NOTES.forEach((n) => { const g = TAGS.indexOf(n.tags[0]); inGroup[g] = inGroup[g] || 0; n.delay = g * 150 + inGroup[g]++ * 70; n.ap = n.la = reduce ? 1 : 0; });
+  let born = null, intro = !reduce;
+  const back = (t) => 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2, clamp = (v) => Math.min(1, Math.max(0, v));
+  function introStep(){
+    if (born === null) return;
+    const t = performance.now() - born; let done = true;
+    NOTES.forEach((n, i) => {
+      const p = clamp((t - n.delay) / 1300), e = .1 + .9 * back(p);
+      n.x = mid[0] + (FIN[i][0] - mid[0]) * e; n.y = mid[1] + (FIN[i][1] - mid[1]) * e;
+      n.ap = clamp((t - n.delay) / 420); n.la = clamp((t - n.delay - 650) / 450);
+      if (p < 1 || n.la < 1) done = false;
+    });
+    if (done) { intro = false; NOTES.forEach((n) => { n.vx = n.vy = 0; }); }
+  }
+  arrive(box, () => { born = performance.now(); }, .4);
+  const toScreen = (n) => [W / 2 + (n.x - cx) * scale, H / 2 + (n.y - cy) * scale];
+  // what each note says, for the card a click opens
+  const BODY = {
+    'Packing list': 'Adapter, sunscreen, the good walking shoes.', 'Train tickets': '08:12, coach C, seat 41. Return open.',
+    'Lisbon in May': 'Flights are cheapest on a Tuesday. Two nights in Alfama.', 'Leeds weekend': 'Staying with Priya near Hyde Park. Market on Saturday.',
+    'Thesis, chapter 2': 'Lead with the field notes from weeks three to six.', 'Supervisor meeting': 'Thursday at three. Bring the new outline.',
+    'Reading for Tuesday': 'Middlemarch, chapters 4 to 6.', 'Reading list': 'Middlemarch, The Overstory, Thinking in Systems.',
+    'Weekend': 'Book the train to Leeds. Return the library books.', 'Fridge right now': 'Half a lemon, spinach, yoghurt, two eggs.',
+    'Lemon pasta': 'Zest both lemons before you juice them.', 'Dal tadka': 'The tadka goes in last: ghee, cumin, garlic.',
+  };
+  const card = document.getElementById('gcard');
+  let sel = null;
+  function open(n){
+    sel = n;
+    if (!n) { card.classList.remove('open'); return; }
+    card.innerHTML = `<h4>${n.name}</h4><p>${BODY[n.name] || ''}</p><div class="tg">${n.tags.map((t) => `<span>#${t}</span>`).join('')}</div>`;
+    place(); card.classList.add('open');
+  }
+  // on the side of the point away from the notes it's joined to, so the card never hides them; kept inside the graph
+  function place(){
+    if (!sel) return;
+    const [sx, sy] = toScreen(sel), w = card.offsetWidth, h = card.offsetHeight, gap = 16 * scale;
+    // a phone's graph fills the width, so there is no free side: the card opens just under the graph instead
+    if (innerWidth < 640) { card.style.transform = `translate(${(W - w) / 2}px,${H + 10}px)`; return; }
+    let mx = 0, my = 0;
+    LINKS.forEach((l) => { const o = l.a === sel ? l.b : l.b === sel ? l.a : null; if (o) { mx += o.x - sel.x; my += o.y - sel.y; } });
+    // try each side, the one facing away from its notes first, and take the first that covers none of the lit points
+    const right = [sx + gap, sy - h / 2], left = [sx - gap - w, sy - h / 2], below = [sx - w / 2, sy + gap + 8 * scale], above = [sx - w / 2, sy - gap - h];
+    const sides = Math.abs(mx) >= Math.abs(my) ? (mx > 0 ? [left, right, below, above] : [right, left, below, above]) : (my > 0 ? [above, below, right, left] : [below, above, right, left]);
+    const lit = [sel]; LINKS.forEach((l) => { if (l.a === sel) lit.push(l.b); if (l.b === sel) lit.push(l.a); });
+    const pad = 10, x0 = innerWidth < 640 ? 0 : -60;
+    let best = null, bestHits = Infinity;
+    for (const [px, py] of sides) {
+      const x = Math.max(x0, Math.min(W - w, px)), y = Math.max(0, Math.min(H - h, py));
+      const hits = lit.filter((n) => { const [nx, ny] = toScreen(n); return nx > x - pad && nx < x + w + pad && ny > y - pad && ny < y + h + pad; }).length;
+      if (hits < bestHits) { best = [x, y]; bestHits = hits; if (!hits) break; }
+    }
+    card.style.transform = `translate(${best[0]}px,${best[1]}px)`;
+  }
+  function highlighted(){
+    const f = hover || sel;
+    if (f) { const s2 = new Set([f]); LINKS.forEach((l) => { if (l.a === f) s2.add(l.b); if (l.b === f) s2.add(l.a); }); return s2; }
+    if (tag) return new Set(NOTES.filter((n) => n.tags.includes(tag)));
+    return new Set();
+  }
+  function fit(snap){
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const n of NOTES) { x0 = Math.min(x0, n.x - 40); x1 = Math.max(x1, n.x + 40); y0 = Math.min(y0, n.y - 14); y1 = Math.max(y1, n.y + 24); }
+    const top = 56, ts = Math.max(maxScale * .6, Math.min(maxScale, W / (x1 - x0), (H - top) / (y1 - y0))), tx = (x0 + x1) / 2, ty = (y0 + y1) / 2 - top / 2 / ts;
+    const k = snap ? 1 : .06; scale = lerp(scale, ts, k); cx = lerp(cx, tx, k); cy = lerp(cy, ty, k);
+  }
+  function frame(){
+    if (intro) introStep(); else { step(); if (!drag) fit(false); }
+    const hl = highlighted(), has = hl.size > 0;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(scale, scale); ctx.translate(-cx, -cy);
+    for (const l of LINKS) {
+      const f = hover || sel, lit = has && (f ? (l.a === f || l.b === f) : l.sh.includes(tag));
+      const target = has ? (lit ? .8 : .02) : .2; l.op = has ? lerp(l.op, target, .15) : .2;
+      ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y);
+      const lo = l.op * Math.min(l.a.ap, l.b.ap);
+      ctx.strokeStyle = lit ? `rgba(232,93,86,${lo})` : `rgba(255,255,255,${lo})`; ctx.lineWidth = lit ? 3.5 : .8; ctx.stroke();
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = innerWidth < 640 ? '6px Sans-Serif' : '5px Sans-Serif'; // a size up on phones, where the view can't zoom as far
+    for (const n of NOTES) {
+      const isH = hl.has(n), isHov = hover === n || sel === n;
+      n.op = has ? lerp(n.op, isH ? 1 : .08, .15) : 1; n.rad = lerp(n.rad, isHov ? 12 : 9, .15);
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.rad * (.45 + .55 * n.ap), 0, 6.283);
+      ctx.fillStyle = isHov ? `rgba(232,93,86,${n.op})` : `rgba(248,236,220,${n.op * n.ap})`; ctx.fill();
+      const ta = has ? (isHov ? n.op : isH ? n.op * .85 : n.op * .5) : .8;
+      ctx.fillStyle = `rgba(255,255,255,${ta * n.la})`; ctx.fillText(n.name, n.x, n.y + n.rad + 2);
+    }
+    ctx.restore();
+    place();
+    if (onScreen) requestAnimationFrame(frame); else looping = false;
+  }
+  // draw only while the graph is on screen (or nearly): no work, and no battery, for a picture nobody can see
+  let onScreen = true, looping = true;
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen && !looping) { looping = true; requestAnimationFrame(frame); } }, { rootMargin: '150px 0px' }).observe(box);
+  requestAnimationFrame(frame);
+  // pointer: hover a node, drag it around
+  const at = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left - W / 2) / scale + cx, (e.clientY - r.top - H / 2) / scale + cy]; };
+  const find = (x, y) => { let best = null, bd = 28 / scale; for (const n of NOTES) { const d = Math.hypot(n.x - x, n.y - y); if (d < bd) { bd = d; best = n; } } return best; };
+  cv.addEventListener('pointermove', (e) => { if (intro) return; const [x, y] = at(e); if (drag) { drag.x = x; drag.y = y; alpha = Math.max(alpha, .3); return; } hover = find(x, y); cv.style.cursor = hover ? 'grab' : 'default'; });
+  let down = null;
+  // a finger on a note drags it; a finger anywhere else scrolls the page as usual (the graph is most of a phone's screen)
+  cv.addEventListener('touchstart', (e) => { if (intro) return; const t = e.touches[0], r = cv.getBoundingClientRect(); if (e.touches.length === 1 && find((t.clientX - r.left - W / 2) / scale + cx, (t.clientY - r.top - H / 2) / scale + cy)) e.preventDefault(); }, { passive: false });
+  // a mouse press on the background lets go at once; a touch waits for the lift, so a scroll that starts there keeps the card open
+  const clear = () => { open(null); if (tag) setTag(null); };
+  cv.addEventListener('pointerdown', (e) => { if (intro) return; const [x, y] = at(e); const n = find(x, y); if (!n) { if (e.pointerType === 'mouse') clear(); else down = [e.clientX, e.clientY, null]; return; } drag = hover = n; down = [e.clientX, e.clientY, n]; cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing'; });
+  // a press that barely moved is a click: it opens that note's card, or closes it if it's open
+  const end = (e) => {
+    if (down && e.type === 'pointerup' && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 5) { if (down[2]) open(sel === down[2] ? null : down[2]); else clear(); }
+    down = null; drag = null; if (e.pointerType !== 'mouse') hover = null; cv.style.cursor = hover ? 'grab' : 'default';
+  };
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sel) open(null); });
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('pointerleave', () => { if (!drag) hover = null; });
+  // the tag filter: a round tag button that opens the list; a chosen tag becomes a pill with a close button
+  const fl = document.getElementById('gfilter');
+  const TAGICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m21.41 11.58-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58s1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41s-.23-1.06-.59-1.42M5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7"/></svg>';
+  function setTag(t){ tag = t; open(null); render(); }
+  function render(){
+    fl.innerHTML = '';
+    if (tag) {
+      const p = document.createElement('div'); p.className = 'gbtn pill'; p.innerHTML = `<i></i>#${tag}<button type="button" aria-label="Clear tag filter"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+      p.querySelector('button').onclick = () => setTag(null); fl.appendChild(p); return;
+    }
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'gbtn icon'; b.title = 'Filter by Tag'; b.innerHTML = TAGICON; b.setAttribute('aria-expanded', 'false');
+    const m = document.createElement('div'); m.className = 'gmenu';
+    TAGS.forEach((t) => { const it = document.createElement('button'); it.type = 'button'; it.innerHTML = `#${t}<span>${NOTES.filter((n) => n.tags.includes(t)).length}</span>`; it.onclick = () => setTag(t); m.appendChild(it); });
+    b.onclick = (e) => { e.stopPropagation(); const open = !m.classList.contains('open'); m.classList.toggle('open', open); b.classList.toggle('open', open); b.setAttribute('aria-expanded', String(open)); };
+    document.addEventListener('pointerdown', (e) => { if (!fl.contains(e.target)) { m.classList.remove('open'); b.classList.remove('open'); } }, { once: false });
+    fl.appendChild(b); fl.appendChild(m);
+  }
+  render();
+})();
+
+// Notes wall: checklists tick, as on a card in the app
+document.querySelectorAll('.ck').forEach((c) => c.addEventListener('click', () => c.setAttribute('aria-checked', String(c.getAttribute('aria-checked') !== 'true'))));
+// Notes wall arrival: the cards are set down one after another, then someone ticks off an item
+(() => {
+  const wall = document.querySelector('.wall'), cards = [...wall.querySelectorAll('.nc')];
+  cards.forEach((c, i) => { c.style.setProperty('--k', i); c.style.setProperty('--tilt', `${i % 2 ? 1.6 : -1.4}deg`); });
+  let touched = false;
+  wall.addEventListener('pointerdown', () => { touched = true; }, { once: true });
+  arrive(wall, (now) => {
+    wall.classList.add('in');
+    const ck = cards[1].querySelectorAll('.ck')[1];
+    if (!now) setTimeout(() => { if (!touched && ck.getAttribute('aria-checked') === 'false') ck.click(); }, 1400 + cards.length * 75);
+  }, .3);
+})();
+// Notes wall: each card's ⋮ opens the app's menu for a note on Home (Folder, Archive, Trash)
+(() => {
+  const ICON = {
+    more: 'M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
+    folder: 'M9.17 6l2 2H20v10H4V6h5.17M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z',
+    archive: 'M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM6.24 5h11.52l.81.97H5.44l.8-.97zM5 19V8h14v11H5zm8.45-9h-2.9v3H8l4 4 4-4h-2.55z',
+    trash: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
+  };
+  const svg = (d, z) => `<svg width="${z}" height="${z}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${d}"/></svg>`;
+  let openCard = null;
+  const close = () => { if (!openCard) return; openCard.classList.remove('menu-open'); openCard.querySelector('.nmenu').classList.remove('open'); openCard.querySelector('.more').setAttribute('aria-expanded', 'false'); openCard = null; };
+  document.querySelectorAll('.wall .nc').forEach((c) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'more'; b.title = 'Note options'; b.setAttribute('aria-haspopup', 'menu'); b.setAttribute('aria-expanded', 'false'); b.innerHTML = svg(ICON.more, 20);
+    const m = document.createElement('div'); m.className = 'nmenu'; m.setAttribute('role', 'menu');
+    m.innerHTML = [['Folder', 'folder'], ['Archive', 'archive'], ['Trash', 'trash', 'danger']].map(([label, ic, v]) => `<button type="button" role="menuitem" class="${v || ''}"><span>${label}</span>${svg(ICON[ic], 14)}</button>`).join('');
+    m.querySelectorAll('button').forEach((x) => x.addEventListener('click', close));
+    b.addEventListener('click', (e) => { e.stopPropagation(); const was = openCard === c; close(); if (was) return; openCard = c; c.classList.add('menu-open'); m.classList.add('open'); b.setAttribute('aria-expanded', 'true');
+      // kept on screen: a left-hand card's menu (wider on touch) would otherwise run off the left edge
+      m.style.marginRight = ''; const left = m.getBoundingClientRect().left;
+      if (left < 12) m.style.marginRight = `${-(12 - left) / (parseFloat(getComputedStyle(m).zoom) || 1)}px`; });
+    c.append(b, m);
+  });
+  document.addEventListener('pointerdown', (e) => { if (openCard && !e.target.closest('.nmenu, .more')) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  // a turned phone or resized window moves the card from under its menu; close it (height alone changes as a phone's address bar hides)
+  let lastW = innerWidth; addEventListener('resize', () => { if (innerWidth !== lastW) { lastW = innerWidth; close(); } });
+})();
+// Notes wall: pick a tag and only its notes stay lit; pick it again, or anywhere else, to let go
+(() => {
+  const wall = document.querySelector('.wall'), chips = [...wall.querySelectorAll('.tgs span')];
+  let tag = null;
+  const pick = (t) => {
+    tag = t; wall.classList.toggle('picking', !!t);
+    wall.querySelectorAll('.nc').forEach((c) => c.classList.toggle('match', !!t && [...c.querySelectorAll('.tgs span')].some((x) => x.textContent === t)));
+    chips.forEach((x) => { x.classList.toggle('on', x.textContent === t); x.setAttribute('aria-pressed', String(x.textContent === t)); });
+  };
+  chips.forEach((x) => {
+    x.setAttribute('role', 'button'); x.tabIndex = 0; x.setAttribute('aria-pressed', 'false');
+    x.addEventListener('click', (e) => { e.stopPropagation(); pick(tag === x.textContent ? null : x.textContent); });
+    x.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); x.click(); } });
+  });
+  document.addEventListener('pointerdown', (e) => { if (tag && !e.target.closest('.tgs span')) pick(null); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && tag) pick(null); });
+})();
+</script>
+</body>
+</html>

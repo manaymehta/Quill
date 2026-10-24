@@ -95,7 +95,7 @@ const RowMenu = ({ anchor, items, onClose }) => {
               variants={shutterItem}
               onClick={() => { onClose(); item.onClick(); }}
               className={`flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full ${
-                item.danger ? 'text-red-400 hover:bg-red-500/20' : 'text-stone-300 hover:bg-white/[0.15] hover:text-white'
+                item.danger ? 'text-[#e85d56] hover:bg-[#e85d56]/20' : 'text-stone-300 hover:bg-white/[0.15] hover:text-white'
               }`}
             >
               <span>{item.label}</span>
@@ -205,7 +205,7 @@ const NewChatButton = ({ isBusy, isFull, onNew }) => (
 );
 
 const ChatList = ({ chats, error, activeChatId, isBusy, onOpen, onRename, onTogglePin, onDelete, onNew }) => {
-  if (error) return <Hint className="text-red-400">{error}</Hint>;
+  if (error) return <Hint className="text-[#e85d56]">{error}</Hint>;
   if (!chats) return <Hint>Loading chats…</Hint>;
   if (chats.length === 0) {
     return (
@@ -278,7 +278,7 @@ const shortWhen = (date) => {
 };
 
 const ActivityLog = ({ activity, error, onUndo }) => {
-  if (error) return <Hint className="text-red-400">{error}</Hint>;
+  if (error) return <Hint className="text-[#e85d56]">{error}</Hint>;
   if (!activity) return <Hint>Loading activity…</Hint>;
   if (activity.length === 0) return <Hint>No bulk changes yet. They'll be listed here, with Undo, for {RECEIPT_TTL_DAYS} days.</Hint>;
   return (

@@ -771,7 +771,7 @@ const TabDock = () => {
           aria-label="Close tab"
           onClick={(e) => { e.stopPropagation(); handleCloseTab(id); }}
           style={{ width: CLOSE_BUTTON_PX, height: CLOSE_BUTTON_PX }}
-          className={`relative flex items-center justify-center rounded-full shrink-0 text-stone-500 hover:text-red-500 hover:bg-stone-200/60 transition-colors after:absolute after:-inset-2 ${isActive ? '' : 'pointer-events-none'}`}
+          className={`relative flex items-center justify-center rounded-full shrink-0 text-stone-500 hover:text-[#e85d56] hover:bg-stone-200/60 transition-colors after:absolute after:-inset-2 ${isActive ? '' : 'pointer-events-none'}`}
           title="Close tab"
         >
           <MdClose className="text-xs cursor-pointer shrink-0" />
@@ -788,7 +788,7 @@ const TabDock = () => {
             aria-label="Close tab"
             onClick={(e) => { e.stopPropagation(); handleCloseTab(id); }}
             style={{ width: CLOSE_BUTTON_PX, height: CLOSE_BUTTON_PX }}
-            className="relative flex items-center justify-center rounded-full shrink-0 text-stone-300 hover:text-red-300 hover:bg-white/20 transition-colors after:absolute after:-inset-2"
+            className="relative flex items-center justify-center rounded-full shrink-0 text-stone-300 hover:text-[#fb6d65] hover:bg-white/20 transition-colors after:absolute after:-inset-2"
             title="Close tab"
           >
             <MdClose className="text-xs cursor-pointer shrink-0" />
@@ -947,7 +947,7 @@ const TabDock = () => {
             }}
             onClick={handleNewNote}
             title="New Note"
-            className="shrink-0 cursor-pointer group relative flex items-center justify-center rounded-full bg-[#dd5e57] text-white hover:bg-[#fb6d65] group-hover/dot:bg-[#fb6d65] transition-colors duration-200"
+            className="shrink-0 cursor-pointer group relative flex items-center justify-center rounded-full bg-[#e85d56] text-white hover:bg-[#fb6d65] group-hover/dot:bg-[#fb6d65] transition-colors duration-200"
           >
             <MdAdd style={{ opacity: 'var(--dock-plus-icon, 1)' }} className="text-[22px] shrink-0 transition-transform duration-200 origin-center group-hover:rotate-90" />
           </motion.button>

@@ -28,7 +28,7 @@ const ProfileInfo = ({ onLogout }) => {
 			{/* Avatar Button */}
 			<button 
 				onClick={() => setIsOpen(!isOpen)}
-				className={`w-10 h-10 md:w-11 md:h-11 flex items-center justify-center rounded-full text-white font-medium bg-[#e85d56] hover:bg-[#d4544d] transition-colors cursor-pointer outline-none ${isOpen ? 'ring-[3px] ring-white/20' : ''}`}
+				className={`w-10 h-10 md:w-11 md:h-11 flex items-center justify-center rounded-full text-white font-medium bg-[#e85d56] hover:bg-[#fb6d65] transition-colors cursor-pointer outline-none ${isOpen ? 'ring-[3px] ring-white/20' : ''}`}
 				aria-label="Account menu"
 			>
 				<p className='font-bold text-sm md:text-base'>{getInitials(user?.fullName)}</p>

@@ -32,7 +32,7 @@ export const changeTitle = (c) => {
 
 // ── Buttons (the editor's) ──
 // Main action: the editor's "Save Changes"
-export const btnPrimary = 'inline-flex items-center justify-center gap-1.5 px-3 md:px-4 py-2 rounded-lg text-xs font-medium text-white bg-[#dd5e57] hover:bg-[#fb6d65] hover:shadow-md transition-all whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#dd5e57] disabled:hover:shadow-none';
+export const btnPrimary = 'inline-flex items-center justify-center gap-1.5 px-3 md:px-4 py-2 rounded-lg text-xs font-medium text-white bg-[#e85d56] hover:bg-[#fb6d65] hover:shadow-md transition-all whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#e85d56] disabled:hover:shadow-none';
 // Quiet action: the editor's "Discard" / toolbar buttons
 export const btnQuiet = 'inline-flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-lg text-xs font-medium text-stone-500 hover:text-[#333] hover:bg-black/5 transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
 // Soft chip: the editor's "Folder" chip

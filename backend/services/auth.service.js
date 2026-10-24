@@ -92,6 +92,63 @@ const issueAuthentication = async (user, req, res) => {
 
 const REFRESH_REUSE_GRACE_PERIOD_MS = 30 * 1000;
 
+const isWithinGracePeriod = (session, now) => Boolean(
+    session?.revokedAt && now.getTime() - session.revokedAt.getTime() <= REFRESH_REUSE_GRACE_PERIOD_MS
+);
+
+// A fresh access token without touching the refresh cookie (for a request that raced another one)
+const issueAccessOnly = async (userId, User) => {
+    const user = await User.findById(userId);
+    if (!user) return null;
+    return {
+        accessToken: createAccessToken(user),
+        user: serializeUser(user),
+    };
+};
+
+// A rotation whose reply never reached the browser (backend restarted mid-request, page reloaded,
+// timeout) leaves the browser holding the old, revoked token. If the token it was rotated to was
+// never used, nobody holds a live token of this family yet, so rotate again from the old one instead
+// of calling it a replay. A stolen old token gets the same while its successor is unused, but the
+// owner's next refresh then presents that successor, now revoked, and the whole family is revoked as
+// before.
+// Returns the authentication, null to refuse, or undefined when this isn't a lost reply.
+const recoverLostRotation = async (staleSession, now, req, res, User) => {
+    if (!staleSession.replacedByHash) return undefined;
+
+    const successor = await RefreshSession.findOne({ tokenHash: staleSession.replacedByHash });
+    if (!successor || successor.expiresAt <= now) return undefined;
+
+    const claimedSuccessor = await RefreshSession.findOneAndUpdate(
+        { _id: successor._id, revokedAt: null, expiresAt: { $gt: now } },
+        { $set: { revokedAt: now } },
+        { new: true }
+    );
+
+    if (!claimedSuccessor) {
+        // Another request recovering the same lost reply claimed it at this exact moment
+        const freshlyClaimed = await RefreshSession.findById(successor._id);
+        return isWithinGracePeriod(freshlyClaimed, now) ? issueAccessOnly(freshlyClaimed.userId, User) : undefined;
+    }
+
+    const user = await User.findById(claimedSuccessor.userId);
+    if (!user) return null;
+
+    const nextSession = await createRefreshSession(user, req, claimedSuccessor.familyId);
+    // The stale token now leads to the new one, so the same lost reply happening again is recovered the
+    // same way. The abandoned successor stays without one: presented later, it's a replay.
+    await RefreshSession.updateOne(
+        { _id: staleSession._id },
+        { $set: { replacedByHash: nextSession.tokenHash } }
+    );
+    setRefreshCookie(res, nextSession.rawToken);
+
+    return {
+        accessToken: createAccessToken(user),
+        user: serializeUser(user),
+    };
+};
+
 const rotateAuthentication = async (req, res, User) => {
     const rawToken = getRefreshTokenFromRequest(req);
     if (!rawToken) return null;
@@ -119,7 +176,11 @@ const rotateAuthentication = async (req, res, User) => {
             return null;
         }
 
-        // 2. Outside grace period: Genuine replay attack detected! Revoke the whole
+        // 2. Outside grace period, but the token it was rotated to was never used: a lost reply
+        const recovered = await recoverLostRotation(existingSession, now, req, res, User);
+        if (recovered !== undefined) return recovered;
+
+        // 3. Otherwise: Genuine replay attack detected! Revoke the whole
         // family so an attacker cannot continue using sibling refresh tokens.
         await RefreshSession.updateMany(
             { familyId: existingSession.familyId, revokedAt: null },

@@ -6,7 +6,7 @@ import { useModalStore } from './useModalStore';
 const ConfirmModal = () => {
     const confirmModal = useModalStore((s) => s.confirmModal);
     const closeConfirmModal = useModalStore((s) => s.closeConfirmModal);
-    const { isOpen, title, message, confirmLabel, variant, onConfirm } = confirmModal;
+    const { isOpen, title, message, confirmLabel, onConfirm } = confirmModal;
 
     if (typeof window === 'undefined' || !document.body) return null;
 
@@ -15,12 +15,8 @@ const ConfirmModal = () => {
         closeConfirmModal();
     };
 
-    // Variant mapping for styling
-    const confirmBtnStyles = variant === 'danger'
-        ? 'bg-[#e85d56] text-white hover:bg-opacity-90 shadow-lg shadow-[#e85d56]/20'
-        : variant === 'warning'
-        ? 'bg-[#f2994a] text-white hover:bg-opacity-90 shadow-lg shadow-[#f2994a]/20'
-        : 'bg-[#f4eadc] text-stone-900 hover:bg-opacity-90';
+    // Every confirm button is the app's coral: it's the dialog's main action, whatever the variant
+    const confirmBtnStyles = 'bg-[#e85d56] text-white hover:bg-[#fb6d65] shadow-lg shadow-[#e85d56]/20';
 
     return createPortal(
         <AnimatePresence>

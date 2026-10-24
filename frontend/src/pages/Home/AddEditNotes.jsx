@@ -743,7 +743,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         />
 
         {/* tags and tag input at the top - single horizontal scrollable row with sticky pinned add button when overflowing */}
-        <div className="relative flex items-center mb-4 md:mb-6 shrink-0 font-sans">
+        <div className="relative flex items-center mb-4 md:mb-6 shrink-0 font-[family-name:Poppins,sans-serif]">
           <div
             ref={tagScrollContainerRef}
             onScroll={checkTagOverflow}
@@ -761,14 +761,14 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                         e.preventDefault();
                       }
                     }}
-                    className="inline-flex items-center px-2.5 py-0.5 bg-[#f2dfd2] text-[#d55343] text-[13px] md:text-[15px] font-normal tracking-wide rounded-full shrink-0 whitespace-nowrap transition-all duration-150"
+                    className="inline-flex items-center px-2.5 py-0.5 bg-[#ebe0d3] border border-[#e0d2bf] shadow-xs text-stone-600 text-[13px] leading-[1.5] font-medium rounded-full shrink-0 whitespace-nowrap transition-all duration-150"
                   >
-                    <span>#</span>
+                    <span className="text-[#e85d56] font-semibold mr-px">#</span>
                     <input
                       type="text"
                       autoFocus
                       onFocus={(e) => e.target.select()}
-                      className="bg-transparent text-[13px] md:text-[15px] font-normal tracking-wide outline-none text-[#d55343] caret-[#e85d56] cursor-text shrink-0 p-0 m-0"
+                      className="bg-transparent text-[13px] leading-[1.5] font-medium outline-none text-stone-700 caret-[#e85d56] cursor-text shrink-0 p-0 m-0"
                       size={Math.max(editingTagValue.length, 1)}
                       style={{ fieldSizing: 'content', minWidth: '1ch' }}
                       value={editingTagValue}
@@ -787,7 +787,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                     />
                     <button
                       type="button"
-                      className="overflow-hidden transition-all duration-150 ease-out flex items-center justify-center rounded-full hover:bg-black/5 w-3.5 opacity-70 ml-1 text-[#e85d56]/70 hover:text-[#e85d56]"
+                      className="overflow-hidden transition-all duration-150 ease-out flex items-center justify-center rounded-full hover:bg-black/5 w-3.5 opacity-70 ml-1 text-stone-400 hover:text-stone-700"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -810,13 +810,13 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                     setEditingTagIndex(index);
                     setEditingTagValue(tag);
                   }}
-                  className="inline-flex items-center px-2.5 py-0.5 bg-[#f2dfd2] text-[#d55343] text-[13px] md:text-[15px] font-normal tracking-wide rounded-full cursor-pointer shrink-0 whitespace-nowrap group/removetag transition-all duration-150 hover:bg-[#ebd5c6]"
+                  className="inline-flex items-center px-2.5 py-0.5 bg-[#ebe0d3] border border-[#e0d2bf] shadow-xs text-stone-600 text-[13px] leading-[1.5] font-medium rounded-full cursor-pointer shrink-0 whitespace-nowrap group/removetag transition-all duration-150 hover:bg-[#e4d7c8]"
                   title="Click to edit tag"
                 >
-                  <span>#</span>{tag}
+                  <span className="text-[#e85d56] font-semibold mr-px">#</span>{tag}
                   <button
                     type="button"
-                    className="overflow-hidden transition-all duration-150 ease-out flex items-center justify-center rounded-full hover:bg-black/5 w-0 opacity-0 group-hover/removetag:w-3.5 group-hover/removetag:opacity-100 group-hover/removetag:ml-1 text-[#e85d56]/70 hover:text-[#e85d56]"
+                    className="overflow-hidden transition-all duration-150 ease-out flex items-center justify-center rounded-full hover:bg-black/5 w-0 opacity-0 group-hover/removetag:w-3.5 group-hover/removetag:opacity-100 group-hover/removetag:ml-1 text-stone-400 hover:text-stone-700"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -843,7 +843,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                 ref={tagInputRef}
                 type="text"
                 placeholder="Add tag"
-                className="bg-transparent text-[13px] md:text-[15px] font-normal tracking-wide outline-none w-20 md:w-28 placeholder-stone-500 text-stone-700 caret-[#e85d56] cursor-text shrink-0"
+                className="bg-transparent text-[13px] font-medium outline-none w-20 md:w-28 placeholder-stone-500 text-stone-700 caret-[#e85d56] cursor-text shrink-0"
                 value={tagInputValue}
                 onChange={(e) => setTagInputValue(e.target.value)}
                 onBlur={handleAddTag}
@@ -863,7 +863,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
               <button
                 type="button"
                 onClick={handleScrollToTagInput}
-                className="h-6 w-6 rounded-full bg-[#e85d56] text-white hover:bg-[#d55343] shadow-xs hover:shadow-md cursor-pointer transition-all duration-200 ease-out flex items-center justify-center border border-[#e85d56]/10 hover:scale-105 active:scale-95"
+                className="h-6 w-6 rounded-full bg-[#e85d56] text-white hover:bg-[#fb6d65] shadow-xs hover:shadow-md cursor-pointer transition-all duration-200 ease-out flex items-center justify-center border border-[#e85d56]/10 hover:scale-105 active:scale-95"
                 title="Scroll to add tag"
               >
                 <MdAdd className="text-sm" />
@@ -873,7 +873,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         </div>
 
         <div className='flex flex-col gap-2 flex-grow'>
-          {error && (<p className='text-xs text-red-500 mb-2 shrink-0'>{error}</p>)}
+          {error && (<p className='text-xs text-[#e85d56] mb-2 shrink-0'>{error}</p>)}
 
           {isChecklist ? (
             <div className="flex-grow">
@@ -1059,7 +1059,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           <button
             onClick={handleSummarize}
             disabled={isSummarizing || isChecklist || !content.trim()}
-            className={`flex items-center justify-center gap-1.5 p-2 md:px-2.5 md:py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isSummarizing ? 'opacity-50 animate-pulse text-[#d97757]' : isChecklist || !content.trim() ? 'opacity-40 cursor-not-allowed text-stone-500' : 'text-stone-500 hover:text-[#d97757] hover:bg-orange-50'}`}
+            className={`flex items-center justify-center gap-1.5 p-2 md:px-2.5 md:py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isSummarizing ? 'opacity-50 animate-pulse text-[#e85d56]' : isChecklist || !content.trim() ? 'opacity-40 cursor-not-allowed text-stone-500' : 'text-stone-500 hover:text-[#e85d56] hover:bg-orange-50'}`}
             title="Summarize"
           >
             <FaWandMagicSparkles className="text-lg md:text-xs" />
@@ -1092,13 +1092,13 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
           <button
             onClick={onClose}
-            className="px-2 md:px-3 py-2.5 rounded-lg text-xs text-stone-500 font-medium hover:text-[#ef4444] cursor-pointer hover:bg-red-50 transition-colors whitespace-nowrap"
+            className="px-2 md:px-3 py-2.5 rounded-lg text-xs text-stone-500 font-medium hover:text-[#e85d56] cursor-pointer hover:bg-[#e85d56]/10 transition-colors whitespace-nowrap"
           >
             Discard
           </button>
           <button
             onClick={handleAddNote}
-            className="px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-xs font-medium text-white cursor-pointer bg-[#dd5e57] hover:bg-[#fb6d65] hover:shadow-md transition-all flex items-center gap-1.5 whitespace-nowrap"
+            className="px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-xs font-medium text-white cursor-pointer bg-[#e85d56] hover:bg-[#fb6d65] hover:shadow-md transition-all flex items-center gap-1.5 whitespace-nowrap"
           >
             <span className="md:hidden">Save</span>
             <span className="hidden md:inline">{type === "edit" ? "Save Changes" : "Save Note"}</span>

@@ -131,7 +131,7 @@
    --dot-mark-r: the + button's radius. 1px soft edge, as antialiasing. */
 .dock-glass[data-dot-mark] {
   background-image: radial-gradient(circle, var(--dot-mark-color) calc(var(--dot-mark-r) - 0.5px), transparent calc(var(--dot-mark-r) + 0.5px));
-  --dot-mark-color: #dd5e57;
+  --dot-mark-color: #e85d56;
 }
 .dock-glass[data-dot-mark]:hover {
   --dot-mark-color: #fb6d65;

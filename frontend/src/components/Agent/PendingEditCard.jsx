@@ -12,7 +12,7 @@ export const DiffView = ({ parts }) => (
         key={idx}
         className={part.added
           ? 'bg-emerald-600/15 text-emerald-900 rounded-sm'
-          : part.removed ? 'bg-[#e85d56]/15 text-[#a8392f] line-through rounded-sm' : 'text-stone-500'}
+          : part.removed ? 'bg-[#e85d56]/15 text-[#b8413a] line-through rounded-sm' : 'text-stone-500'}
       >
         {part.value}
       </span>
@@ -60,7 +60,7 @@ const PendingEditCard = ({ edit, onAction }) => {
           {edit.titleChange && (
             <p className="text-xs">
               <span className="text-stone-500">Title </span>
-              <span className="line-through text-[#c0493f]">{edit.titleChange.from || '(untitled)'}</span>
+              <span className="line-through text-[#b8413a]">{edit.titleChange.from || '(untitled)'}</span>
               <span className="text-stone-400"> → </span>
               <span className="font-semibold text-[#333]">{edit.titleChange.to || '(untitled)'}</span>
             </p>
@@ -107,7 +107,7 @@ const PendingEditCard = ({ edit, onAction }) => {
         )}
         {edit.status === 'skipped' && <ResultLine>Skipped — your note is unchanged.</ResultLine>}
         {edit.status === 'failed' && (
-          <ResultLine icon={<MdErrorOutline className="text-base" />} className="text-[#c0493f]">
+          <ResultLine icon={<MdErrorOutline className="text-base" />} className="text-[#b8413a]">
             {edit.reason || 'Could not apply this edit.'}
           </ResultLine>
         )}

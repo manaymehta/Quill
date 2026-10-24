@@ -133,7 +133,7 @@ const GlobalEditorOverlay = () => {
     <>
       <h3
         onPointerDown={onTitlePointerDown}
-        className={`text-2xl font-medium mb-4 pt-2 md:pt-0 ${onTitlePointerDown ? 'touch-none' : ''} ${panelContent ? 'text-[#d97757]' : 'text-white'}`}
+        className={`text-2xl font-medium mb-4 pt-2 md:pt-0 ${onTitlePointerDown ? 'touch-none' : ''} ${panelContent ? 'text-[#e85d56]' : 'text-white'}`}
         style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
       >
         {panelContent ? 'Summary' : 'Mock Panel'}
@@ -169,7 +169,7 @@ const GlobalEditorOverlay = () => {
         <div className="fixed top-2.5 md:top-4 left-3 z-[90] flex items-center">
           <button
             onClick={toggleSidebar}
-            className="sidebar-toggle-btn w-10 h-10 rounded-full bg-(--page-bg)/85 hover:bg-(--page-bg) backdrop-blur-md text-[#dd5e57] hover:text-white border border-white/10 shadow-lg cursor-pointer transition-all duration-150 flex items-center justify-center"
+            className="sidebar-toggle-btn w-10 h-10 rounded-full bg-(--page-bg)/85 hover:bg-(--page-bg) backdrop-blur-md text-[#e85d56] hover:text-white border border-white/10 shadow-lg cursor-pointer transition-all duration-150 flex items-center justify-center"
             title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
           >
             <FiMenu className="text-2xl" />

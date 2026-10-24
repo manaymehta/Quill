@@ -351,7 +351,7 @@ const HeldSheet = ({ proposal, onRelease, onDiscard }) => {
       <div className="flex flex-wrap gap-1.5 px-4 pb-3">
         {proposal.changes.map((c) => <span key={c.key} className="inline-flex items-center rounded-full border border-black/10 px-2.5 py-1 text-xs md:text-[13px]"><ChangeLabel change={c} /></span>)}
       </div>
-      {proposal.error && <p className="px-4 pb-2 text-xs text-[#c0493f]">{proposal.error}</p>}
+      {proposal.error && <p className="px-4 pb-2 text-xs text-[#b8413a]">{proposal.error}</p>}
       <SheetFooter stateKey={proposal.releasing || 'held'}>
         <button disabled={busy} onClick={onDiscard} className={`${btnQuiet} mr-auto`}>Discard</button>
         <button disabled={busy} onClick={() => onRelease('show')} className={btnChip}>
@@ -576,7 +576,7 @@ const OpenReviewList = ({ proposal, onToggle, onApply, onUndo, onDiscard, onOpen
           />
         ))}
       </div>
-      {proposal.error && <p className="px-4 pb-2 text-xs text-[#c0493f]">{proposal.error}</p>}
+      {proposal.error && <p className="px-4 pb-2 text-xs text-[#b8413a]">{proposal.error}</p>}
       <ReviewFooter proposal={proposal} noteCount={noteCount} onApply={onApply} onDiscard={onDiscard} onUndo={onUndo} sticky={hasAction} />
       </div>
     </Sheet>

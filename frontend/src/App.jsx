@@ -1,8 +1,6 @@
 import React, { useEffect, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home/Home';
-import SignUp from './pages/SignUp/SignUp';
-import Login from './pages/Login/Login';
 import MainLayout from './components/Layout/MainLayout';
 import Archive from './pages/Archive/Archive';
 import Trash from './pages/Trash/Trash';
@@ -29,9 +27,12 @@ const App = () => {
       <Routes>
 
         {/* Public Routes*/}
-        <Route path="/" element={!isLoggedIn ? <LandingPage /> : <Navigate to="/dashboard" />} />
-        <Route path="/login" element={!isLoggedIn ? <Login /> : <Navigate to="/dashboard" />} />
-        <Route path="/signup" element={!isLoggedIn ? <SignUp /> : <Navigate to="/dashboard" />} />
+        {/* one page for all three: the landing page stays mounted, and /login and /signup open its card beside the quill */}
+        <Route element={!isLoggedIn ? <LandingPage /> : <Navigate to="/dashboard" />}>
+          <Route path="/" element={null} />
+          <Route path="/login" element={null} />
+          <Route path="/signup" element={null} />
+        </Route>
 
         {/* Protected Routes*/}
         <Route element={<MainLayout />}>

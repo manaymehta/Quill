@@ -1,0 +1,2474 @@
+{
+ "url": "index.html",
+ "at": "2026-10-23T17:44:22.280Z",
+ "allow": [],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 7,
+   "filled": [
+    0.95,
+    0.8,
+    0.18,
+    0.32,
+    0.71,
+    1,
+    1
+   ],
+   "motion": {
+    "elements": 428,
+    "css": 414,
+    "transitions": 14,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 6241,
+     "screens": 6.9,
+     "words": 552,
+     "img": 4,
+     "video": 0,
+     "canvas": 0,
+     "svg": 6,
+     "sections": 4,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 5,
+     "uiAbuse": false,
+     "realPictures": 4,
+     "videoCount": 0,
+     "uiPictures": 2,
+     "pictureSamples": [
+      "scholar-sharpening-his-quill.jpg",
+      "alexander-jamieson-celestial-atlas-plate-9.jpg",
+      "1776-chart-of-the-constellation-cancer-and.jpg",
+      "quill-pens.jpg"
+     ],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Quill Quill Quill Quill Quill Quill Quill Quill",
+     "words": 8,
+     "chars": 47,
+     "lines": 1,
+     "size": 207.4,
+     "vw": 14.4,
+     "font": "Poppins",
+     "weight": 700,
+     "tracking": -0.045,
+     "leading": 1,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.99,
+     "top": 8,
+     "tag": "div",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Notes that answer back",
+     "words": 4,
+     "lines": 1,
+     "size": 40,
+     "font": "Poppins"
+    },
+    "headings": [
+     {
+      "text": "Quill Quill Quill Quill Quill Quill Quill Quill",
+      "words": 8,
+      "chars": 47,
+      "lines": 1,
+      "size": 207.4,
+      "vw": 14.4,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.045,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.99,
+      "top": 8,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Notes that answer back",
+      "words": 4,
+      "chars": 22,
+      "lines": 1,
+      "size": 40,
+      "vw": 2.8,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.02,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.34,
+      "top": 653,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Start writing",
+      "words": 2,
+      "chars": 13,
+      "lines": 1,
+      "size": 28,
+      "vw": 1.9,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.015,
+      "leading": 1.05,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.16,
+      "top": 749,
+      "tag": "a",
+      "kind": "heading"
+     },
+     {
+      "text": "Lisbon in May",
+      "words": 3,
+      "chars": 13,
+      "lines": 1,
+      "size": 37.4,
+      "vw": 2.6,
+      "font": "Playfair Display",
+      "weight": 600,
+      "tracking": 0,
+      "leading": 1.12,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.36,
+      "top": 1261,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Writing stays quiet",
+      "words": 3,
+      "chars": 19,
+      "lines": 2,
+      "size": 40,
+      "vw": 2.8,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.02,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.22,
+      "top": 1364,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "What's inside",
+      "words": 2,
+      "chars": 13,
+      "lines": 1,
+      "size": 28,
+      "vw": 1.9,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.01,
+      "leading": 1.15,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.97,
+      "top": 2072,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "How a tidy-up goes",
+      "words": 4,
+      "chars": 18,
+      "lines": 1,
+      "size": 28,
+      "vw": 1.9,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.01,
+      "leading": 1.15,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.4,
+      "top": 2665,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Every note is a star",
+      "words": 5,
+      "chars": 20,
+      "lines": 2,
+      "size": 187.2,
+      "vw": 13,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.05,
+      "leading": 0.86,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "center",
+      "position": "center",
+      "widthRatio": 0.64,
+      "top": 4280,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Write",
+      "words": 1,
+      "chars": 5,
+      "lines": 1,
+      "size": 446.4,
+      "vw": 31,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.06,
+      "leading": 0.78,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.77,
+      "top": 5058,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "Quill",
+      "words": 1,
+      "chars": 5,
+      "lines": 1,
+      "size": 432,
+      "vw": 30,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.065,
+      "leading": 0.78,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.57,
+      "top": 5471,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Sign up",
+      "words": 2,
+      "chars": 7,
+      "lines": 1,
+      "size": 40,
+      "vw": 2.8,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.015,
+      "leading": 1.1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.1,
+      "top": 5699,
+      "tag": "a",
+      "kind": "heading"
+     },
+     {
+      "text": "Log in",
+      "words": 2,
+      "chars": 6,
+      "lines": 1,
+      "size": 40,
+      "vw": 2.8,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.015,
+      "leading": 1.1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.08,
+      "top": 5749,
+      "tag": "a",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 12,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 1,
+     "medianWords": 2,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Poppins",
+       "share": 0.94,
+       "mono": false
+      },
+      {
+       "family": "Lora",
+       "share": 0.06,
+       "mono": false
+      },
+      {
+       "family": "Playfair Display",
+       "share": 0,
+       "mono": false
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      13,
+      15,
+      17,
+      18,
+      28,
+      40,
+      187,
+      207,
+      432,
+      446
+     ],
+     "sizeCount": 10,
+     "notLoaded": [],
+     "body": {
+      "font": "Poppins",
+      "size": 17.5,
+      "leading": 1.6,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 7.3
+     },
+     "measureChars": 43,
+     "max": {
+      "size": 446.4,
+      "vw": 31,
+      "font": "Poppins",
+      "text": "Write"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.01,
+     "centerShare": 0.01,
+     "smallText": 0
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#202124",
+     "bodyBgHsl": {
+      "h": 225,
+      "s": 0.06,
+      "l": 0.13
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#28271f",
+       "top": 258,
+       "hsl": {
+        "h": 53,
+        "s": 0.13,
+        "l": 0.14
+       }
+      },
+      {
+       "color": "#ebe0d3",
+       "top": 1100,
+       "hsl": {
+        "h": 33,
+        "s": 0.37,
+        "l": 0.87
+       }
+      },
+      {
+       "color": "#f4eadc",
+       "top": 1176,
+       "hsl": {
+        "h": 35,
+        "s": 0.52,
+        "l": 0.91
+       }
+      },
+      {
+       "color": "#e85d56",
+       "top": 4891,
+       "hsl": {
+        "h": 3,
+        "s": 0.76,
+        "l": 0.62
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#b4aea6",
+       "share": 0.35
+      },
+      {
+       "color": "#f2ede6",
+       "share": 0.16
+      },
+      {
+       "color": "#232220",
+       "share": 0.14
+      },
+      {
+       "color": "#5f5a54",
+       "share": 0.1
+      },
+      {
+       "color": "#a39e97",
+       "share": 0.06
+      }
+     ],
+     "button": {
+      "bg": "#2a2a2a",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 0.16
+      },
+      "fg": "#f2ede6"
+     },
+     "lowContrast": [
+      {
+       "text": "Save Changes",
+       "ratio": 3.4,
+       "need": 4.5,
+       "size": 12.5,
+       "fg": "#ffffff",
+       "bg": "#e85d56"
+      },
+      {
+       "text": "Apply to 3 notes",
+       "ratio": 3.4,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#ffffff",
+       "bg": "#e85d56"
+      },
+      {
+       "text": "Checklist · Summarize",
+       "ratio": 3.7,
+       "need": 4.5,
+       "size": 12.5,
+       "fg": "#78716c",
+       "bg": "#ece1d2"
+      },
+      {
+       "text": "Review before applying",
+       "ratio": 4.1,
+       "need": 4.5,
+       "size": 12.5,
+       "fg": "#78716c",
+       "bg": "#f8ecdc"
+      },
+      {
+       "text": "Discard",
+       "ratio": 4.1,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#78716c",
+       "bg": "#f8ecdc"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 7,
+     "inHero": 5,
+     "radius": 0,
+     "height": 64,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Write",
+      "Inside",
+      "Tidy",
+      "Log in",
+      "Add"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 2,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 0,
+     "hairlineSamples": [],
+     "outlinedBoxes": 0,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 4,
+     "boxRadius": 20,
+     "squareMedia": 3,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 5,
+       "iconTopped": false,
+       "rounded": false,
+       "top": 258
+      }
+     ]
+    },
+    "heroMedia": [
+     {
+      "type": "svg",
+      "ratio": 0.25
+     }
+    ],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 900,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "lora",
+     "playfair display",
+     "poppins"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 6241,
+    "margins": {
+     "left": 20,
+     "right": 20
+    },
+    "sections": [
+     {
+      "sel": "header.hero",
+      "tag": "header",
+      "top": 0,
+      "height": 900,
+      "words": 85,
+      "media": 2,
+      "middle": 52,
+      "heading": null,
+      "left": 2,
+      "right": 35,
+      "textLeft": 26,
+      "textRight": 35,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "div.sec-gap",
+      "tag": "div",
+      "top": 900,
+      "height": 200,
+      "words": 0,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": null,
+      "right": null,
+      "textLeft": null,
+      "textRight": null,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#write.showcase",
+      "tag": "section",
+      "top": 1100,
+      "height": 792,
+      "words": 89,
+      "media": 0,
+      "middle": 131,
+      "heading": {
+       "text": "Writing stays quiet",
+       "size": 40,
+       "tag": "h2"
+      },
+      "left": 98,
+      "right": 284,
+      "textLeft": 98,
+      "textRight": 284,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#inside.index.wrap",
+      "tag": "section",
+      "top": 1892,
+      "height": 749,
+      "words": 82,
+      "media": 0,
+      "middle": 144,
+      "heading": {
+       "text": "What's inside",
+       "size": 28,
+       "tag": "h2"
+      },
+      "left": 20,
+      "right": 57,
+      "textLeft": 20,
+      "textRight": 57,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#tidy.howto",
+      "tag": "section",
+      "top": 2641,
+      "height": 1278,
+      "words": 180,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 432,
+      "right": 433,
+      "textLeft": 432,
+      "textRight": 433,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.sky",
+      "tag": "section",
+      "top": 3991,
+      "height": 900,
+      "words": 26,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Every note",
+       "size": 187,
+       "tag": "h2"
+      },
+      "left": 20,
+      "right": 262,
+      "textLeft": 20,
+      "textRight": 262,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "a.write",
+      "tag": "a",
+      "top": 4891,
+      "height": 540,
+      "words": 11,
+      "media": 0,
+      "middle": 1117,
+      "heading": null,
+      "left": 20,
+      "right": 20,
+      "textLeft": 20,
+      "textRight": 1185,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "footer.wrap",
+      "tag": "footer",
+      "top": 5431,
+      "height": 810,
+      "words": 53,
+      "media": 0,
+      "middle": 398,
+      "heading": {
+       "text": "Sign up",
+       "size": 40,
+       "tag": "a"
+      },
+      "left": 20,
+      "right": 20,
+      "textLeft": 20,
+      "textRight": 20,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [
+     {
+      "top": 876,
+      "height": 272
+     }
+    ],
+    "h1s": [
+     {
+      "text": "Notes that answer back",
+      "size": 40,
+      "top": 653,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 432,
+      "n": 4
+     },
+     {
+      "x": 20,
+      "n": 3
+     },
+     {
+      "x": 732,
+      "n": 3
+     },
+     {
+      "x": 672,
+      "n": 2
+     },
+     {
+      "x": 376,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 13,
+    "bodySize": 17,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0.1,
+    "voidBox": {
+     "x": 840,
+     "y": 240,
+     "w": 360,
+     "h": 360
+    }
+   },
+   "app": null,
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 8,
+   "filled": [
+    0.79,
+    1,
+    0.87,
+    0.46,
+    0.43,
+    0.77,
+    1,
+    1
+   ],
+   "motion": {
+    "elements": 429,
+    "css": 414,
+    "transitions": 15,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 8019,
+     "screens": 7.8,
+     "words": 573,
+     "img": 4,
+     "video": 0,
+     "canvas": 0,
+     "svg": 6,
+     "sections": 4,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 5,
+     "uiAbuse": false,
+     "realPictures": 3,
+     "videoCount": 0,
+     "uiPictures": 2,
+     "pictureSamples": [
+      "scholar-sharpening-his-quill.jpg",
+      "alexander-jamieson-celestial-atlas-plate-9.jpg",
+      "1776-chart-of-the-constellation-cancer-and.jpg"
+     ],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Quill Quill Quill Quill Quill Quill Quill Quill",
+     "words": 8,
+     "chars": 47,
+     "lines": 1,
+     "size": 199.7,
+     "vw": 26,
+     "font": "Poppins",
+     "weight": 700,
+     "tracking": -0.045,
+     "leading": 1,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.98,
+     "top": 6,
+     "tag": "div",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Notes that answer back",
+     "words": 4,
+     "lines": 1,
+     "size": 40,
+     "font": "Poppins"
+    },
+    "headings": [
+     {
+      "text": "Quill Quill Quill Quill Quill Quill Quill Quill",
+      "words": 8,
+      "chars": 47,
+      "lines": 1,
+      "size": 199.7,
+      "vw": 26,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.045,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.98,
+      "top": 6,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Notes that answer back",
+      "words": 4,
+      "chars": 22,
+      "lines": 1,
+      "size": 40,
+      "vw": 5.2,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.02,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 253,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Lisbon in May",
+      "words": 3,
+      "chars": 13,
+      "lines": 1,
+      "size": 26,
+      "vw": 3.4,
+      "font": "Playfair Display",
+      "weight": 600,
+      "tracking": 0,
+      "leading": 1.12,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.68,
+      "top": 2395,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Writing stays quiet",
+      "words": 3,
+      "chars": 19,
+      "lines": 2,
+      "size": 28,
+      "vw": 3.6,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.02,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.28,
+      "top": 3034,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Every note is a star",
+      "words": 5,
+      "chars": 20,
+      "lines": 2,
+      "size": 115.2,
+      "vw": 15,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.05,
+      "leading": 0.86,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "center",
+      "position": "center",
+      "widthRatio": 0.73,
+      "top": 5924,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Write",
+      "words": 1,
+      "chars": 5,
+      "lines": 1,
+      "size": 238.1,
+      "vw": 31,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.06,
+      "leading": 0.78,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.77,
+      "top": 6888,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "Quill",
+      "words": 1,
+      "chars": 5,
+      "lines": 1,
+      "size": 230.4,
+      "vw": 30,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.065,
+      "leading": 0.78,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.97,
+      "top": 7138,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Sign up",
+      "words": 2,
+      "chars": 7,
+      "lines": 1,
+      "size": 26,
+      "vw": 3.4,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.015,
+      "leading": 1.1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.13,
+      "top": 7349,
+      "tag": "a",
+      "kind": "heading"
+     },
+     {
+      "text": "Log in",
+      "words": 2,
+      "chars": 6,
+      "lines": 1,
+      "size": 26,
+      "vw": 3.4,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.015,
+      "leading": 1.1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.1,
+      "top": 7384,
+      "tag": "a",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 9,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 1,
+     "medianWords": 3,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Poppins",
+       "share": 0.94,
+       "mono": false
+      },
+      {
+       "family": "Lora",
+       "share": 0.06,
+       "mono": false
+      },
+      {
+       "family": "Playfair Display",
+       "share": 0,
+       "mono": false
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      13,
+      15,
+      16,
+      17,
+      18,
+      20,
+      24,
+      26,
+      28,
+      40,
+      115,
+      200,
+      230,
+      238
+     ],
+     "sizeCount": 14,
+     "notLoaded": [],
+     "body": {
+      "font": "Poppins",
+      "size": 17.5,
+      "leading": 1.6,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 7.3
+     },
+     "measureChars": 43,
+     "max": {
+      "size": 238.1,
+      "vw": 31,
+      "font": "Poppins",
+      "text": "Write"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.01,
+     "centerShare": 0.01,
+     "smallText": 0
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#202124",
+     "bodyBgHsl": {
+      "h": 225,
+      "s": 0.06,
+      "l": 0.13
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#28271f",
+       "top": 231,
+       "hsl": {
+        "h": 53,
+        "s": 0.13,
+        "l": 0.14
+       }
+      },
+      {
+       "color": "#ebe0d3",
+       "top": 2295,
+       "hsl": {
+        "h": 33,
+        "s": 0.37,
+        "l": 0.87
+       }
+      },
+      {
+       "color": "#f4eadc",
+       "top": 2311,
+       "hsl": {
+        "h": 35,
+        "s": 0.52,
+        "l": 0.91
+       }
+      },
+      {
+       "color": "#e85d56",
+       "top": 6627,
+       "hsl": {
+        "h": 3,
+        "s": 0.76,
+        "l": 0.62
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#b4aea6",
+       "share": 0.38
+      },
+      {
+       "color": "#f2ede6",
+       "share": 0.15
+      },
+      {
+       "color": "#232220",
+       "share": 0.14
+      },
+      {
+       "color": "#5f5a54",
+       "share": 0.1
+      },
+      {
+       "color": "#a39e97",
+       "share": 0.05
+      }
+     ],
+     "button": {
+      "bg": "#2a2a2a",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 0.16
+      },
+      "fg": "#f2ede6"
+     },
+     "lowContrast": [
+      {
+       "text": "Save Changes",
+       "ratio": 3.4,
+       "need": 4.5,
+       "size": 12.5,
+       "fg": "#ffffff",
+       "bg": "#e85d56"
+      },
+      {
+       "text": "Apply to 3 notes",
+       "ratio": 3.4,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#ffffff",
+       "bg": "#e85d56"
+      },
+      {
+       "text": "Checklist · Summarize",
+       "ratio": 3.7,
+       "need": 4.5,
+       "size": 12.5,
+       "fg": "#78716c",
+       "bg": "#ece1d2"
+      },
+      {
+       "text": "Review before applying",
+       "ratio": 4.1,
+       "need": 4.5,
+       "size": 12.5,
+       "fg": "#78716c",
+       "bg": "#f8ecdc"
+      },
+      {
+       "text": "Discard",
+       "ratio": 4.1,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#78716c",
+       "bg": "#f8ecdc"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 7,
+     "inHero": 5,
+     "radius": 0,
+     "height": 48,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Write",
+      "Inside",
+      "Tidy",
+      "Log in",
+      "Add"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 2,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 0,
+     "hairlineSamples": [],
+     "outlinedBoxes": 0,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 4,
+     "boxRadius": 20,
+     "squareMedia": 3,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 4,
+       "iconTopped": false,
+       "rounded": false,
+       "top": 1853
+      }
+     ]
+    },
+    "heroMedia": [
+     {
+      "type": "svg",
+      "ratio": 0.5
+     }
+    ],
+    "nav": {
+     "links": 2,
+     "fixed": false,
+     "height": 2175,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "lora",
+     "playfair display",
+     "poppins"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 8019,
+    "margins": {
+     "left": 16,
+     "right": 20
+    },
+    "sections": [
+     {
+      "sel": "header.hero",
+      "tag": "header",
+      "top": 0,
+      "height": 2175,
+      "words": 85,
+      "media": 2,
+      "middle": 0,
+      "heading": {
+       "text": "Notes that answer back",
+       "size": 40,
+       "tag": "h1"
+      },
+      "left": 0,
+      "right": 20,
+      "textLeft": 20,
+      "textRight": 20,
+      "fullBleed": true,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "div.sec-gap",
+      "tag": "div",
+      "top": 2175,
+      "height": 120,
+      "words": 0,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": null,
+      "right": null,
+      "textLeft": null,
+      "textRight": null,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#write.showcase",
+      "tag": "section",
+      "top": 2295,
+      "height": 1105,
+      "words": 89,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Lisbon in May",
+       "size": 26,
+       "tag": "div"
+      },
+      "left": 16,
+      "right": 133,
+      "textLeft": 16,
+      "textRight": 133,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#inside.index.wrap",
+      "tag": "section",
+      "top": 3399,
+      "height": 1203,
+      "words": 105,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "What's inside",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 261,
+      "textLeft": 16,
+      "textRight": 261,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#tidy.howto",
+      "tag": "section",
+      "top": 4603,
+      "height": 1169,
+      "words": 180,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 16,
+      "right": 29,
+      "textLeft": 16,
+      "textRight": 29,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.sky",
+      "tag": "section",
+      "top": 5828,
+      "height": 799,
+      "words": 26,
+      "media": 1,
+      "middle": 0,
+      "heading": {
+       "text": "Every note",
+       "size": 115,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 102,
+      "textLeft": 16,
+      "textRight": 102,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "a.write",
+      "tag": "a",
+      "top": 6627,
+      "height": 471,
+      "words": 11,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 16,
+      "right": 565,
+      "textLeft": 16,
+      "textRight": 565,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "footer.wrap",
+      "tag": "footer",
+      "top": 7098,
+      "height": 922,
+      "words": 53,
+      "media": 0,
+      "middle": 76,
+      "heading": {
+       "text": "Sign up",
+       "size": 26,
+       "tag": "a"
+      },
+      "left": 16,
+      "right": 16,
+      "textLeft": 16,
+      "textRight": 16,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Notes that answer back",
+      "size": 40,
+      "top": 253,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 16,
+      "n": 15
+     }
+    ],
+    "leftBlocks": 15,
+    "bodySize": 18,
+    "stage": false,
+    "explains": false,
+    "slivers": [
+     {
+      "text": "Quill",
+      "px": 10,
+      "side": "left"
+     }
+    ],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 9,
+   "filled": [
+    0.8,
+    0.87,
+    1,
+    0.33,
+    0.47,
+    0.7,
+    0.86,
+    1,
+    1
+   ],
+   "motion": {
+    "elements": 429,
+    "css": 414,
+    "transitions": 15,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 7210,
+     "screens": 8.5,
+     "words": 573,
+     "img": 4,
+     "video": 0,
+     "canvas": 0,
+     "svg": 6,
+     "sections": 4,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 5,
+     "uiAbuse": false,
+     "realPictures": 3,
+     "videoCount": 0,
+     "uiPictures": 2,
+     "pictureSamples": [
+      "scholar-sharpening-his-quill.jpg",
+      "alexander-jamieson-celestial-atlas-plate-9.jpg",
+      "1776-chart-of-the-constellation-cancer-and.jpg"
+     ],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Quill Quill Quill Quill Quill Quill Quill Quill",
+     "words": 8,
+     "chars": 47,
+     "lines": 1,
+     "size": 101.4,
+     "vw": 26,
+     "font": "Poppins",
+     "weight": 700,
+     "tracking": -0.045,
+     "leading": 1,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.97,
+     "top": 6,
+     "tag": "div",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Notes that answer back",
+     "words": 4,
+     "lines": 2,
+     "size": 33.5,
+     "font": "Poppins"
+    },
+    "headings": [
+     {
+      "text": "Quill Quill Quill Quill Quill Quill Quill Quill",
+      "words": 8,
+      "chars": 47,
+      "lines": 1,
+      "size": 101.4,
+      "vw": 26,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.045,
+      "leading": 1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.97,
+      "top": 6,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Notes that answer back",
+      "words": 4,
+      "chars": 22,
+      "lines": 2,
+      "size": 33.5,
+      "vw": 8.6,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.02,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.88,
+      "top": 253,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Lisbon in May",
+      "words": 3,
+      "chars": 13,
+      "lines": 1,
+      "size": 26,
+      "vw": 6.7,
+      "font": "Playfair Display",
+      "weight": 600,
+      "tracking": 0,
+      "leading": 1.12,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.75,
+      "top": 1782,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Writing stays quiet",
+      "words": 3,
+      "chars": 19,
+      "lines": 2,
+      "size": 28,
+      "vw": 7.2,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.02,
+      "leading": 1.08,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.56,
+      "top": 2164,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "What's inside",
+      "words": 2,
+      "chars": 13,
+      "lines": 1,
+      "size": 24,
+      "vw": 6.2,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.01,
+      "leading": 1.15,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 2652,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "How a tidy-up goes",
+      "words": 4,
+      "chars": 18,
+      "lines": 1,
+      "size": 24,
+      "vw": 6.2,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.01,
+      "leading": 1.15,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 3834,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Every note is a star",
+      "words": 5,
+      "chars": 20,
+      "lines": 2,
+      "size": 58.5,
+      "vw": 15,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.05,
+      "leading": 0.86,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "center",
+      "position": "center",
+      "widthRatio": 0.73,
+      "top": 5455,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Write",
+      "words": 1,
+      "chars": 5,
+      "lines": 1,
+      "size": 120.9,
+      "vw": 31,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.06,
+      "leading": 0.78,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.77,
+      "top": 6287,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "Quill",
+      "words": 1,
+      "chars": 5,
+      "lines": 1,
+      "size": 120,
+      "vw": 30.8,
+      "font": "Poppins",
+      "weight": 700,
+      "tracking": -0.065,
+      "leading": 0.78,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.93,
+      "top": 6445,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "Sign up",
+      "words": 2,
+      "chars": 7,
+      "lines": 1,
+      "size": 26,
+      "vw": 6.7,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.015,
+      "leading": 1.1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.25,
+      "top": 6571,
+      "tag": "a",
+      "kind": "heading"
+     },
+     {
+      "text": "Log in",
+      "words": 2,
+      "chars": 6,
+      "lines": 1,
+      "size": 26,
+      "vw": 6.7,
+      "font": "Poppins",
+      "weight": 600,
+      "tracking": -0.015,
+      "leading": 1.1,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.19,
+      "top": 6605,
+      "tag": "a",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 11,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 1,
+     "medianWords": 3,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Poppins",
+       "share": 0.94,
+       "mono": false
+      },
+      {
+       "family": "Lora",
+       "share": 0.06,
+       "mono": false
+      },
+      {
+       "family": "Playfair Display",
+       "share": 0,
+       "mono": false
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      13,
+      15,
+      16,
+      17,
+      18,
+      20,
+      24,
+      26,
+      28,
+      34,
+      59,
+      101,
+      120,
+      121
+     ],
+     "sizeCount": 14,
+     "notLoaded": [],
+     "body": {
+      "font": "Poppins",
+      "size": 17.5,
+      "leading": 1.6,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 7.3
+     },
+     "measureChars": 42,
+     "max": {
+      "size": 120.9,
+      "vw": 31,
+      "font": "Poppins",
+      "text": "Write"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.01,
+     "centerShare": 0.01,
+     "smallText": 0
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#202124",
+     "bodyBgHsl": {
+      "h": 225,
+      "s": 0.06,
+      "l": 0.13
+     },
+     "dark": true,
+     "sectionBgs": [
+      {
+       "color": "#28271f",
+       "top": 231,
+       "hsl": {
+        "h": 53,
+        "s": 0.13,
+        "l": 0.14
+       }
+      },
+      {
+       "color": "#202124",
+       "top": 231,
+       "hsl": {
+        "h": 225,
+        "s": 0.06,
+        "l": 0.13
+       }
+      },
+      {
+       "color": "#ebe0d3",
+       "top": 1707,
+       "hsl": {
+        "h": 33,
+        "s": 0.37,
+        "l": 0.87
+       }
+      },
+      {
+       "color": "#f4eadc",
+       "top": 1723,
+       "hsl": {
+        "h": 35,
+        "s": 0.52,
+        "l": 0.91
+       }
+      },
+      {
+       "color": "#f8ecdc",
+       "top": 4405,
+       "hsl": {
+        "h": 34,
+        "s": 0.67,
+        "l": 0.92
+       }
+      },
+      {
+       "color": "#e85d56",
+       "top": 6017,
+       "hsl": {
+        "h": 3,
+        "s": 0.76,
+        "l": 0.62
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#b4aea6",
+       "share": 0.38
+      },
+      {
+       "color": "#f2ede6",
+       "share": 0.15
+      },
+      {
+       "color": "#232220",
+       "share": 0.14
+      },
+      {
+       "color": "#5f5a54",
+       "share": 0.1
+      },
+      {
+       "color": "#a39e97",
+       "share": 0.05
+      }
+     ],
+     "button": {
+      "bg": "#2a2a2a",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 0.16
+      },
+      "fg": "#f2ede6"
+     },
+     "lowContrast": [
+      {
+       "text": "Save Changes",
+       "ratio": 3.4,
+       "need": 4.5,
+       "size": 12.5,
+       "fg": "#ffffff",
+       "bg": "#e85d56"
+      },
+      {
+       "text": "Apply to 3 notes",
+       "ratio": 3.4,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#ffffff",
+       "bg": "#e85d56"
+      },
+      {
+       "text": "Checklist · Summarize",
+       "ratio": 3.7,
+       "need": 4.5,
+       "size": 12.5,
+       "fg": "#78716c",
+       "bg": "#ece1d2"
+      },
+      {
+       "text": "Review before applying",
+       "ratio": 4.1,
+       "need": 4.5,
+       "size": 12.5,
+       "fg": "#78716c",
+       "bg": "#f8ecdc"
+      },
+      {
+       "text": "Discard",
+       "ratio": 4.1,
+       "need": 4.5,
+       "size": 13,
+       "fg": "#78716c",
+       "bg": "#f8ecdc"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 7,
+     "inHero": 5,
+     "radius": 0,
+     "height": 48,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Write",
+      "Inside",
+      "Tidy",
+      "Log in",
+      "Add"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 2,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 0,
+     "hairlineSamples": [],
+     "outlinedBoxes": 0,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 4,
+     "boxRadius": 20,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 4,
+       "iconTopped": false,
+       "rounded": false,
+       "top": 1265
+      }
+     ]
+    },
+    "heroMedia": [
+     {
+      "type": "svg",
+      "ratio": 0.3
+     }
+    ],
+    "nav": {
+     "links": 2,
+     "fixed": false,
+     "height": 1587,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "lora",
+     "playfair display",
+     "poppins"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 7210,
+    "margins": {
+     "left": 12,
+     "right": 16
+    },
+    "sections": [
+     {
+      "sel": "header.hero",
+      "tag": "header",
+      "top": 0,
+      "height": 1587,
+      "words": 85,
+      "media": 2,
+      "middle": 0,
+      "heading": {
+       "text": "Notes that answer back",
+       "size": 34,
+       "tag": "h1"
+      },
+      "left": 0,
+      "right": 6,
+      "textLeft": 20,
+      "textRight": 22,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "div.sec-gap",
+      "tag": "div",
+      "top": 1587,
+      "height": 120,
+      "words": 0,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": null,
+      "right": null,
+      "textLeft": null,
+      "textRight": null,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#write.showcase",
+      "tag": "section",
+      "top": 1707,
+      "height": 849,
+      "words": 89,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Writing stays quiet",
+       "size": 28,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 36,
+      "textLeft": 16,
+      "textRight": 36,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#inside.index.wrap",
+      "tag": "section",
+      "top": 2556,
+      "height": 1278,
+      "words": 105,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "What's inside",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 19,
+      "textLeft": 16,
+      "textRight": 19,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section#tidy.howto",
+      "tag": "section",
+      "top": 3834,
+      "height": 1469,
+      "words": 180,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 16,
+      "right": 18,
+      "textLeft": 16,
+      "textRight": 18,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.sky",
+      "tag": "section",
+      "top": 5359,
+      "height": 658,
+      "words": 26,
+      "media": 1,
+      "middle": 0,
+      "heading": {
+       "text": "Every note",
+       "size": 59,
+       "tag": "h2"
+      },
+      "left": 12,
+      "right": 52,
+      "textLeft": 16,
+      "textRight": 52,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "a.write",
+      "tag": "a",
+      "top": 6017,
+      "height": 388,
+      "words": 11,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 16,
+      "right": 187,
+      "textLeft": 16,
+      "textRight": 187,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "footer.wrap",
+      "tag": "footer",
+      "top": 6405,
+      "height": 805,
+      "words": 54,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Quill",
+       "size": 120,
+       "tag": "div"
+      },
+      "left": 11,
+      "right": 16,
+      "textLeft": 11,
+      "textRight": 16,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Notes that answer back",
+      "size": 34,
+      "top": 253,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 16,
+      "n": 15
+     }
+    ],
+    "leftBlocks": 15,
+    "bodySize": 18,
+    "stage": false,
+    "explains": false,
+    "slivers": [
+     {
+      "text": "Quill",
+      "px": 15,
+      "side": "left"
+     }
+    ],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "WARN",
+   "id": "palette-cream",
+   "width": 1440,
+   "message": "Yellow-cream background (section #f4eadc, text #f2ede6).",
+   "fix": "Use the drawn palette. If you want warmth, take a low-chroma stone or bone, not a yellow cream.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "contrast",
+   "width": 1440,
+   "message": "Low-contrast text: \"Save Changes\" 3.4:1 needs 4.5:1; \"Apply to 3 notes\" 3.4:1 needs 4.5:1; \"Checklist · Summarize\" 3.7:1 needs 4.5:1; \"Review before applying\" 4.1:1 needs 4.5:1",
+   "fix": "Darken or lighten the text colour.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "size-count",
+   "width": 1440,
+   "message": "10 different font sizes (13, 15, 17, 18, 28, 40, 187, 207, 432, 446).",
+   "fix": "A page needs about five: display, heading, lead, body, small.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "no-footage",
+   "width": 1440,
+   "message": "No video anywhere on the page.",
+   "fix": "Look for one honest clip with scripts/assets.mjs --video (the place, the material, the process) and use it as a muted loop with a poster frame. Defend its absence only if no clip fits the subject."
+  },
+  {
+   "level": "WARN",
+   "id": "one-sided-bleed",
+   "width": 768,
+   "message": "1 display line(s) start inside the margin but run off the left edge by a few pixels: \"Quill\" (10px)",
+   "fix": "Fit the line to the content box by measurement (a small fit script, or SVG text with textLength), or bleed it on purpose by a clear amount from the margin. A name sliced by a few pixels on one side reads as a mistake.",
+   "alsoAt": [
+    390
+   ]
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "D:\\MANAY\\MANAY\\Code\\Projects\\notes_app_mern_website\\landing-drafts\\v2\\monument\\.taste-skill\\inspect\\desktop-fold.jpg",
+   "pages": [
+    "D:\\MANAY\\MANAY\\Code\\Projects\\notes_app_mern_website\\landing-drafts\\v2\\monument\\.taste-skill\\inspect\\desktop-page-01.jpg",
+    "D:\\MANAY\\MANAY\\Code\\Projects\\notes_app_mern_website\\landing-drafts\\v2\\monument\\.taste-skill\\inspect\\desktop-page-02.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "D:\\MANAY\\MANAY\\Code\\Projects\\notes_app_mern_website\\landing-drafts\\v2\\monument\\.taste-skill\\inspect\\tablet-fold.jpg",
+   "pages": [
+    "D:\\MANAY\\MANAY\\Code\\Projects\\notes_app_mern_website\\landing-drafts\\v2\\monument\\.taste-skill\\inspect\\tablet-page-01.jpg",
+    "D:\\MANAY\\MANAY\\Code\\Projects\\notes_app_mern_website\\landing-drafts\\v2\\monument\\.taste-skill\\inspect\\tablet-page-02.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "D:\\MANAY\\MANAY\\Code\\Projects\\notes_app_mern_website\\landing-drafts\\v2\\monument\\.taste-skill\\inspect\\mobile-fold.jpg",
+   "pages": [
+    "D:\\MANAY\\MANAY\\Code\\Projects\\notes_app_mern_website\\landing-drafts\\v2\\monument\\.taste-skill\\inspect\\mobile-page-01.jpg",
+    "D:\\MANAY\\MANAY\\Code\\Projects\\notes_app_mern_website\\landing-drafts\\v2\\monument\\.taste-skill\\inspect\\mobile-page-02.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

@@ -70,7 +70,7 @@ const Citations = ({ citations, onOpen }) => {
           {citation.tags?.length > 0 && (
             <div className="flex gap-1.5 mt-2 overflow-hidden">
               {citation.tags.slice(0, 3).map((tag) => (
-                <span key={tag} className="shrink-0 text-xs font-semibold text-stone-600 bg-black/5 rounded-full px-2 py-0.5">#{tag}</span>
+                <span key={tag} className="shrink-0 text-xs font-medium text-stone-600 bg-[#ebe0d3] border border-[#e0d2bf] rounded-full px-2 py-px"><span className="text-[#e85d56] font-semibold mr-px">#</span>{tag}</span>
               ))}
             </div>
           )}
@@ -157,7 +157,7 @@ const AgentMessage = memo(({ message, actions }) => {
 
   if (message.isError) {
     return (
-      <Arrive side="left" id={id} className="self-start max-w-[92%] flex items-start gap-2 rounded-[20px] rounded-bl-md bg-red-500/10 border border-red-400/20 px-4 py-3 text-sm md:text-[15px] font-medium text-red-300 whitespace-pre-wrap">
+      <Arrive side="left" id={id} className="self-start max-w-[92%] flex items-start gap-2 rounded-[20px] rounded-bl-md bg-[#e85d56]/10 border border-[#e85d56]/20 px-4 py-3 text-sm md:text-[15px] font-medium text-[#fb6d65] whitespace-pre-wrap">
         <MdErrorOutline className="shrink-0 text-base mt-0.5" />
         <span>{message.text}</span>
       </Arrive>
@@ -173,7 +173,7 @@ const AgentMessage = memo(({ message, actions }) => {
     // apart at a glance — from small tablets up; a phone needs the width. A margin, so the jump-to
     // outline still hugs the reply
     <Arrive side="left" id={id} className="self-stretch sm:mr-8 md:mr-16 flex flex-col gap-2 rounded-[22px] transition-shadow">
-      <RenderGuard fallback={<p className="px-1 text-xs text-red-300">This message couldn't be shown.</p>}>
+      <RenderGuard fallback={<p className="px-1 text-xs text-[#fb6d65]">This message couldn't be shown.</p>}>
         {message.text && (
           <div className="agent-cream self-start max-w-full rounded-[20px] rounded-bl-md bg-[#f4eadc] border border-[#e8dcc8] px-4 md:px-5 py-3 md:py-3.5 text-sm md:text-[15px] leading-relaxed font-medium text-[#494949] break-words">
             {answer}

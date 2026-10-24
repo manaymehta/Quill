@@ -17,9 +17,9 @@ const getToastDisplayText = (toast) => {
 const renderToastIcon = (type) => {
   const iconClass = 'text-sm shrink-0';
   if (type === 'warning') return <MdErrorOutline className={`${iconClass} text-amber-400`} />;
-  if (type === 'error')   return <MdErrorOutline className={`${iconClass} text-red-400`} />;
+  if (type === 'error')   return <MdErrorOutline className={`${iconClass} text-[#e85d56]`} />;
   if (type === 'archive') return <MdOutlineArchive className={`${iconClass} text-stone-300`} />;
-  if (type === 'delete')  return <MdDeleteOutline className={`${iconClass} text-red-400`} />;
+  if (type === 'delete')  return <MdDeleteOutline className={`${iconClass} text-[#e85d56]`} />;
   if (type === 'agent')   return <LuSparkles className={`${iconClass} text-[#f4eadc]`} />;
   if (type === 'agent-working') return <LuLoaderCircle className={`${iconClass} text-[#f4eadc] animate-spin`} />;
   return <LuCheck className={`${iconClass} text-stone-300`} />;

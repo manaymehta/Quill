@@ -157,13 +157,13 @@ const isHeading = (text) => /^\s*#{1,6}\s/.test(text || '');
 
 const LINE_TONES = {
   same: 'text-stone-500',
-  del: 'border-l-2 border-[#e85d56]/40 pl-3 -ml-[14px] text-[#b0473d]/85 line-through decoration-[#e85d56]/40',
+  del: 'border-l-2 border-[#e85d56]/40 pl-3 -ml-[14px] text-[#b8413a]/85 line-through decoration-[#e85d56]/40',
   add: 'border-l-2 border-emerald-600/45 pl-3 -ml-[14px] text-[#1f5c45] bg-emerald-600/[0.07] rounded-r',
   edit: 'border-l-2 border-[#c9b593] pl-3 -ml-[14px] text-[#333]',
 };
 const SEGMENT_TONES = {
   same: '',
-  del: 'line-through decoration-[#e85d56]/60 text-[#b0473d] bg-[#e85d56]/10 rounded-sm',
+  del: 'line-through decoration-[#e85d56]/60 text-[#b8413a] bg-[#e85d56]/10 rounded-sm',
   add: 'text-[#1f5c45] bg-emerald-600/15 rounded-sm',
 };
 
@@ -227,7 +227,7 @@ const AgentDiffView = ({ before, after, titleBefore, titleAfter }) => {
       </p>
       {titleChanged && (
         <p className="font-sans text-xs text-stone-500">
-          Title: <span className="line-through decoration-[#e85d56]/60 text-[#b0473d]">{titleBefore || '(untitled)'}</span>
+          Title: <span className="line-through decoration-[#e85d56]/60 text-[#b8413a]">{titleBefore || '(untitled)'}</span>
           <span className="text-stone-400"> → </span>
           <span className="text-[#1f5c45] bg-emerald-600/15 rounded-sm px-0.5">{titleAfter || '(untitled)'}</span>
         </p>

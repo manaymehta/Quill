@@ -204,7 +204,7 @@ const FolderCard = ({
                         item.onClick();
                     }}
                     className={`flex items-center justify-between gap-3 px-2 py-[6px] rounded-xl cursor-pointer transition-colors duration-75 text-left text-[13px] font-medium w-full ${item.danger
-                        ? 'hover:bg-red-500/20 hover:text-red-400 text-red-400'
+                        ? 'hover:bg-[#e85d56]/20 hover:text-[#e85d56] text-[#e85d56]'
                         : 'hover:bg-white/[0.15] hover:text-white text-stone-300'
                         }`}
                 >

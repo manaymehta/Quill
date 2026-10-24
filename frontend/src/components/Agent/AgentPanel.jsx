@@ -144,7 +144,7 @@ const SendButton = ({ isBusy, canSend, onSend, onStop }) => (
     disabled={!isBusy && !canSend}
     title={isBusy ? 'Stop' : 'Send (Enter) · Shift+Enter for a new line'}
     className={`relative w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-white overflow-hidden transition-[background-color,opacity] duration-150 cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed active:scale-95 ${
-      isBusy ? 'bg-stone-600 hover:bg-stone-500' : 'bg-[#dd5e57] hover:bg-[#fb6d65]'
+      isBusy ? 'bg-stone-600 hover:bg-stone-500' : 'bg-[#e85d56] hover:bg-[#fb6d65]'
     }`}
   >
     <AnimatePresence mode="popLayout" initial={false}>
@@ -478,7 +478,7 @@ const AgentPanel = () => {
 };
 
 const GuardedAgentPanel = () => (
-  <RenderGuard fallback={<p className="text-sm text-red-300 p-5">The agent panel hit an error — reload the page.</p>}>
+  <RenderGuard fallback={<p className="text-sm text-[#fb6d65] p-5">The agent panel hit an error — reload the page.</p>}>
     <AgentPanel />
   </RenderGuard>
 );

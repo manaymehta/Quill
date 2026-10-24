@@ -42,11 +42,11 @@ const SearchBar = () => {
         title={isAgent ? 'Notes agent — click for keyword search' : 'Keyword search — click for the notes agent'}
         className={`flex items-center px-3 py-3 rounded-full text-xs font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer
           ${isAgent
-            ? 'bg-[#dd5e57] hover:bg-[#fb6d65] text-white '
+            ? 'bg-[#e85d56] hover:bg-[#fb6d65] text-white '
             : 'bg-[#27272a] text-slate-400 hover:text-white '
           }`}
       >
-        <RiSparkling2Fill className={`text-sm ${isAgent ? 'text-white' : 'text-[#dd5e57]'}`} />
+        <RiSparkling2Fill className={`text-sm ${isAgent ? 'text-white' : 'text-[#e85d56]'}`} />
         {/* The label grows in and out with a quick width spring (no bounce on widths) and
             fades, so the button and the search field glide instead of snapping. Its gap is inside
             the part that grows, so nothing jumps at the end. */}
@@ -86,7 +86,7 @@ const SearchBar = () => {
           />
         )}
         <FaMagnifyingGlass
-          className={`shrink-0 ml-2 cursor-pointer ${isAgent ? 'text-[#dd5e57]' : 'text-[#ccc6bc]'} hover:text-white transition-colors`}
+          className={`shrink-0 ml-2 cursor-pointer ${isAgent ? 'text-[#e85d56]' : 'text-[#ccc6bc]'} hover:text-white transition-colors`}
           onClick={() => {
             if (isAgent) sendToAgent();
           }}

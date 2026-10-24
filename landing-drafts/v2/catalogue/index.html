@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quill — write it, ask it</title>
+<meta name="description" content="Quill is a notes app that answers from what you wrote. Ask in plain words; it shows the notes it used and changes nothing without your yes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+/* Direction: dressed as something else (dealt by the taste skill, seed 1201957358). Borrowed category: a fine pen
+   maker's catalogue, presented like a fashion drop. Quill's own palette and type. Idea: the notes people have kept
+   by hand for centuries become the catalogue Quill is the next page of, each one tagged the way Quill tags a note. */
+:root{
+  --paper:#f4eadc; --paper-2:#ebe0d3; --paper-3:#e2d5c3; --stone:#8f877e;
+  --ink:#232220; --soft:#5f5a54;
+  --night:#28271f; --ground:#202124; --panel:#2a2a2a; --cream-ink:#f2ede6; --cream-soft:#b4aea6;
+  --accent:#e85d56; --accent-hi:#fb6d65;
+  --sans:"Poppins",system-ui,sans-serif;
+  --m:24px;
+  --ease-out:cubic-bezier(.16,1,.3,1); --spring:cubic-bezier(.34,1.3,.64,1);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 17px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit}
+img{display:block;max-width:100%}
+h1,h2,h3{margin:0;font-weight:700;text-wrap:balance}
+p{margin:0;text-wrap:pretty}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+::selection{background:rgba(232,93,86,.3)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.mx{padding-left:max(var(--m),env(safe-area-inset-left,0px));padding-right:max(var(--m),env(safe-area-inset-right,0px))}
+.btn{display:inline-flex;align-items:center;height:44px;padding:0 20px;background:var(--accent);color:var(--ink);font:600 15px/1 var(--sans);text-decoration:none;transition:background .15s,transform .15s}
+.btn:hover{background:var(--accent-hi)}
+.btn:active{transform:scale(.97)}
+main{position:relative;z-index:1;background:var(--paper)}
+
+/* ── Hero: shouted headline, rising picture ── */
+.hero{position:relative;height:100svh;min-height:700px;overflow:hidden;display:flex;flex-direction:column}
+nav.top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;height:76px}
+.word{font:700 24px/1 var(--sans);letter-spacing:.02em;text-decoration:none}
+.navl{display:flex;gap:28px}
+.navl a{font:500 15px var(--sans);text-decoration:none;color:var(--soft);transition:color .15s}
+.navl a:hover{color:var(--ink)}
+nav.top .btn{justify-self:end}
+.hero h1{margin-top:6vh;text-align:center;font:700 clamp(64px,10.4vw,168px)/.88 var(--sans);letter-spacing:-.035em;text-transform:uppercase}
+.hero h1 .ln{display:block;overflow:hidden;padding-bottom:.04em}
+.hero h1 .ln span{display:block}
+.rise-pic{position:relative;z-index:-1;width:27vw;aspect-ratio:3/4;margin:-1.2vw auto 0;overflow:hidden;flex:none}
+.rise-pic img{width:100%;height:100%;object-fit:cover;object-position:60% 30%;transform:scale(var(--z,1.06));transition:transform .2s linear}
+.hero .say{position:absolute;left:max(var(--m),env(safe-area-inset-left,0px));bottom:32px;width:300px;font-size:17px}
+.hero .fact{position:absolute;right:max(var(--m),env(safe-area-inset-right,0px));bottom:32px;width:260px;text-align:right;font-size:17px}
+.hero .fact b{display:block;font-weight:600}
+.js .hero h1 .ln span{transform:translateY(105%)}
+.js.ready .hero h1 .ln span{transform:none;transition:transform .9s var(--ease-out)}
+.js.ready .hero h1 .ln:nth-child(2) span{transition-delay:.11s}
+.js .hero .say,.js .hero .fact,.js nav.top{opacity:0}
+.js.ready .hero .say,.js.ready .hero .fact,.js.ready nav.top{opacity:1;transition:opacity .6s var(--ease-out) .45s}
+
+/* ── Showcase: one control, blown up ── */
+.switch{position:relative;height:92svh;min-height:620px;overflow:hidden;background:var(--night);color:var(--cream-ink);transition:background .35s var(--ease-out),color .35s var(--ease-out)}
+.switch.on{background:var(--accent);color:var(--ink)}
+.switch .head{position:relative;z-index:2;padding-top:56px}
+.switch h2{font:700 clamp(28px,2.6vw,40px)/1.1 var(--sans);letter-spacing:-.02em}
+.switch h2 em{font-style:normal}
+.switch p{margin-top:14px;max-width:36ch;font-size:17px;color:var(--cream-soft);transition:color .35s}
+.switch.on p{color:var(--ink)}
+.bar{position:absolute;right:-14%;top:44%;font-size:clamp(44px,11vh,120px);display:flex;align-items:center;gap:.3em;white-space:nowrap}
+.bar button{all:unset;cursor:pointer;width:2.2em;height:2.2em;border-radius:50%;display:grid;place-items:center;background:#3a3a3d;transition:background .25s,transform .2s var(--spring)}
+.bar button:hover{transform:scale(1.04)}
+.bar button:active{transform:scale(.96)}
+.bar button:focus-visible{outline:.06em solid var(--paper);outline-offset:.08em}
+.bar button svg{width:.9em;height:.9em;color:var(--accent);transition:color .25s}
+.switch.on .bar button{background:var(--ink)}
+.switch.on .bar button svg{color:var(--accent)}
+.bar .field{height:2.2em;width:14em;border-radius:1.1em;background:#3a3a3d;display:flex;align-items:center;justify-content:space-between;padding:0 .9em 0 1em;color:#d6d1ca;transition:background .25s,color .25s}
+.switch.on .bar .field{background:var(--paper);color:var(--soft)}
+.bar .field span{font:400 .62em/1 var(--sans)}
+.bar .field svg{width:.7em;height:.7em}
+.bar .pill{font:600 .5em/1 var(--sans);margin-left:.4em}
+
+/* ── Live thing: giant command list ── */
+.cmd{padding-top:200px;padding-bottom:200px}
+.cmd label{display:block}
+.cmd input{width:min(100%,calc(100% * 10 / 12));height:1.9em;padding:0 .5em;font:500 clamp(28px,3vw,44px)/1 var(--sans);background:var(--paper-3);color:var(--ink);border:0;border-radius:0}
+.cmd input::placeholder{color:var(--soft);opacity:1}
+.cmd input:focus{outline:3px solid var(--ink);outline-offset:0}
+.rows{list-style:none;margin:28px 0 0;padding:0}
+.rows li{padding:.06em .25em;cursor:pointer;font:600 clamp(32px,4.4vw,72px)/1.1 var(--sans);letter-spacing:-.025em;transition:background .12s}
+.rows li[aria-selected="true"]{background:var(--accent)}
+.rows .d{list-style:none;background:var(--accent);padding:0 .9em 18px;font:400 17px/1.5 var(--sans)}
+.rows .d p{max-width:60ch}
+.rows li[hidden]{display:none}
+.none{font-size:17px;color:var(--soft);margin-top:18px}
+
+/* ── How it works: lines that step across ── */
+.stairs{padding-bottom:220px;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:24px;row-gap:56px}
+.st{display:flex;flex-direction:column;gap:12px}
+.st:nth-child(1){grid-column:1/13}.st:nth-child(2){grid-column:3/13}.st:nth-child(3){grid-column:5/13}.st:nth-child(4){grid-column:7/13}
+.st .l{font:700 clamp(36px,4.6vw,76px)/1 var(--sans);letter-spacing:-.03em}
+.st:nth-child(4) .l{color:#d24c45}
+.st p{max-width:34ch;color:var(--ink);font-size:17px}
+
+/* ── Gallery: pictures with label strips ── */
+.kept{padding-bottom:220px}
+.kept h2{font:700 32px/1.1 var(--sans);letter-spacing:-.02em;margin-bottom:40px}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));column-gap:12px;row-gap:28px}
+.tile{display:flex;flex-direction:column}
+.tile .ph{aspect-ratio:4/5;overflow:hidden;background:var(--paper-3)}
+.tile .ph img{width:100%;height:100%;object-fit:cover;transition:transform .6s var(--ease-out)}
+.tile:hover .ph img{transform:scale(1.04)}
+.strip{min-height:92px;padding:12px;display:flex;flex-direction:column;justify-content:space-between;gap:4px;font:500 13px/1.3 var(--sans);font-variant-numeric:tabular-nums}
+.strip .r1{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 8px}
+.strip .r2{display:flex;justify-content:space-between;gap:8px;opacity:.85}
+.strip .r3{font-weight:600}
+.tile:nth-child(4n+1) .strip{background:var(--ink);color:var(--paper)}
+.tile:nth-child(4n+2) .strip{background:var(--paper-3);color:var(--ink)}
+.tile:nth-child(4n+3) .strip{background:var(--stone);color:#1b1a19}
+.tile:nth-child(4n+4) .strip{background:var(--night);color:var(--paper)}
+
+/* ── CTA: one word is the button ── */
+.begin{position:relative;display:block;height:60svh;min-height:420px;background:var(--accent);color:var(--ink);text-decoration:none;overflow:hidden}
+.begin:hover,.begin:focus-visible{background:var(--ink);color:var(--accent)}
+.begin .t{position:absolute;left:max(var(--m),env(safe-area-inset-left,0px));top:20px;max-width:26ch;font:500 17px/1.35 var(--sans)}
+.begin svg{position:absolute;right:max(var(--m),env(safe-area-inset-right,0px));top:20px;width:48px;height:48px}
+.begin .w{position:absolute;left:max(var(--m),env(safe-area-inset-left,0px));bottom:24px;font:700 clamp(120px,29vw,520px)/.76 var(--sans);letter-spacing:-.06em;text-transform:uppercase}
+
+/* ── Footer: columns above, wordmark below; the page slides away to uncover it ── */
+footer{position:sticky;bottom:0;z-index:0;min-height:100svh;display:grid;grid-template-rows:auto 1fr auto auto;background:var(--ground);color:var(--cream-ink);padding-top:40px;padding-bottom:20px}
+.fcols{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));column-gap:24px}
+.fcols>div{grid-column:span 3}
+.fcols h3{font:600 15px/1.35 var(--sans);margin-bottom:8px}
+.fcols ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.fcols li,.fcols a{font:400 15px/1.35 var(--sans);color:var(--cream-soft);text-decoration:none}
+.fcols a:hover{color:var(--cream-ink);text-decoration:underline}
+.fword{display:block;width:100%;height:auto;margin-top:40px}
+.fword text{font:700 100px var(--sans);letter-spacing:-5px;fill:var(--cream-ink)}
+.legal{display:flex;justify-content:space-between;margin-top:20px;font:400 13px var(--sans);color:var(--cream-soft)}
+.legal a{text-decoration:none}
+
+/* entrances */
+.js .rv{opacity:0;transform:translateY(24px)}
+.js .rv.in{opacity:1;transform:none;transition:opacity .6s var(--ease-out),transform .8s var(--ease-out);transition-delay:calc(var(--i,0) * 80ms)}
+
+/* ── Phone ── */
+@media (max-width:1000px){ .tiles{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:760px){
+  :root{--m:16px}
+  nav.top{grid-template-columns:1fr auto;height:64px}
+  .navl{display:none}
+  .hero{height:auto;min-height:100svh}
+  .hero h1{margin-top:7vh;font-size:17vw;text-align:left;padding:0 max(var(--m),env(safe-area-inset-left,0px))}
+  .rise-pic{width:64vw;margin-top:16px;flex:1 0 auto}
+  .hero .say,.hero .fact{position:static;width:auto;text-align:left;padding:24px max(var(--m),env(safe-area-inset-left,0px)) 0}
+  .hero .fact{padding-bottom:32px}
+  .switch{height:86svh;min-height:560px}
+  .switch h2{font-size:26px}.switch p{font-size:16px}
+  .bar{right:auto;left:var(--m);top:auto;bottom:12vh;font-size:13vw}
+  .cmd{padding-top:120px;padding-bottom:120px}
+  .cmd input{width:100%;height:56px;font-size:20px}
+  .rows li{font-size:8.5vw}
+  .rows .d{font-size:16px;padding:0 .6em 14px}
+  .stairs{grid-template-columns:1fr;padding-bottom:140px;row-gap:40px}
+  .st:nth-child(n){grid-column:1}
+  .st:nth-child(2){padding-left:6vw}.st:nth-child(3){padding-left:12vw}.st:nth-child(4){padding-left:18vw}
+  .st .l{font-size:8.4vw}.st p{font-size:16px}
+  .kept{padding-bottom:140px}
+  .kept h2{font-size:24px}
+  .tiles{grid-template-columns:1fr 1fr;column-gap:8px}
+  .strip .r2{display:none}
+  .strip .r1{flex-wrap:wrap}
+  .begin{height:46svh;min-height:320px}
+  .begin .w{font-size:28vw}
+  .begin svg{width:32px;height:32px}
+  .fcols{grid-template-columns:1fr 1fr;row-gap:32px}
+  .fcols>div{grid-column:auto}
+}
+@media (prefers-reduced-motion:reduce){
+  .js .hero h1 .ln span{transform:none}
+  .js .hero .say,.js .hero .fact,.js nav.top{opacity:1}
+  .js .rv{opacity:1;transform:none}
+  *{transition-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add('js')</script>
+<main>
+  <header class="hero">
+    <nav class="top mx" aria-label="Main">
+      <a class="word" href="#">QUILL</a>
+      <div class="navl"><a href="#ask">Ask</a><a href="#kept">Notes kept</a><a href="/login">Log in</a></div>
+      <a class="btn" href="/signup">Start writing</a>
+    </nav>
+    <h1 aria-label="Write it. Ask it."><span class="ln"><span>Write it.</span></span><span class="ln"><span>Ask it.</span></span></h1>
+    <div class="rise-pic"><img src="assets/a-lady-writing.jpg" width="1400" height="1582" alt="A young woman in a yellow fur-trimmed jacket writes a letter with a quill and looks up (Johannes Vermeer, A Lady Writing, about 1665)"></div>
+    <p class="say">Quill is a notes app that answers from what you wrote, and shows you the notes it used.</p>
+    <p class="fact"><b>Nothing changes without your yes.</b>Undo anything for ten days.</p>
+  </header>
+
+  <section class="switch mx" id="switch" aria-labelledby="switchH">
+    <div class="head">
+      <h2 id="switchH"><em id="verb">Search</em> your notes</h2>
+      <p id="switchP">Quill's search bar has one switch. Flip it and the same box becomes an agent that reads your notes and answers.</p>
+    </div>
+    <div class="bar" data-ui>
+      <button type="button" id="toggle" aria-pressed="false" aria-label="Switch the search bar to the agent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg></button>
+      <div class="field"><span id="ph">Search notes…</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+    </div>
+  </section>
+
+  <section class="cmd mx" id="ask" aria-labelledby="askH">
+    <h2 id="askH" class="sr">Things you can ask Quill</h2>
+    <label class="sr" for="q">Things you can ask Quill</label>
+    <input id="q" placeholder="Ask Quill to…" autocomplete="off" aria-controls="rows">
+    <ul class="rows" id="rows" role="listbox" aria-label="Requests">
+      <li role="option" data-k="Ask"><span class="nm">Find what I wrote about Lisbon</span><template>Quill searches your notes by meaning and by exact words, reads the ones that match, and answers with their titles so you can open them.</template></li>
+      <li role="option" data-k="Ask"><span class="nm">Summarize my thesis notes</span><template>It reads the notes in your thesis folder and writes a short summary, citing each note it drew from.</template></li>
+      <li role="option" data-k="Draft"><span class="nm">Draft a packing list for Leeds</span><template>The draft opens as an unsaved tab in your dock. Nothing is stored until you press Save.</template></li>
+      <li role="option" data-k="Tidy"><span class="nm">Archive everything untitled</span><template>You get a list of every untitled note with a tick box each. Untick any you want to keep, then Apply once.</template></li>
+      <li role="option" data-k="Tidy"><span class="nm">Rename #reactz to #react</span><template>Every note carrying the old tag is listed with the change it will get. Undo stays available for ten days.</template></li>
+      <li role="option" data-k="Tidy"><span class="nm">Group my college notes</span><template>Related notes are gathered into named groups, each a suggested folder you can accept or leave.</template></li>
+      <li role="option" data-k="Ask"><span class="nm">What's in my folders?</span><template>It lists your folders, what's inside each, and which tags you use most.</template></li>
+    </ul>
+    <p class="none" id="none" hidden>Quill would search your notes for that. Try “Lisbon”, “archive” or “draft”.</p>
+  </section>
+
+  <section class="stairs mx" aria-labelledby="stairsH">
+    <div class="st rv"><h2 class="l" id="stairsH">First you write it down.</h2><p>A train time, a recipe, half an idea for chapter two. Quill keeps it, tagged and filed or not.</p></div>
+    <div class="st rv" style="--i:1"><div class="l">Then you forget it.</div><p>That's allowed. Notes pile up in folders inside folders, and that's fine too.</p></div>
+    <div class="st rv" style="--i:2"><div class="l">Months later, you ask.</div><p>In plain words, the way you'd ask a friend who was there when you wrote it.</p></div>
+    <div class="st rv" style="--i:3"><div class="l">Quill finds it.</div><p>The answer comes from your notes, with the notes it came from, one tap away.</p></div>
+  </section>
+
+  <section class="kept mx" id="kept" aria-labelledby="keptH">
+    <h2 id="keptH" class="rv">Notes, kept</h2>
+    <div class="tiles">
+      <figure class="tile rv" style="margin:0"><div class="ph"><img src="assets/dutch-de-briefschrijfster-woman-writing-a-letter.jpg" width="1920" height="2628" loading="lazy" alt="A woman in a pink jacket bends over a table to write a letter (Gerard ter Borch, 1655)"></div><figcaption class="strip"><span class="r1"><span>#letter</span><span>1655</span><span>Oil</span><span>Panel</span></span><span class="r2"><span>Gerard ter Borch</span><span>The Hague</span></span><span class="r3">Woman Writing a Letter</span></figcaption></figure>
+      <figure class="tile rv" style="margin:0;--i:1"><div class="ph"><img src="assets/miscellany-of-medical-magical-and-alchemical-recipes.jpg" width="1920" height="2275" loading="lazy" alt="Two pages of a handwritten sixteenth-century book of recipes in brown ink"></div><figcaption class="strip"><span class="r1"><span>#recipes</span><span>c. 1530</span><span>Ink</span><span>Paper</span></span><span class="r2"><span>Unknown hand</span><span>Italy</span></span><span class="r3">A book of recipes</span></figcaption></figure>
+      <figure class="tile rv" style="margin:0;--i:2"><div class="ph"><img src="assets/alexander-jamieson-celestial-atlas-plate-9.jpg" width="1920" height="1597" loading="lazy" alt="Hand-coloured star chart of Ophiuchus holding a serpent, its stars marked and named (Alexander Jamieson, 1822)"></div><figcaption class="strip"><span class="r1"><span>#stars</span><span>1822</span><span>Plate</span><span>Ophiuchus</span></span><span class="r2"><span>Alexander Jamieson</span><span>London</span></span><span class="r3">A Celestial Atlas</span></figcaption></figure>
+      <figure class="tile rv" style="margin:0;--i:3"><div class="ph"><img src="assets/a-young-woman-writing-a-letter.jpg" width="1920" height="2412" loading="lazy" alt="A young woman writes by candlelight, a crumpled letter on the floor beside her (Frans van Mieris, 1670)"></div><figcaption class="strip"><span class="r1"><span>#letter</span><span>1670</span><span>Oil</span><span>Panel</span></span><span class="r2"><span>Frans van Mieris</span><span>Leiden</span></span><span class="r3">A Young Woman Writing</span></figcaption></figure>
+      <figure class="tile rv" style="margin:0"><div class="ph"><img src="assets/hugo-charlemont-stillleben-mit-folianten.jpg" width="1920" height="1881" loading="lazy" alt="A still life of old books, loose papers, a quill and a green inkwell on a table (Hugo Charlemont)"></div><figcaption class="strip"><span class="r1"><span>#desk</span><span>by 1939</span><span>Oil</span><span>Canvas</span></span><span class="r2"><span>Hugo Charlemont</span><span>Vienna</span></span><span class="r3">Still Life with Folios</span></figcaption></figure>
+      <figure class="tile rv" style="margin:0;--i:1"><div class="ph"><img src="assets/lady-writing-back-view.jpg" width="843" height="1311" loading="lazy" alt="Pencil sketch of a woman seen from behind, writing at a desk (William Makepeace Thackeray)"></div><figcaption class="strip"><span class="r1"><span>#sketch</span><span>n.d.</span><span>Pencil</span><span>Paper</span></span><span class="r2"><span>W. M. Thackeray</span><span>Chicago</span></span><span class="r3">Lady Writing, Back View</span></figcaption></figure>
+      <figure class="tile rv" style="margin:0;--i:2"><div class="ph"><img src="assets/diary-of-a-physician.jpg" width="1687" height="1643" loading="lazy" alt="A printed page with an engraving of two men talking under a portico, from a physician's diary"></div><figcaption class="strip"><span class="r1"><span>#diary</span><span>1838</span><span>Print</span><span>p. 417</span></span><span class="r2"><span>British Library</span><span>London</span></span><span class="r3">Diary of a Physician</span></figcaption></figure>
+      <figure class="tile rv" style="margin:0;--i:3"><div class="ph"><img src="assets/quill-pens.jpg" width="1920" height="2341" loading="lazy" alt="Watercolour of two quill pens crossed over a sheet of paper (Erwin Schwabe, about 1936)"></div><figcaption class="strip"><span class="r1"><span>#tools</span><span>c. 1936</span><span>Watercolour</span><span>Paper</span></span><span class="r2"><span>Erwin Schwabe</span><span>Washington</span></span><span class="r3">Quill Pens</span></figcaption></figure>
+    </div>
+  </section>
+
+  <a class="begin" href="/signup" aria-label="Begin: make an account">
+    <span class="t">Make an account. Your first note is the next page.</span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M8 6h10v10"/></svg>
+    <span class="w" aria-hidden="true">Begin</span>
+  </a>
+</main>
+
+<footer class="mx" aria-label="Footer">
+  <div class="fcols">
+    <div><h3>Quill</h3><ul><li><a href="/signup">Sign up</a></li><li><a href="/login">Log in</a></li></ul></div>
+    <div><h3>Inside</h3><ul><li><a href="#switch">Search and ask</a></li><li><a href="#ask">Things to ask</a></li><li><a href="#kept">Notes kept</a></li></ul></div>
+    <div><h3>Your notes</h3><ul><li>Nothing changes without your yes</li><li>Undo for ten days</li><li>Nothing deleted for good</li></ul></div>
+    <div><h3>Pictures</h3><ul><li>Vermeer, ter Borch, van Mieris, Jamieson, Charlemont, Thackeray, Schwabe, the British Library</li><li>Public domain, via Wikimedia Commons and the Art Institute of Chicago</li></ul></div>
+  </div>
+  <div></div>
+  <svg class="fword" viewBox="0 0 302 76" aria-hidden="true"><text x="-3" y="73">QUILL</text></svg>
+  <div class="legal"><span>© 2026 Quill</span><a href="#">Back to top</a></div>
+</footer>
+
+<script>
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('ready')));
+const fitWord = () => { const svg = document.querySelector('.fword'), b = svg.querySelector('text').getBBox(); svg.setAttribute('viewBox', `${b.x} ${b.y + b.height * .2} ${b.width} ${b.height * .74}`); };
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(fitWord);
+
+// The picture rises a little as the page scrolls
+const pic = document.querySelector('.rise-pic img');
+if (!reduce) addEventListener('scroll', () => { const y = Math.min(scrollY, innerHeight); pic.style.setProperty('--z', 1.06 + y / innerHeight * .08); pic.style.translate = `0 ${-y * .12}px`; }, { passive: true });
+
+// Entrances
+const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -8% 0px' });
+document.querySelectorAll('.rv').forEach((el) => io.observe(el));
+
+// The switch: the same box becomes the agent, and the field turns coral, as in the app
+const sw = document.getElementById('switch'), tg = document.getElementById('toggle');
+tg.addEventListener('click', () => {
+  const on = !sw.classList.contains('on');
+  sw.classList.toggle('on', on); tg.setAttribute('aria-pressed', String(on));
+  document.getElementById('verb').textContent = on ? 'Ask' : 'Search';
+  document.getElementById('ph').textContent = on ? 'Ask the agent…' : 'Search notes…';
+  tg.setAttribute('aria-label', on ? 'Switch the search bar back to keywords' : 'Switch the search bar to the agent');
+});
+
+// The command list: type to filter, arrows or pointer to choose
+const q = document.getElementById('q'), rows = [...document.querySelectorAll('.rows li[role=option]')], none = document.getElementById('none');
+const desc = document.createElement('li'); desc.className = 'd'; desc.setAttribute('role', 'presentation'); desc.innerHTML = '<p></p>';
+let sel = 0;
+const visible = () => rows.filter((r) => !r.hidden);
+function select(i){
+  const v = visible(); if (!v.length) { desc.remove(); return; }
+  sel = (i + v.length) % v.length;
+  rows.forEach((r) => r.setAttribute('aria-selected', String(r === v[sel])));
+  desc.firstChild.textContent = v[sel].querySelector('template').innerHTML; v[sel].after(desc);
+}
+q.addEventListener('input', () => {
+  const t = q.value.trim().toLowerCase();
+  rows.forEach((r) => { r.hidden = !!t && !r.querySelector('.nm').textContent.toLowerCase().includes(t) && !r.dataset.k.toLowerCase().startsWith(t); });
+  none.hidden = visible().length > 0; select(0);
+});
+q.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown') { e.preventDefault(); select(sel + 1); } if (e.key === 'ArrowUp') { e.preventDefault(); select(sel - 1); } });
+rows.forEach((r) => { r.addEventListener('mouseenter', () => { if (matchMedia('(hover:hover)').matches) select(visible().indexOf(r)); }); r.addEventListener('click', () => select(visible().indexOf(r))); });
+select(0);
+</script>
+</body>
+</html>
