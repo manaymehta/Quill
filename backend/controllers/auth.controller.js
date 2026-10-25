@@ -1,3 +1,5 @@
+const crypto = require("node:crypto");
+const bcrypt = require("bcrypt");
 const { OAuth2Client } = require("google-auth-library");
 const User = require("../models/user.model");
 const Note = require("../models/note.model"); // Needed for createInitialNotes
@@ -9,6 +11,11 @@ const {
 } = require("../services/auth.service");
 
 const client = new OAuth2Client(process.env.VITE_GOOGLE_CLIENT_ID);
+
+// Unknown email and wrong password get one answer (the Google-account hint stays on purpose)
+const INVALID_LOGIN_MESSAGE = "Invalid email or password";
+// A hash of a random value at the same cost as real passwords (user.model: salt rounds 10)
+const UNKNOWN_ACCOUNT_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString("hex"), 10);
 
 const normalizeEmail = (email) => typeof email === "string" ? email.trim().toLowerCase() : "";
 
@@ -107,7 +114,10 @@ const login = async (req, res) => {
     try {
         const userInfo = await User.findOne({ email: email });
         if (!userInfo) {
-            return res.status(400).json({ error: true, message: "User not found" });
+            // The same check a real account gets, so neither the answer nor its timing tells
+            // whether this email has an account
+            await bcrypt.compare(password, UNKNOWN_ACCOUNT_HASH);
+            return res.status(400).json({ error: true, message: INVALID_LOGIN_MESSAGE });
         }
 
         // reject google auth users from this route
@@ -129,7 +139,7 @@ const login = async (req, res) => {
         } else {
             return res.status(400).json({
                 error: true,
-                message: "Invalid Credentials",
+                message: INVALID_LOGIN_MESSAGE,
             });
         }
     } catch (error) {

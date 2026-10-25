@@ -7,6 +7,32 @@ on:
     branches: ["main", "dev"]
 
 jobs:
+  # Which services this push touches: a service is redeployed only when its folder changed (or the
+  # pipeline / render.yaml did), so a frontend-only change doesn't rebuild both Render services
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read   # on a pull request, the filter reads its changed files from the API
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      fastapi: ${{ steps.filter.outputs.fastapi }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'render.yaml'
+              - '.github/workflows/**'
+            fastapi:
+              - 'fast_api/**'
+              - 'render.yaml'
+              - '.github/workflows/**'
+
   lint-frontend:
     name: Lint & Build (Frontend)
     runs-on: ubuntu-latest
@@ -47,11 +73,41 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+  # The agent's offline checks (no network, no AI quota) before FastAPI can deploy
+  test-fastapi:
+    name: Offline checks (FastAPI)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./fast_api
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: "./fast_api/requirements.txt"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run offline checks
+        run: |
+          for t in smoke_bulk smoke_output_checks smoke_retrieval smoke_time_limits smoke_edit_guards smoke_grouping; do
+            echo "::group::$t"
+            python "tests/$t.py"
+            echo "::endgroup::"
+          done
+
   deploy-backend:
     name: Deploy → Render (Backend)
     runs-on: ubuntu-latest
-    needs: [lint-frontend, lint-backend]
-    if: github.ref == 'refs/heads/main'
+    needs: [changes, lint-frontend, lint-backend]
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.backend == 'true'
+    concurrency:
+      group: deploy-backend
+      cancel-in-progress: false
     environment:
       name: Production (Backend)
       url: https://quill-green.vercel.app
@@ -68,8 +124,11 @@ jobs:
   deploy-fastapi:
     name: Deploy → Render (FastAPI)
     runs-on: ubuntu-latest
-    needs: [lint-frontend, lint-backend]
-    if: github.ref == 'refs/heads/main'
+    needs: [changes, lint-frontend, lint-backend, test-fastapi]
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.fastapi == 'true'
+    concurrency:
+      group: deploy-fastapi
+      cancel-in-progress: false
     environment:
       name: Production (FastAPI)
       url: https://quill-green.vercel.app

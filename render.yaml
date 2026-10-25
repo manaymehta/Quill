@@ -5,10 +5,15 @@ services:
     region: oregon
     plan: free
     rootDir: backend
-    buildCommand: "npm install"
+    # Exactly the committed lockfile, as CI installs it (WORKSPACE.md: peer ranges need the flag)
+    buildCommand: "npm ci --legacy-peer-deps"
     startCommand: "npm start"
     healthCheckPath: "/ready"
+    # Deploys come from CI's deploy hook, after lint and checks pass
+    autoDeploy: false
     envVars:
+      - key: NODE_VERSION
+        value: "22"
       - key: FASTAPI_SUMMARIZE_URL
         sync: false
       - key: FASTAPI_INTERNAL_KEY
@@ -36,8 +41,16 @@ services:
     rootDir: fast_api
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
-    healthCheckPath: "/ready"
+    # Liveness only: /ready also asks Qdrant, and a Qdrant hiccup must not get the whole AI
+    # service (summaries included) restarted
+    healthCheckPath: "/health"
+    autoDeploy: false
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.11"
+      # The backend's public URL (no /v1, no trailing slash): every agent tool call goes there
+      - key: EXPRESS_INTERNAL_URL
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: QDRANT_URL

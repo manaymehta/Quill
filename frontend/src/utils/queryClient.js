@@ -7,7 +7,11 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 30, // 30 seconds stale time
-      refetchOnWindowFocus: true,
+      // Retry only what may pass next time (network, 5xx); a 4xx answer won't change by asking again
+      retry: (failureCount, error) => {
+        const status = error?.response?.status;
+        return failureCount < 2 && !(status >= 400 && status < 500);
+      },
     },
   },
 });

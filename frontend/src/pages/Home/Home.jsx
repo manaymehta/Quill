@@ -7,7 +7,7 @@ import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useHomeNotesQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
 import { buildFolderHierarchy } from '../../utils/folderHierarchy';
-import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleShowInHomeMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import { MdOutlineFolder } from 'react-icons/md';
 import './Modal.css';
@@ -46,7 +46,7 @@ const Home = () => {
 
   const { promptDelete } = useDeleteNoteMutation();
   const { promptToggleArchive } = useArchiveNoteMutation();
-  const toggleHomePinMutation = useToggleHomePinMutation();
+  const toggleShowInHomeMutation = useToggleShowInHomeMutation();
   const moveNoteMutation = useMoveNoteMutation();
   const checklistToggleMutation = useChecklistToggleMutation();
   const editFolderMutation = useEditFolderMutation();
@@ -70,7 +70,7 @@ const Home = () => {
   };
 
   const handleToggleHome = (note) => {
-    toggleHomePinMutation.mutate(note._id);
+    toggleShowInHomeMutation.mutate(note._id);
   };
 
   const handleMoveNote = (noteId, targetFolderId) => {

@@ -1,11 +1,11 @@
-fastapi
-uvicorn[standard]
-google-genai
+# Pinned to the versions the agent was tested with (fast_api/venv): every deploy installs exactly
+# these. Upgrade on purpose, then re-run the offline checks and a live turn.
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+google-genai==2.25.0
 qdrant-client==1.19.1
-# sentence-transformers
-pydantic
-python-dotenv
-httpx
+pydantic==2.13.5
+python-dotenv==1.2.3
+httpx==0.28.1
 # Grouping (agent/grouping.py); also installed by qdrant-client.
-numpy
-
+numpy==2.5.3

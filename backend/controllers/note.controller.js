@@ -452,6 +452,23 @@ const getHomeNotes = async (req, res) => {
     }
 };
 
+// GET /folder-note-counts -> { counts: { [folderId]: n } }: notes filed directly in each folder that
+// aren't archived or trashed. What folder cards and the delete-folder dialog show, without
+// downloading the notes themselves.
+const getFolderNoteCounts = async (req, res) => {
+    const userId = String(req.user._id);
+    try {
+        const rows = await Note.aggregate([
+            { $match: { userId, isDeleted: { $ne: true }, isArchived: { $ne: true }, folderId: { $ne: null } } },
+            { $group: { _id: "$folderId", count: { $sum: 1 } } },
+        ]);
+        return res.json({ error: false, counts: Object.fromEntries(rows.map((row) => [String(row._id), row.count])) });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    }
+};
+
 const getFolderNotes = async (req, res) => {
     const userId = req.user._id;
     const { folderIds } = req.query;
@@ -833,7 +850,8 @@ const moveNote = async (req, res) => {
     }
 };
 
-const toggleHomePin = async (req, res) => {
+// "Home" / "Un Home" on a filed note: shows it on Home as well as in its folder (showInHome)
+const toggleShowInHome = async (req, res) => {
     const noteId = req.params.noteId;
     const userId = req.user._id;
 
@@ -871,6 +889,7 @@ module.exports = {
     getGraphNotes,
     getHomeNotes,
     getFolderNotes,
+    getFolderNoteCounts,
     deleteNote,
     getTrashNotes,
     restoreNote,
@@ -881,7 +900,7 @@ module.exports = {
     getArchivedNotes,
     reorderNotes,
     moveNote,
-    toggleHomePin,
+    toggleShowInHome,
     deleteEmbed,
     triggerEmbed,
     runEmbeddingBatch,

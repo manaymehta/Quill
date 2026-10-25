@@ -32,11 +32,21 @@ export const useEditFolderMutation = () => {
       const response = await axiosInstance.put(`/edit-folder/${folderId}`, patch);
       return response.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDERS });
+    // The new name or colour shows at once (the row used to flash the old name until the refetch)
+    onMutate: ({ folderId, patch }) => {
+      const previous = queryClient.getQueryData(QUERY_KEYS.FOLDERS);
+      if (Array.isArray(previous)) {
+        queryClient.setQueryData(QUERY_KEYS.FOLDERS, previous.map((f) => (f._id === folderId ? { ...f, ...patch } : f)));
+      }
+      queryClient.cancelQueries({ queryKey: QUERY_KEYS.FOLDERS, exact: true }, { revert: false });
+      return { previous };
     },
-    onError: (error) => {
+    onError: (error, _variables, context) => {
+      if (context?.previous) queryClient.setQueryData(QUERY_KEYS.FOLDERS, context.previous);
       useToastStore.getState().showToast(error.response?.data?.message || "Failed to update folder", "error");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDERS });
     },
   });
 };
@@ -50,8 +60,8 @@ export const useDeleteFolderMutation = () => {
     },
     onSuccess: () => {
       useToastStore.getState().showToast("Folder moved to Trash", "delete");
-      queryClient.invalidateQueries({ queryKey: ['folders'] });
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDERS });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
     },
     onError: (error) => {
       useToastStore.getState().showToast(error.response?.data?.message || "Failed to delete folder", "error");
@@ -81,8 +91,8 @@ export const useRestoreFolderMutation = () => {
     },
     onSuccess: () => {
       useToastStore.getState().showToast("Folder restored successfully", "success");
-      queryClient.invalidateQueries({ queryKey: ['folders'] });
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDERS });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
     },
     onError: (error) => {
       useToastStore.getState().showToast(error.response?.data?.message || "Failed to restore folder", "error");

@@ -10,6 +10,30 @@ import { TOAST, MODAL_MESSAGES } from '../constants/toastMessages';
 
 const hasEmbeddingIssue = (data) => ["failed", "partial"].includes(data?.embedding?.status);
 
+// A change shown at once: update(key, list) gives each cached notes list its new value (or the same
+// list when untouched). The lists are written first and fetches still in flight are then cancelled
+// without reverting (as the reorder does), so a fetch that started earlier can't land over the
+// change. Returns the previous lists, to put back if the server refuses.
+const patchNoteLists = (queryClient, update) => {
+  const previous = queryClient.getQueriesData({ queryKey: QUERY_KEYS.NOTES });
+  for (const [key, list] of previous) {
+    if (!Array.isArray(list)) continue;
+    const next = update(key, list);
+    if (next !== list) queryClient.setQueryData(key, next);
+  }
+  queryClient.cancelQueries({ queryKey: QUERY_KEYS.NOTES }, { revert: false });
+  return { previous };
+};
+
+const restoreNoteLists = (queryClient, context) => {
+  context?.previous?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+};
+
+const without = (list, noteId) => (list.some((n) => n._id === noteId) ? list.filter((n) => n._id !== noteId) : list);
+const noteIdOf = (variables) => (typeof variables === 'string' ? variables : variables?.noteId || variables?._id);
+// Cached list keys: ['notes', 'home' | 'archived' | 'trash'], ['notes', 'folder', id], ['notes', 'graph', { includeArchived }]
+const listName = (key) => key[1];
+
 export const useDeleteNoteMutation = () => {
   const queryClient = useQueryClient();
   const mutation = useMutation({
@@ -24,8 +48,14 @@ export const useDeleteNoteMutation = () => {
       const response = await axiosInstance.delete(`/delete-note/${noteId}`);
       return response.data;
     },
+    // The card leaves every list but Trash at once
+    onMutate: (variables) => {
+      const noteId = noteIdOf(variables);
+      if (!noteId || useTabsStore.getState().isTabOpen(noteId)) return {};
+      return patchNoteLists(queryClient, (key, list) => (listName(key) === 'trash' ? list : without(list, noteId)));
+    },
     onSuccess: (data, variables) => {
-      const noteId = typeof variables === 'string' ? variables : variables?.noteId || variables?._id;
+      const noteId = noteIdOf(variables);
 
       useToastStore.getState().showToast({
         ...TOAST.NOTE_DELETED,
@@ -33,19 +63,21 @@ export const useDeleteNoteMutation = () => {
           ? async () => {
               try {
                 await axiosInstance.put(`/restore-note/${noteId}`);
-                queryClient.invalidateQueries({ queryKey: ['notes'] });
+                queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
               } catch (err) {
                 useToastStore.getState().showToast(err.response?.data?.message || "Failed to restore note", "error");
               }
             }
           : null,
       });
-
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
-    onError: (error) => {
+    onError: (error, _variables, context) => {
+      restoreNoteLists(queryClient, context);
       if (error?.message === "NOTE_OPEN_IN_TAB" || error?.suppressToast) return;
       useToastStore.getState().showToast(error.response?.data?.message || "Failed to delete note", "error");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
     },
   });
 
@@ -92,6 +124,15 @@ export const useArchiveNoteMutation = () => {
       const response = await axiosInstance.put(`/update-note-archive/${noteId}`, { isArchived });
       return response.data;
     },
+    // Archiving: the card leaves Home, its folder and the Graph's live view at once. Unarchiving: it
+    // leaves Archive. The list it joins shows it after the refresh (it arrives at the bottom).
+    onMutate: ({ noteId, isArchived }) => patchNoteLists(queryClient, (key, list) => {
+      const name = listName(key);
+      const leaves = isArchived
+        ? name === 'home' || name === 'folder' || (name === 'graph' && !key[2]?.includeArchived)
+        : name === 'archived';
+      return leaves ? without(list, noteId) : list;
+    }),
     onSuccess: (data, variables) => {
       const isArchived = variables?.isArchived;
       const noteId = variables?.noteId;
@@ -102,18 +143,20 @@ export const useArchiveNoteMutation = () => {
           ? async () => {
               try {
                 await axiosInstance.put(`/update-note-archive/${noteId}`, { isArchived: !isArchived });
-                queryClient.invalidateQueries({ queryKey: ['notes'] });
+                queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
               } catch (err) {
                 useToastStore.getState().showToast(err.response?.data?.message || "Failed to reverse archive", "error");
               }
             }
           : null,
       });
-
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
     },
-    onError: (error) => {
+    onError: (error, _variables, context) => {
+      restoreNoteLists(queryClient, context);
       useToastStore.getState().showToast(error.response?.data?.message || "Failed to update note archive", "error");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
     },
   });
 
@@ -151,7 +194,7 @@ export const useArchiveNoteMutation = () => {
 const CHECKLIST_MUTATION_KEY = ['checklist-toggle'];
 
 const findCachedNote = (queryClient, noteId) => {
-  for (const [, list] of queryClient.getQueriesData({ queryKey: ['notes'] })) {
+  for (const [, list] of queryClient.getQueriesData({ queryKey: QUERY_KEYS.NOTES })) {
     const note = Array.isArray(list) && list.find((n) => n._id === noteId);
     if (note) return note;
   }
@@ -169,20 +212,13 @@ export const useChecklistToggleMutation = () => {
       const response = await axiosInstance.put(`/edit-note/${noteId}`, { checklist });
       return response.data;
     },
-    onMutate: ({ noteId, checklist }) => {
-      queryClient.cancelQueries({ queryKey: ['notes'] });
-      const previous = queryClient.getQueriesData({ queryKey: ['notes'] });
-      queryClient.setQueriesData({ queryKey: ['notes'] }, (list) => (
-        Array.isArray(list) ? list.map((n) => (n._id === noteId ? { ...n, checklist } : n)) : list
-      ));
-      return { previous };
-    },
-    onError: (_error, _variables, context) => {
-      context?.previous?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-    },
+    onMutate: ({ noteId, checklist }) => patchNoteLists(queryClient, (_key, list) => (
+      list.some((n) => n._id === noteId) ? list.map((n) => (n._id === noteId ? { ...n, checklist } : n)) : list
+    )),
+    onError: (_error, _variables, context) => restoreNoteLists(queryClient, context),
     onSettled: () => {
       if (queryClient.isMutating({ mutationKey: CHECKLIST_MUTATION_KEY }) === 1) {
-        queryClient.invalidateQueries({ queryKey: ['notes'] });
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
       }
     },
   });
@@ -197,22 +233,34 @@ export const useChecklistToggleMutation = () => {
   return { ...mutation, toggle };
 };
 
-export const useToggleHomePinMutation = () => {
+// "Home" / "Un Home" on a filed note: shows it on Home as well as in its folder (showInHome)
+export const useToggleShowInHomeMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (variables) => {
-      const noteId = typeof variables === 'string' ? variables : variables?.noteId || variables?._id;
-      const response = await axiosInstance.put(`/toggle-home-pin/${noteId}`, {});
+      const response = await axiosInstance.put(`/toggle-show-in-home/${noteIdOf(variables)}`, {});
       return response.data;
     },
-    onSuccess: (data, variables) => {
-      const isPinned = data?.note?.showInHome ?? (typeof variables === 'object' ? variables.showInHome : true);
-      const message = `Note ${isPinned ? "pinned to" : "unpinned from"} Home`;
-      useToastStore.getState().showToast(message, "success");
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
+    // The new state shows at once on every card of the note; whether it joins or leaves Home's
+    // list follows with the refresh
+    onMutate: (variables) => {
+      const noteId = noteIdOf(variables);
+      const current = findCachedNote(queryClient, noteId);
+      if (!current) return {};
+      const showInHome = !current.showInHome;
+      return patchNoteLists(queryClient, (_key, list) => (
+        list.some((n) => n._id === noteId) ? list.map((n) => (n._id === noteId ? { ...n, showInHome } : n)) : list
+      ));
     },
-    onError: (error) => {
-      useToastStore.getState().showToast(error.response?.data?.message || "Failed to toggle pin", "error");
+    onSuccess: (data) => {
+      useToastStore.getState().showToast(data?.note?.showInHome ? TOAST.NOTE_ADDED_TO_HOME : TOAST.NOTE_REMOVED_FROM_HOME);
+    },
+    onError: (error, _variables, context) => {
+      restoreNoteLists(queryClient, context);
+      useToastStore.getState().showToast(error.response?.data?.message || "Failed to update Home", "error");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
     },
   });
 };
@@ -224,6 +272,11 @@ export const useMoveNoteMutation = () => {
       const response = await axiosInstance.put(`/move-note/${noteId}`, { targetFolderId });
       return response.data;
     },
+    // The card leaves the folder page it was on at once; the folder it moves to shows it after the
+    // refresh (it arrives at the bottom), as does Home when the move changes whether it's there
+    onMutate: ({ noteId, targetFolderId }) => patchNoteLists(queryClient, (key, list) => (
+      listName(key) === 'folder' && String(key[2]) !== String(targetFolderId ?? '') ? without(list, noteId) : list
+    )),
     onSuccess: (data, variables) => {
       useToastStore.getState().showToast("Note moved successfully", "success");
       if (variables?.noteId && variables?.targetFolderId !== undefined) {
@@ -233,11 +286,14 @@ export const useMoveNoteMutation = () => {
           editorRegistry.setBaseline(variables.noteId, { ...baseline, folderId: variables.targetFolderId });
         }
       }
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
-      queryClient.invalidateQueries({ queryKey: ['folders'] });
     },
-    onError: (error) => {
+    onError: (error, _variables, context) => {
+      restoreNoteLists(queryClient, context);
       useToastStore.getState().showToast(error.response?.data?.message || "Failed to move note", "error");
+    },
+    // ['folders'] isn't refreshed: the folder list holds no note counts (those live under 'notes')
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
     },
   });
 };
@@ -297,7 +353,7 @@ export const useRestoreNoteMutation = () => {
     },
     onSuccess: (data, noteId) => {
       useToastStore.getState().showToast("Note restored successfully", "success");
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
       // Re-indexing runs after the restore replies; a failure still shows, a moment later
       if (data?.indexing) {
         noteIndexingFailed(noteId).then((failed) => {

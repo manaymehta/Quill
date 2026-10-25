@@ -377,7 +377,28 @@ const getTrashFolders = async (req, res) => {
             .select(`${FOLDER_LIST_FIELDS} deletedAt deletedBatchId isDeleted isDeletedRoot`)
             .sort({ deletedAt: -1 })
             .lean();
-        return res.json({ error: false, folders });
+
+        // The notes and subfolders filed directly in each trashed folder (they went to Trash with it,
+        // so the Trash note and folder lists don't include them)
+        const batchIds = folders.map((folder) => folder.deletedBatchId).filter(Boolean);
+        const inBatches = { userId: String(userId), isDeleted: true, deletedBatchId: { $in: batchIds } };
+        const [noteRows, folderRows] = batchIds.length > 0
+            ? await Promise.all([
+                Note.aggregate([{ $match: inBatches }, { $group: { _id: "$folderId", count: { $sum: 1 } } }]),
+                Folder.aggregate([{ $match: inBatches }, { $group: { _id: "$parentId", count: { $sum: 1 } } }]),
+            ])
+            : [[], []];
+        const notesIn = new Map(noteRows.map((row) => [String(row._id), row.count]));
+        const foldersIn = new Map(folderRows.map((row) => [String(row._id), row.count]));
+
+        return res.json({
+            error: false,
+            folders: folders.map((folder) => ({
+                ...folder,
+                noteCount: notesIn.get(String(folder._id)) || 0,
+                subfolderCount: foldersIn.get(String(folder._id)) || 0,
+            })),
+        });
     } catch (error) {
         console.error(error);
         return res.status(500).json({ error: true, message: "Internal Server Error" });

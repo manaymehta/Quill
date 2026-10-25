@@ -6,7 +6,7 @@ import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useFoldersQuery, useFolderNotesQuery } from '../../hooks/useNotesQuery';
 import { buildFolderHierarchy } from '../../utils/folderHierarchy';
-import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleHomePinMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleShowInHomeMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import Breadcrumb from '../../components/Cards/Breadcrumb';
@@ -20,7 +20,8 @@ const FolderView = () => {
   const { data: folders = [] } = useFoldersQuery();
   const folderHierarchy = useMemo(() => buildFolderHierarchy(folders), [folders]);
   const subtreeIds = useMemo(() => folderHierarchy.getSubtreeIds(folderId), [folderHierarchy, folderId]);
-  const { data: folderNotes = [], isLoading } = useFolderNotesQuery(subtreeIds, folderId);
+  // Only this folder's own notes: its subfolders show as cards, not in this grid
+  const { data: directNotes = [], isLoading } = useFolderNotesQuery(folderId);
   // A drag here changes this folder's own order (its subfolders' notes aren't in this grid)
   const folderOrder = useMemo(() => ({ list: 'folder', folderId }), [folderId]);
 
@@ -34,7 +35,7 @@ const FolderView = () => {
 
   const { promptDelete } = useDeleteNoteMutation();
   const { promptToggleArchive } = useArchiveNoteMutation();
-  const toggleHomePinMutation = useToggleHomePinMutation();
+  const toggleShowInHomeMutation = useToggleShowInHomeMutation();
   const moveNoteMutation = useMoveNoteMutation();
   const checklistToggleMutation = useChecklistToggleMutation();
   const editFolderMutation = useEditFolderMutation();
@@ -72,9 +73,6 @@ const FolderView = () => {
     [folderHierarchy, folderId]
   );
   
-  // For explorer mode: direct notes only
-  const directNotes = folderNotes.filter(n => n.folderId === folderId);
-
   const displayedDirectNotes = useMemo(() => {
     if (searchMode === 'keyword' && searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -100,7 +98,7 @@ const FolderView = () => {
   };
 
   const handleToggleHome = (note) => {
-    toggleHomePinMutation.mutate(note._id);
+    toggleShowInHomeMutation.mutate(note._id);
   };
 
   const handleMoveNote = (noteId, targetFolderId) => {

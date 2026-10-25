@@ -35,12 +35,14 @@ const App = () => {
         </Route>
 
         {/* Protected Routes*/}
-        <Route element={<MainLayout />}>
-          <Route path="/dashboard" element={isLoggedIn ? <Home /> : <Navigate to="/" />} />
-          <Route path="/folder/:folderId" element={isLoggedIn ? <FolderView /> : <Navigate to="/" />} />
-          <Route path="/archive" element={isLoggedIn ? <Archive /> : <Navigate to="/" />} />
-          <Route path="/trash" element={isLoggedIn ? <Trash /> : <Navigate to="/" />} />
-          <Route path="/graph" element={isLoggedIn ? <Graph /> : <Navigate to="/" />} />
+        {/* guarded once here: logged out, the app shell (sidebar, dock, editor, modals) never mounts, so
+            none of its queries fire */}
+        <Route element={isLoggedIn ? <MainLayout /> : <Navigate to="/" />}>
+          <Route path="/dashboard" element={<Home />} />
+          <Route path="/folder/:folderId" element={<FolderView />} />
+          <Route path="/archive" element={<Archive />} />
+          <Route path="/trash" element={<Trash />} />
+          <Route path="/graph" element={<Graph />} />
         </Route>
 
       </Routes>

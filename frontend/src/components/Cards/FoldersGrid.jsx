@@ -4,7 +4,7 @@ import { arrayMove, SortableContext, rectSortingStrategy } from '@dnd-kit/sortab
 import { MdFolder, MdAdd } from 'react-icons/md';
 import FolderCard from './FolderCard';
 import { useCreateFolderMutation, useReorderFoldersMutation } from '../../hooks/useFolderMutations';
-import { useFoldersQuery, useAllNotesQuery, useTrashFoldersQuery, useTrashNotesQuery } from '../../hooks/useNotesQuery';
+import { useFoldersQuery, useFolderNoteCountsQuery } from '../../hooks/useNotesQuery';
 
 const FoldersGrid = ({
     folders,
@@ -24,29 +24,30 @@ const FoldersGrid = ({
     const [activeId, setActiveId] = useState(null);
 
     const { data: allFolders = [] } = useFoldersQuery({ enabled: !isTrash });
-    const { data: allNotes = [] } = useAllNotesQuery({ enabled: !isTrash });
-    const { data: trashFolders = [] } = useTrashFoldersQuery({ enabled: isTrash });
-    const { data: trashNotes = [] } = useTrashNotesQuery({ enabled: isTrash });
+    const { data: noteCountsById = {} } = useFolderNoteCountsQuery({ enabled: !isTrash });
 
+    // Notes and subfolders filed directly in each folder. Trashed folders carry their own counts
+    // (what went to Trash with them); live ones count subfolders from the folder list and notes
+    // from the server's per-folder counts.
     const counts = useMemo(() => {
         const subfolderCounts = new Map();
-        const folderSource = isTrash ? trashFolders : allFolders;
-        for (const f of folderSource) {
-            if (f.parentId && (isTrash || !f.isDeleted)) {
+        const noteCounts = new Map();
+        if (isTrash) {
+            for (const f of folders || []) {
+                subfolderCounts.set(String(f._id), f.subfolderCount || 0);
+                noteCounts.set(String(f._id), f.noteCount || 0);
+            }
+            return { subfolderCounts, noteCounts };
+        }
+        for (const f of allFolders) {
+            if (f.parentId && !f.isDeleted) {
                 const pid = String(f.parentId);
                 subfolderCounts.set(pid, (subfolderCounts.get(pid) || 0) + 1);
             }
         }
-        const noteCounts = new Map();
-        const noteSource = isTrash ? trashNotes : allNotes;
-        for (const n of noteSource) {
-            if (n.folderId && (isTrash || (!n.isDeleted && !n.isArchived))) {
-                const fid = String(n.folderId);
-                noteCounts.set(fid, (noteCounts.get(fid) || 0) + 1);
-            }
-        }
+        for (const [fid, count] of Object.entries(noteCountsById)) noteCounts.set(fid, count);
         return { subfolderCounts, noteCounts };
-    }, [allFolders, allNotes, trashFolders, trashNotes, isTrash]);
+    }, [allFolders, noteCountsById, folders, isTrash]);
 
     const sortableItems = useMemo(() => (folders || []).map(f => f._id), [folders]);
 

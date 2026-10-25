@@ -12,11 +12,6 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
     ],
-    build: {
-      commonjsOptions: {
-        transformMixedEsModules: true,
-      },
-    },
     server: {
       proxy: {
         "/api/v1": {

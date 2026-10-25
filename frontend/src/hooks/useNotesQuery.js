@@ -3,104 +3,43 @@ import axiosInstance from '../utils/axiosInstance';
 
 // Standardized Query Keys
 export const QUERY_KEYS = {
+  NOTES: ['notes'],       // every note list (and the folder counts): what a note change refreshes
   HOME_NOTES: ['notes', 'home'],
-  ALL_NOTES: ['notes', 'all'],
+  // Under 'notes' on purpose: every note change already refreshes ['notes'], so the counts follow
+  FOLDER_NOTE_COUNTS: ['notes', 'folder-counts'],
   GRAPH_NOTES: (includeArchived) => ['notes', 'graph', { includeArchived: Boolean(includeArchived) }],
   FOLDER_NOTES: (folderId) => ['notes', 'folder', folderId],
   TRASH_NOTES: ['notes', 'trash'],
   ARCHIVED_NOTES: ['notes', 'archived'],
-  FOLDERS: ['folders'],
+  FOLDERS: ['folders'],   // also the prefix of every folder list
   TRASH_FOLDERS: ['folders', 'trash'],
 };
 
 // ─── Query Hooks ─────────────────────────────────────────────────────────────
 
-export const useHomeNotesQuery = (options = {}) => {
+// One GET whose reply holds the data under `field` (`empty` until it has it)
+const listQuery = (queryKey, url, field, empty = []) => function useListQuery(options = {}) {
   return useQuery({
-    queryKey: QUERY_KEYS.HOME_NOTES,
-    queryFn: async () => {
-      const response = await axiosInstance.get("/get-home-notes");
-      return response.data?.notes || [];
-    },
+    queryKey,
+    queryFn: async () => (await axiosInstance.get(url)).data?.[field] ?? empty,
     ...options,
   });
 };
 
-export const useAllNotesQuery = (options = {}) => {
-  return useQuery({
-    queryKey: QUERY_KEYS.ALL_NOTES,
-    queryFn: async () => {
-      const response = await axiosInstance.get("/get-all-notes");
-      return response.data?.notes || [];
-    },
-    ...options,
-  });
-};
+export const useHomeNotesQuery = listQuery(QUERY_KEYS.HOME_NOTES, '/get-home-notes', 'notes');
+// { [folderId]: number of notes filed directly in it (not archived, not trashed) }
+export const useFolderNoteCountsQuery = listQuery(QUERY_KEYS.FOLDER_NOTE_COUNTS, '/folder-note-counts', 'counts', {});
+export const useTrashNotesQuery = listQuery(QUERY_KEYS.TRASH_NOTES, '/get-trash-notes', 'notes');
+export const useArchivedNotesQuery = listQuery(QUERY_KEYS.ARCHIVED_NOTES, '/get-all-archived-notes', 'notes');
+export const useFoldersQuery = listQuery(QUERY_KEYS.FOLDERS, '/get-folders', 'folders');
+export const useTrashFoldersQuery = listQuery(QUERY_KEYS.TRASH_FOLDERS, '/get-trash-folders', 'folders');
 
-export const useGraphNotesQuery = (includeArchived = false, options = {}) => {
-  return useQuery({
-    queryKey: QUERY_KEYS.GRAPH_NOTES(includeArchived),
-    queryFn: async () => {
-      const response = await axiosInstance.get(`/get-graph-notes?includeArchived=${Boolean(includeArchived)}`);
-      return response.data?.notes || [];
-    },
-    ...options,
-  });
-};
+export const useGraphNotesQuery = (includeArchived = false, options = {}) =>
+  listQuery(QUERY_KEYS.GRAPH_NOTES(includeArchived), `/get-graph-notes?includeArchived=${Boolean(includeArchived)}`, 'notes')(options);
 
-export const useFolderNotesQuery = (folderIds, viewKey, options = {}) => {
-  return useQuery({
-    queryKey: QUERY_KEYS.FOLDER_NOTES(viewKey || (Array.isArray(folderIds) ? folderIds[0] : folderIds)),
-    queryFn: async () => {
-      const ids = Array.isArray(folderIds) ? folderIds.join(",") : folderIds;
-      const response = await axiosInstance.get(`/get-folder-notes?folderIds=${ids}`);
-      return response.data?.notes || [];
-    },
-    enabled: Boolean((viewKey || folderIds) && (Array.isArray(folderIds) ? folderIds.length > 0 : true)),
+// A folder's own notes (its subfolders show as cards, not in its grid)
+export const useFolderNotesQuery = (folderId, options = {}) =>
+  listQuery(QUERY_KEYS.FOLDER_NOTES(folderId), `/get-folder-notes?folderIds=${encodeURIComponent(folderId || '')}`, 'notes')({
+    enabled: Boolean(folderId),
     ...options,
   });
-};
-
-export const useTrashNotesQuery = (options = {}) => {
-  return useQuery({
-    queryKey: QUERY_KEYS.TRASH_NOTES,
-    queryFn: async () => {
-      const response = await axiosInstance.get("/get-trash-notes");
-      return response.data?.notes || [];
-    },
-    ...options,
-  });
-};
-
-export const useArchivedNotesQuery = (options = {}) => {
-  return useQuery({
-    queryKey: QUERY_KEYS.ARCHIVED_NOTES,
-    queryFn: async () => {
-      const response = await axiosInstance.get("/get-all-archived-notes");
-      return response.data?.notes || [];
-    },
-    ...options,
-  });
-};
-
-export const useFoldersQuery = (options = {}) => {
-  return useQuery({
-    queryKey: QUERY_KEYS.FOLDERS,
-    queryFn: async () => {
-      const response = await axiosInstance.get("/get-folders");
-      return response.data?.folders || [];
-    },
-    ...options,
-  });
-};
-
-export const useTrashFoldersQuery = (options = {}) => {
-  return useQuery({
-    queryKey: QUERY_KEYS.TRASH_FOLDERS,
-    queryFn: async () => {
-      const response = await axiosInstance.get("/get-trash-folders");
-      return response.data?.folders || [];
-    },
-    ...options,
-  });
-};

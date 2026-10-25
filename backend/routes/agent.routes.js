@@ -3,7 +3,7 @@ const {
     chatWithAgent, wakeAgent, listChats, getChat, updateChat, deleteChat, getAgentSettings, updateAgentSettings,
 } = require("../controllers/agent.controller");
 const { authenticateToken } = require("../middleware/auth.middleware");
-const { agentChatLimiter } = require("../middleware/agent-rate-limit");
+const { agentChatLimiter } = require("../middleware/rate-limit");
 const { validateObjectBody } = require("../middleware/request-validation");
 const { searchSupport } = require("../controllers/agent-search.controller");
 const {

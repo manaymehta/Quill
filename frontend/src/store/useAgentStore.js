@@ -3,6 +3,7 @@ import axiosInstance from '../utils/axiosInstance';
 import { streamAgentChat } from '../utils/agentStream';
 import { applyAgentEdit, collectUnsavedNotes, noteFields, stageAgentDrafts } from '../utils/agentEdits';
 import { queryClient } from '../utils/queryClient';
+import { QUERY_KEYS } from '../hooks/useNotesQuery';
 import { useTabsStore } from './useTabsStore';
 import { useToastStore } from './useToastStore';
 
@@ -79,8 +80,8 @@ const BUSY_MESSAGE = 'Wait for the answer (or press Stop) first.';
 const showError = (message) => useTabsStore.getState().showTabToast(message, 'error');
 
 const refreshNoteLists = () => {
-  queryClient.invalidateQueries({ queryKey: ['notes'] });
-  queryClient.invalidateQueries({ queryKey: ['folders'] });
+  queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
+  queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDERS });
 };
 
 // "Moved", "Tagged"… for a list or receipt with one change; "Changed" for several.

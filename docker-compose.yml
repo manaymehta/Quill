@@ -1,58 +1,48 @@
+# The whole stack locally, the same way as the three dev servers: frontend http://localhost:5173,
+# Express :8000, FastAPI :8001. Settings come from each service's own .env (backend/.env,
+# fast_api/.env, frontend/.env); only the addresses between containers are set here.
+#   docker compose up --build
 services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      target: development
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
       - /app/node_modules
+    env_file: ./backend/.env
     environment:
       - NODE_ENV=development
       - PORT=8000
-      - MONGO_URI=${MONGO_URI} # Injected from .env file
-      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET} # Injected from .env file
-      - FRONTEND_ORIGIN=${FRONTEND_ORIGIN} # Allowed browser origin(s), comma-separated
-      - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL:-15m}
-      - REFRESH_TOKEN_TTL_DAYS=${REFRESH_TOKEN_TTL_DAYS:-30}
-      - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID} # Injected from .env file
-      - FASTAPI_SUMMARIZE_URL=http://fast_api:8001 # FastAPI listens on container port 8001
-      - FASTAPI_INTERNAL_KEY=${FASTAPI_INTERNAL_KEY} # Shared only by Express and FastAPI
-    command: [ "npm", "run", "dev" ]
+      - FASTAPI_SUMMARIZE_URL=http://fast_api:8001
     depends_on:
       - fast_api
 
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - NODE_ENV=development
-      - PORT=3000
-      - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID} # Public client ID used by the frontend
       - API_PROXY_TARGET=http://backend:8000
-    command: [ "npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000" ]
     depends_on:
       - backend
 
   fast_api:
     build:
       context: ./fast_api
-      dockerfile: Dockerfile
     ports:
-      - "8001:8001" # Maps host port 8001 to container port 8001
+      - "8001:8001"
     volumes:
       - ./fast_api:/app
+      # the host's Windows venv is useless in the Linux container; keep the image's own packages
+      - /app/venv
+    env_file: ./fast_api/.env
     environment:
-      - NODE_ENV=development
-      - GEMINI_API_KEY=${GEMINI_API_KEY} # Injected from .env file
-      - QDRANT_URL=${QDRANT_URL} # Injected from .env file
-      - QDRANT_API_KEY=${QDRANT_API_KEY} # Injected from .env file
-      - FASTAPI_INTERNAL_KEY=${FASTAPI_INTERNAL_KEY} # Shared only by Express and FastAPI
+      - EXPRESS_INTERNAL_URL=http://backend:8000
     command: [ "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--reload" ]

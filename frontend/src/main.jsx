@@ -30,6 +30,17 @@ window.addEventListener('auth:changed', ({ detail = {} }) => {
   }
 });
 
+// A tab left open across a deploy asks for chunk files that no longer exist (each build renames
+// them): load the new build once instead of failing. At most once a minute, so it can't loop.
+window.addEventListener('vite:preloadError', (event) => {
+  let last = 0;
+  try { last = Number(sessionStorage.getItem('quill:chunkReloadAt')) || 0; } catch { /* storage blocked */ }
+  if (Date.now() - last < 60_000) return;
+  try { sessionStorage.setItem('quill:chunkReloadAt', String(Date.now())); } catch { /* storage blocked */ }
+  event.preventDefault();
+  window.location.reload();
+});
+
 Modal.setAppElement('#root'); // Set the app element for accessibility
 installScrollbarVisibility(); // scrollbars show only while their area scrolls
 createRoot(document.getElementById('root')).render(

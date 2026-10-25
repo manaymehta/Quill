@@ -98,7 +98,6 @@ const NotesGrid = ({
     onChecklistToggle,
     onRestore,
     onToggleHome,
-    onPin,
     onMove,
     isTrash,
     // Which saved order a drag changes: { list: 'home' } | { list: 'folder', folderId } |
@@ -333,7 +332,7 @@ const NotesGrid = ({
                                         onEdit={() => onEdit?.(note)}
                                         onDelete={() => onDelete?.(note)}
                                         onArchive={() => onArchive?.(note)}
-                                        onToggleHome={() => (onToggleHome || onPin)?.(note)}
+                                        onToggleHome={() => onToggleHome?.(note)}
                                         onMove={(targetFolderId) => onMove?.(note._id, targetFolderId)}
                                         onChecklistToggle={(i) => onChecklistToggle?.(note, i)}
                                         onRestore={() => onRestore?.(note)}

@@ -3,7 +3,7 @@ import { createPortal, flushSync } from 'react-dom';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useQueryClient } from '@tanstack/react-query';
 import axiosInstance from '../../utils/axiosInstance';
-import { useGraphNotesQuery } from '../../hooks/useNotesQuery';
+import { useGraphNotesQuery, QUERY_KEYS } from '../../hooks/useNotesQuery';
 import { useUIStore } from '../../store/useUIStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useTabsStore } from '../../store/useTabsStore';
@@ -275,7 +275,7 @@ const Graph = () => {
     }
 
     // 1. Search TanStack query cache for full note
-    const noteQueries = queryClient.getQueriesData({ queryKey: ['notes'] });
+    const noteQueries = queryClient.getQueriesData({ queryKey: QUERY_KEYS.NOTES });
     let fullNote = null;
     for (const [, data] of noteQueries) {
       if (Array.isArray(data)) {

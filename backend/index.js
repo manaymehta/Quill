@@ -31,7 +31,10 @@ app.use((req, res, next) => {
   res.setHeader("X-Request-Id", requestId);
   next();
 });
-app.use(express.json({ limit: "10mb" }));
+// Bodies are small everywhere except a note being saved and an agent turn (which carries the open
+// tabs' unsaved text, up to ~1.3 MB); those keep a large limit. A body parsed here isn't parsed again.
+app.use(["/v1/add-note", "/v1/edit-note", "/v1/agent/chat"], express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "1mb" }));
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {

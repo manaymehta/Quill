@@ -17,6 +17,16 @@ export const TOAST = {
     message: 'Note moved to Trash',
     type: 'delete',
   },
+  NOTE_ADDED_TO_HOME: {
+    label: 'Added to Home',
+    message: 'Note added to Home',
+    type: 'success',
+  },
+  NOTE_REMOVED_FROM_HOME: {
+    label: 'Removed from Home',
+    message: 'Note removed from Home',
+    type: 'success',
+  },
   NOTE_ARCHIVED: {
     label: 'Archived',
     message: 'Note archived',

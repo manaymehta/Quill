@@ -99,7 +99,7 @@ function readCatalogNames(workspaceRoot) {
 const workspaceRoot = findWorkspaceRoot(process.cwd());
 if (!workspaceRoot) {
   console.error('\n[catalog-guard] DEPLOY BLOCKED: unresolved catalog references found in a standalone repository.');
-  console.error('  ' + locations.join(', '));
+  console.error('  ' + locations.map(item => item.location).join(', '));
   console.error('  Commit resolved SemVer values before deploying.\n');
   process.exit(1);
 }

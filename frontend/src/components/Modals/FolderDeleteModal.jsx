@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MdClose, MdWarning, MdDelete, MdOutlineFolder, MdOutlineStickyNote2 } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
-import { useFoldersQuery, useAllNotesQuery } from '../../hooks/useNotesQuery';
+import { useFoldersQuery, useFolderNoteCountsQuery } from '../../hooks/useNotesQuery';
 import { useDeleteFolderMutation } from '../../hooks/useFolderMutations';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
@@ -15,7 +15,9 @@ const FolderDeleteModal = () => {
     const getSubtreeIds = useFoldersStore((s) => s.getSubtreeIds);
     const getFolderPath = useFoldersStore((s) => s.getFolderPath);
     const { data: folders = [] } = useFoldersQuery();
-    const { data: allNotes = [] } = useAllNotesQuery();
+    // Kept loaded (a small query) rather than fetched on open: counts that weren't in yet would read
+    // as an empty folder, which skips the type-the-path confirmation
+    const { data: noteCountsById = {} } = useFolderNoteCountsQuery();
     const deleteFolderMutation = useDeleteFolderMutation();
 
     const [step, setStep] = useState(1);
@@ -31,7 +33,7 @@ const FolderDeleteModal = () => {
 
             // Calculate subtree stats
             const subtreeIds = getSubtreeIds(folders, folder._id);
-            const notesCount = allNotes.filter(n => subtreeIds.includes(n.folderId) && !n.isDeleted).length;
+            const notesCount = subtreeIds.reduce((sum, id) => sum + (noteCountsById[String(id)] || 0), 0);
             const foldersCount = subtreeIds.length - 1; // exclude current folder
             setStats({ notesCount, foldersCount });
 
@@ -40,7 +42,7 @@ const FolderDeleteModal = () => {
             const pathStr = path.map(f => f.name).join('/');
             setFullPath(pathStr);
         }
-    }, [folder, folders, allNotes, getSubtreeIds, getFolderPath]);
+    }, [folder, folders, noteCountsById, getSubtreeIds, getFolderPath]);
 
     const handleConfirm = () => {
         if (stats.notesCount === 0 && stats.foldersCount === 0) {

@@ -62,8 +62,6 @@ export const useToastStore = create((set, get) => {
         else if (type === 'warning' || type === 'error') label = message;
         else if (/updated/i.test(message)) label = 'Updated';
         else if (/restore/i.test(message)) label = 'Restored';
-        else if (/unpin/i.test(message)) label = 'Unpinned';
-        else if (/pin/i.test(message)) label = 'Pinned';
         else label = 'Saved';
       } else if (params && typeof params === 'object') {
         message = params.message || '';

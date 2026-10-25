@@ -9,7 +9,7 @@ import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } 
 import { CSS } from '@dnd-kit/utilities';
 import MoveToPicker from '../../components/Cards/MoveToPicker';
 import { useQueryClient } from '@tanstack/react-query';
-import { useFoldersQuery } from '../../hooks/useNotesQuery';
+import { useFoldersQuery, QUERY_KEYS } from '../../hooks/useNotesQuery';
 import { useToastStore } from '../../store/useToastStore';
 import { editorRegistry } from '../../utils/editorRegistry';
 import { noteIndexingFailed } from '../../utils/noteIndexing';
@@ -489,7 +489,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         : await axiosInstance.put(`/edit-note/${currentNoteId}`, payload);
 
       if (response.data && response.data.note) {
-        queryClient.invalidateQueries({ queryKey: ['notes'] });
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
         if (currentNoteId) {
           editorRegistry.setBaseline(currentNoteId, response.data.note);
           editorRegistry.setDraft(currentNoteId, response.data.note);
