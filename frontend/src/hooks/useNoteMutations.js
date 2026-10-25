@@ -148,17 +148,53 @@ export const useArchiveNoteMutation = () => {
   };
 };
 
+const CHECKLIST_MUTATION_KEY = ['checklist-toggle'];
+
+const findCachedNote = (queryClient, noteId) => {
+  for (const [, list] of queryClient.getQueriesData({ queryKey: ['notes'] })) {
+    const note = Array.isArray(list) && list.find((n) => n._id === noteId);
+    if (note) return note;
+  }
+  return null;
+};
+
+// Ticking an item on a card. Each tick starts from the newest cached checklist and shows at once
+// (patched into every cached list), so a quick second tick can't send the state from before the
+// first one and undo it. The lists are re-fetched once, after the last tick in flight settles.
 export const useChecklistToggleMutation = () => {
   const queryClient = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
+    mutationKey: CHECKLIST_MUTATION_KEY,
     mutationFn: async ({ noteId, checklist }) => {
       const response = await axiosInstance.put(`/edit-note/${noteId}`, { checklist });
       return response.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notes'] });
+    onMutate: ({ noteId, checklist }) => {
+      queryClient.cancelQueries({ queryKey: ['notes'] });
+      const previous = queryClient.getQueriesData({ queryKey: ['notes'] });
+      queryClient.setQueriesData({ queryKey: ['notes'] }, (list) => (
+        Array.isArray(list) ? list.map((n) => (n._id === noteId ? { ...n, checklist } : n)) : list
+      ));
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      context?.previous?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSettled: () => {
+      if (queryClient.isMutating({ mutationKey: CHECKLIST_MUTATION_KEY }) === 1) {
+        queryClient.invalidateQueries({ queryKey: ['notes'] });
+      }
     },
   });
+
+  const toggle = (note, index) => {
+    const checklist = [...((findCachedNote(queryClient, note._id) || note).checklist || [])];
+    if (!checklist[index]) return;
+    checklist[index] = { ...checklist[index], completed: !checklist[index].completed };
+    mutation.mutate({ noteId: note._id, checklist });
+  };
+
+  return { ...mutation, toggle };
 };
 
 export const useToggleHomePinMutation = () => {

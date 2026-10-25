@@ -52,7 +52,7 @@ const main = async () => {
     const failed = [];
     const started = Date.now();
     for (const [index, note] of live.entries()) {
-        const result = await triggerEmbed(note, note.userId);
+        const result = await triggerEmbed(note, note.userId, { force: true });
         const status = result?.status || "unknown";
         counts[status] = (counts[status] || 0) + 1;
         if (!["ok", "skipped", "stale"].includes(status)) failed.push(String(note._id));

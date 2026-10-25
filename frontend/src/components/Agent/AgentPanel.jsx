@@ -29,6 +29,9 @@ const NAVBAR_H = { phone: 60, desktop: 72 }; // MainLayout's top padding (pt-[60
 const PANEL_GAP = { phone: 8, desktop: 12 };
 const SIDE_SPRING = { type: 'spring', visualDuration: 0.28, bounce: 0.15 };
 const CHAT_TITLE_MAX = 80;
+// The server's limit for one message (agent.controller MAX_MESSAGE_CHARS); the count shows near it
+const MESSAGE_MAX = 2000;
+const MESSAGE_COUNT_FROM = 1800;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TITLE_FONT = { fontFamily: "'Playfair Display', Georgia, serif" };
 
@@ -193,9 +196,15 @@ const Composer = ({ isBusy, textareaRef }) => {
           }
         }}
         rows={1}
+        maxLength={MESSAGE_MAX}
         placeholder="Ask about your notes…"
         className="flex-1 min-w-0 bg-transparent outline-none resize-none py-1.5 text-sm md:text-[15px] font-medium text-stone-100 placeholder:text-stone-500 leading-relaxed agent-scrollbar"
       />
+      {draft.length >= MESSAGE_COUNT_FROM && (
+        <span className={`self-end shrink-0 h-9 flex items-center text-[11px] font-medium tabular-nums ${draft.length >= MESSAGE_MAX ? 'text-[#e85d56]' : 'text-stone-500'}`}>
+          {draft.length.toLocaleString()} / {MESSAGE_MAX.toLocaleString()}
+        </span>
+      )}
       <SendButton isBusy={isBusy} canSend={Boolean(draft.trim())} onSend={send} onStop={useAgentStore.getState().stop} />
     </div>
   );

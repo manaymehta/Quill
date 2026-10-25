@@ -44,4 +44,8 @@ const indexTextHash = ({ title, tags = [], text }) => crypto
     .digest("hex")
     .slice(0, 16);
 
-module.exports = { buildIndexText, indexTextHash };
+// Every note field indexing reads (buildIndexText, plus the embed call's archived flag and version):
+// a query that loads notes to re-index them selects these, so none comes back missing
+const INDEX_FIELDS = "_id title content tags isChecklist checklist linkPreviews isArchived updatedAt";
+
+module.exports = { buildIndexText, indexTextHash, INDEX_FIELDS };

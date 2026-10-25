@@ -74,6 +74,7 @@ const SearchBar = () => {
         <input
           type="text"
           value={searchQuery}
+          maxLength={isAgent ? 2000 : undefined}   // the agent's message limit (as in the chat's message box)
           className="flex-1 min-w-0 w-full bg-transparent py-[10px] outline-none text-white placeholder:truncate"
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={handleKeyDown}

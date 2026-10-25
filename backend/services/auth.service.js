@@ -106,6 +106,21 @@ const issueAccessOnly = async (userId, User) => {
     };
 };
 
+// Issue the family's next refresh token as the browser's cookie; the token it replaces
+// (replacedId) is pointed at it
+const rotateTo = async (user, familyId, replacedId, req, res) => {
+    const nextSession = await createRefreshSession(user, req, familyId);
+    await RefreshSession.updateOne(
+        { _id: replacedId },
+        { $set: { replacedByHash: nextSession.tokenHash } }
+    );
+    setRefreshCookie(res, nextSession.rawToken);
+    return {
+        accessToken: createAccessToken(user),
+        user: serializeUser(user),
+    };
+};
+
 // A rotation whose reply never reached the browser (backend restarted mid-request, page reloaded,
 // timeout) leaves the browser holding the old, revoked token. If the token it was rotated to was
 // never used, nobody holds a live token of this family yet, so rotate again from the old one instead
@@ -126,27 +141,21 @@ const recoverLostRotation = async (staleSession, now, req, res, User) => {
     );
 
     if (!claimedSuccessor) {
-        // Another request recovering the same lost reply claimed it at this exact moment
+        // Claimed already. Only another request recovering this same lost reply (which leaves the
+        // successor without a replacedByHash) gets an access token; a successor its holder rotated
+        // normally means this old token is a replay
         const freshlyClaimed = await RefreshSession.findById(successor._id);
-        return isWithinGracePeriod(freshlyClaimed, now) ? issueAccessOnly(freshlyClaimed.userId, User) : undefined;
+        return isWithinGracePeriod(freshlyClaimed, now) && !freshlyClaimed.replacedByHash
+            ? issueAccessOnly(freshlyClaimed.userId, User)
+            : undefined;
     }
 
     const user = await User.findById(claimedSuccessor.userId);
     if (!user) return null;
 
-    const nextSession = await createRefreshSession(user, req, claimedSuccessor.familyId);
     // The stale token now leads to the new one, so the same lost reply happening again is recovered the
     // same way. The abandoned successor stays without one: presented later, it's a replay.
-    await RefreshSession.updateOne(
-        { _id: staleSession._id },
-        { $set: { replacedByHash: nextSession.tokenHash } }
-    );
-    setRefreshCookie(res, nextSession.rawToken);
-
-    return {
-        accessToken: createAccessToken(user),
-        user: serializeUser(user),
-    };
+    return rotateTo(user, claimedSuccessor.familyId, staleSession._id, req, res);
 };
 
 const rotateAuthentication = async (req, res, User) => {
@@ -161,20 +170,9 @@ const rotateAuthentication = async (req, res, User) => {
 
     // Check if the session was already revoked
     if (existingSession.revokedAt) {
-        const timeSinceRevoked = now.getTime() - existingSession.revokedAt.getTime();
-
         // 1. Within grace period: Legitimate concurrent request or network jitter
         // Return a fresh access token without revoking the token family
-        if (timeSinceRevoked <= REFRESH_REUSE_GRACE_PERIOD_MS) {
-            const user = await User.findById(existingSession.userId);
-            if (user) {
-                return {
-                    accessToken: createAccessToken(user),
-                    user: serializeUser(user),
-                };
-            }
-            return null;
-        }
+        if (isWithinGracePeriod(existingSession, now)) return issueAccessOnly(existingSession.userId, User);
 
         // 2. Outside grace period, but the token it was rotated to was never used: a lost reply
         const recovered = await recoverLostRotation(existingSession, now, req, res, User);
@@ -199,36 +197,13 @@ const rotateAuthentication = async (req, res, User) => {
         // A concurrent request claimed this session at this exact moment.
         // Verify it was claimed within the grace window and issue a fresh access token.
         const freshlyClaimed = await RefreshSession.findById(existingSession._id);
-        if (
-            freshlyClaimed
-            && freshlyClaimed.revokedAt
-            && (now.getTime() - freshlyClaimed.revokedAt.getTime() <= REFRESH_REUSE_GRACE_PERIOD_MS)
-        ) {
-            const user = await User.findById(freshlyClaimed.userId);
-            if (user) {
-                return {
-                    accessToken: createAccessToken(user),
-                    user: serializeUser(user),
-                };
-            }
-        }
-        return null;
+        return isWithinGracePeriod(freshlyClaimed, now) ? issueAccessOnly(freshlyClaimed.userId, User) : null;
     }
 
     const user = await User.findById(claimedSession.userId);
     if (!user) return null;
 
-    const nextSession = await createRefreshSession(user, req, claimedSession.familyId);
-    await RefreshSession.updateOne(
-        { _id: claimedSession._id },
-        { $set: { replacedByHash: nextSession.tokenHash } }
-    );
-    setRefreshCookie(res, nextSession.rawToken);
-
-    return {
-        accessToken: createAccessToken(user),
-        user: serializeUser(user),
-    };
+    return rotateTo(user, claimedSession.familyId, claimedSession._id, req, res);
 };
 
 const revokeAuthentication = async (req, res) => {

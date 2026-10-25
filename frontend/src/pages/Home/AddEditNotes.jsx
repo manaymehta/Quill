@@ -332,6 +332,12 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     setLinkPreviews(prev => prev.filter(p => p.url !== urlToRemove));
   }, []);
 
+  // Stable on purpose: a new onChange makes the text area reconfigure CodeMirror (see MarkdownEditor)
+  const handleContentChange = useCallback((val) => {
+    setContent(val);
+    setError("");
+  }, []);
+
   // Auto-focus the CodeMirror editor when this tab becomes the active tab (desktop only)
   useEffect(() => {
     if (isActive && !isChecklist && cmViewRef.current && !isMobileOrTouch()) {
@@ -951,10 +957,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                 <LiveMarkdownEditor
                   noteId={currentNoteId}
                   value={content}
-                  onChange={(val) => {
-                    setContent(val);
-                    setError("");
-                  }}
+                  onChange={handleContentChange}
                   viewRef={cmViewRef}
                   autoFocus={isActive && !isChecklist && !isMobileOrTouch()}
                   keepOnClose={canWriteBackOnClose}

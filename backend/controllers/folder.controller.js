@@ -3,6 +3,7 @@ const Note = require("../models/note.model");
 const mongoose = require("mongoose");
 const crypto = require("crypto");
 const { deleteEmbed, triggerEmbed, runEmbeddingBatch } = require("./note.controller");
+const { INDEX_FIELDS } = require("../services/note-index.service");
 const {
     collectSubtreeFolderIds,
     findNearestLivingAncestor,
@@ -267,7 +268,7 @@ const restoreFolder = async (req, res) => {
             }
 
             const notesQuery = Note.find({ deletedBatchId: batchId, userId, isDeleted: true })
-                .select("_id title content isArchived isChecklist checklist linkPreviews updatedAt")
+                .select(INDEX_FIELDS)
                 .lean();
             if (session) notesQuery.session(session);
             const notes = await notesQuery;

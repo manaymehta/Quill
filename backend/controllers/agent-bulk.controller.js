@@ -16,7 +16,7 @@ const {
     MAX_LIST, groupParts, planFromProposal, planFromSelection, restrictPlan, mergePlans, buildCandidates, applyChanges, changeTitle, splitParts,
 } = require("../services/bulk-plan.service");
 const { changesOf, pendingOf, pendingSummary, markMoved, summarizeReceipt } = require("../services/pending-list.service");
-const { triggerEmbed, deleteEmbed } = require("./note.controller");
+const { triggerEmbed, deleteEmbed, runEmbeddingBatch } = require("./note.controller");
 const { appendTurns } = require("./agent.controller");
 const { allowsBulkAction, getAgentScopes } = require("../services/agent-scopes.service");
 
@@ -118,12 +118,21 @@ const indexedChange = (before, after) => Boolean(before && after) && (
     before.isDeleted !== after.isDeleted || before.isArchived !== after.isArchived
     || [...before.tags].sort().join("\u0000") !== [...after.tags].sort().join("\u0000"));
 
-const syncSearchIndex = (changes, userId) => {
-    for (const { noteId, wasDeleted, isDeleted } of changes) {
-        const job = isDeleted && !wasDeleted
-            ? deleteEmbed(noteId)
-            : Note.findOne({ _id: noteId, userId, isDeleted: { $ne: true } }).then((note) => note && triggerEmbed(note, userId));
-        Promise.resolve(job).catch((error) => console.error(`Bulk search sync failed for ${noteId}:`, error.message));
+// Up to 50 notes: read in one query, then indexed 4 at a time (as folder restores are), not all at
+// once against the shared AI quota
+const syncSearchIndex = async (changes, userId) => {
+    try {
+        const trashed = changes.filter((c) => c.isDeleted && !c.wasDeleted).map((c) => c.noteId);
+        const reindexed = changes.filter((c) => !(c.isDeleted && !c.wasDeleted)).map((c) => c.noteId);
+        const notes = reindexed.length > 0
+            ? await Note.find({ _id: { $in: reindexed }, userId, isDeleted: { $ne: true } })
+            : [];
+        await runEmbeddingBatch([
+            ...trashed.map((noteId) => () => deleteEmbed(noteId)),
+            ...notes.map((note) => () => triggerEmbed(note, userId)),
+        ]);
+    } catch (error) {
+        console.error("Bulk search sync failed:", error.message);
     }
 };
 
@@ -773,7 +782,7 @@ const applyProposal = async (req, res) => {
             return transactionError(res, req, error);
         }
 
-        syncSearchIndex(indexChanges, userId);
+        void syncSearchIndex(indexChanges, userId);
         return res.json({ error: false, receipt: summarizeReceipt(receipt) });
     } catch (error) {
         return transactionError(res, req, error);
@@ -855,7 +864,7 @@ const undoReceipt = async (req, res) => {
             return transactionError(res, req, error);
         }
 
-        syncSearchIndex(indexChanges, userId);
+        void syncSearchIndex(indexChanges, userId);
         return res.json({ error: false, receipt: summarizeReceipt(receipt) });
     } catch (error) {
         return transactionError(res, req, error);

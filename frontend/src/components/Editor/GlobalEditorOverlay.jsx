@@ -202,9 +202,8 @@ const GlobalEditorOverlay = () => {
           >
             <div className="h-full bg-[#f4eadc] opacity-15 md:opacity-30 group-hover:opacity-100 transition-all duration-150 ease-out rounded-[32px] border border-[#e8dcc8] overflow-hidden p-6 md:p-10 shadow-sm group-hover:shadow-2xl group-active:scale-[0.98]">
               <div className="text-sm font-semibold tracking-widest text-[#999] mb-4 uppercase">
-                {tab.createdAt
-                  ? new Date(tab.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-                  : '17 MAY'}
+                {/* a draft has no createdAt yet: today, as the editor's own header shows */}
+                {(tab.createdAt ? new Date(tab.createdAt) : new Date()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
               </div>
               <h2
                 className="text-3xl font-medium text-[#333] leading-tight mb-4"

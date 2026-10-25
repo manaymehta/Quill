@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { historyField, redo } from '@codemirror/commands';
@@ -106,6 +106,14 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
   }, [keyboardOverlap, viewRef]);
   useEffect(() => () => { keyboardMarginPx = 0; }, []);
 
+  // Kept stable: @uiw/react-codemirror reconfigures the whole editor whenever onChange or onUpdate
+  // is a new function, which an inline arrow is on every render (so on every keystroke)
+  const handleUpdate = useCallback((viewUpdate) => {
+    if (viewUpdate.docChanged || viewUpdate.selectionSet) {
+      editorRegistry.saveEditorSnapshot(noteId, viewUpdate.view, SNAPSHOT_FIELDS);
+    }
+  }, [noteId]);
+
   return (
     <CodeMirror
       value={value}
@@ -116,11 +124,7 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
         keyboardOnTapOnly(view);
         if (autoFocus) view.focus();
       }}
-      onUpdate={(viewUpdate) => {
-        if (viewUpdate.docChanged || viewUpdate.selectionSet) {
-          editorRegistry.saveEditorSnapshot(noteId, viewUpdate.view, SNAPSHOT_FIELDS);
-        }
-      }}
+      onUpdate={handleUpdate}
       extensions={EDITOR_EXTENSIONS}
       placeholder="Start typing..."
       basicSetup={EDITOR_BASIC_SETUP}

@@ -28,6 +28,9 @@ const noteSchema = new Schema({
         siteName: { type: String },
         createdAt: { type: Date, default: Date.now }
     }],
+    // What the search index last fully holds for this note (index text hash + archived flag), so a
+    // save that changes neither skips the embedding call. Internal: never sent to the app.
+    indexedKey: { type: String, default: null, select: false },
 }, {
     timestamps: true
 });

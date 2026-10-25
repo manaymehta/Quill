@@ -35,6 +35,7 @@ load_dotenv()
 # Constants
 COLLECTION_NAME = "notes_chunks"
 EMBEDDING_DIM = 768
+EMBED_BATCH_MAX = 100   # Gemini's limit on pieces per embedding request
 EMBEDDING_MODEL = "gemini-embedding-2"
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 
@@ -372,15 +373,21 @@ async def embed_note(request: EmbedNoteRequest, _: None = Depends(verify_api_key
         for c in chunks
     ]
 
+    # Gemini takes at most 100 pieces per request ("at most 100 requests can be in one batch", seen on
+    # a 150k-char note), so longer notes go in slices, sent together; the vectors keep the pieces' order
+    batches = [embed_contents[i:i + EMBED_BATCH_MAX] for i in range(0, len(embed_contents), EMBED_BATCH_MAX)]
     start_time = time.perf_counter()
     try:
-        result = await run_blocking(
-            gemini_client.models.embed_content,
-            model=EMBEDDING_MODEL,
-            contents=embed_contents,
-            config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM),
-        )
-        vectors = [list(e.values) for e in (result.embeddings or [])]
+        results = await asyncio.gather(*(
+            run_blocking(
+                gemini_client.models.embed_content,
+                model=EMBEDDING_MODEL,
+                contents=batch,
+                config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM),
+            )
+            for batch in batches
+        ))
+        vectors = [list(e.values) for result in results for e in (result.embeddings or [])]
         duration = time.perf_counter() - start_time
         print(f"Generated {len(vectors)} embeddings for note {request.noteId} in {duration:.2f}s")
     except Exception as e:
@@ -423,7 +430,7 @@ async def embed_note(request: EmbedNoteRequest, _: None = Depends(verify_api_key
                     scroll_filter=Filter(
                         must=[FieldCondition(key="noteId", match=MatchValue(value=request.noteId))]
                     ),
-                    with_payload=True,
+                    with_payload=["embeddingVersion"],   # all this check reads
                     with_vectors=False,
                     limit=10_000,
                 )
@@ -538,7 +545,7 @@ async def agent_meaning_search(query: str, user_id: str, limit: int, note_ids: l
             *([FieldCondition(key="noteId", match=MatchAny(any=list(note_ids)))] if note_ids else []),
         ]),
         limit=limit,
-        with_payload=True,
+        with_payload=["noteId", "chunkIndex", "text", "textHash"],   # what the result below reads
     )
     return [
         {

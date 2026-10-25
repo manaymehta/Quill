@@ -134,7 +134,8 @@ const MAX_VISIBLE_STEPS = 6;
 const WAKE_INTERVAL_MS = 5 * 60_000;
 let lastWakeAt = 0;
 
-export const useAgentStore = create((set, get) => ({
+// Everything here belongs to the logged-in account, so logging out puts it back to this (reset)
+const initialState = () => ({
   // { id, role: 'user'|'assistant', text, citations?: [{noteId,title}], isError?: bool,
   //   drafts?: staged-draft chips, pendingEdits?: edits waiting for Apply / Skip,
   //   fresh?: made during this visit (not reloaded with a chat) — see useAgentToast }
@@ -148,6 +149,21 @@ export const useAgentStore = create((set, get) => ({
   activeChatId: null,  // null = a new chat, saved by its first message
   isOpeningChat: false,
   scrollTarget: null,  // { messageId, at } — the panel scrolls to that message and highlights it
+  scopes: null,        // { compose, organize, destructive } — read is always on
+  activity: null,      // receipts, newest first (null = not loaded)
+  activityError: null,
+});
+
+export const useAgentStore = create((set, get) => ({
+  ...initialState(),
+
+  // Logout: stop a running turn (its late reply is dropped by the epoch) and forget this account's chats
+  reset: () => {
+    activeTurn?.abort();
+    activeTurn = null;
+    conversationEpoch += 1;
+    set(initialState());
+  },
 
   wake: () => {
     const now = Date.now();
@@ -354,10 +370,7 @@ export const useAgentStore = create((set, get) => ({
     }
   },
 
-  // ── Permission toggles + activity log (step 3d) ──
-  scopes: null,        // { compose, organize, destructive } — read is always on
-  activity: null,      // receipts, newest first (null = not loaded)
-  activityError: null,
+  // ── Permission toggles + activity log (step 3d; state in initialState) ──
 
   loadScopes: async () => {
     try {

@@ -107,13 +107,7 @@ const FolderView = () => {
     moveNoteMutation.mutate({ noteId, targetFolderId });
   };
 
-  const handleChecklist = (note, index) => {
-    const newChecklist = [...(note.checklist || [])];
-    if (newChecklist[index]) {
-      newChecklist[index] = { ...newChecklist[index], completed: !newChecklist[index].completed };
-    }
-    checklistToggleMutation.mutate({ noteId: note._id, checklist: newChecklist });
-  };
+  const handleChecklist = (note, index) => checklistToggleMutation.toggle(note, index);
 
   return (
     <div className="relative min-h-0">

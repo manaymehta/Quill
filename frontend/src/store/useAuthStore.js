@@ -9,9 +9,11 @@ import {
 
 let initializationPromise = null;
 
-const notifyAuthChanged = () => {
+// detail: { loggedIn, userId } on login, { loggedIn: false, reason: 'logout' | 'expired' } when the
+// session ends (main.jsx decides what to clear from it)
+const notifyAuthChanged = (detail) => {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event('auth:changed'));
+    window.dispatchEvent(new CustomEvent('auth:changed', { detail }));
   }
 };
 
@@ -24,7 +26,7 @@ const applyAuthentication = (set, data) => {
     isLoading: false,
     error: null,
   });
-  notifyAuthChanged();
+  notifyAuthChanged({ loggedIn: true, userId: data.user?._id || null });
 };
 
 export const useAuthStore = create((set, get) => ({
@@ -112,11 +114,12 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
-  clearSession: (broadcast = true) => {
+  // reason: 'logout' (the user chose to) or 'expired' (the session ran out; open tabs are kept)
+  clearSession: (broadcast = true, reason = 'logout') => {
     clearAccessToken();
     set({ token: null, user: null, isLoggedIn: false, isLoading: false });
-    if (broadcast) publishLogout();
-    notifyAuthChanged();
+    if (broadcast) publishLogout(reason);
+    notifyAuthChanged({ loggedIn: false, reason });
   },
 
   logout: async () => {
@@ -133,11 +136,11 @@ export const useAuthStore = create((set, get) => ({
 if (typeof window !== 'undefined') {
   subscribeToAuthEvents((event) => {
     if (event.type === 'logout') {
-      useAuthStore.getState().clearSession(false);
+      useAuthStore.getState().clearSession(false, event.reason || 'logout');
     }
   });
 
   window.addEventListener('auth:expired', () => {
-    useAuthStore.getState().clearSession();
+    useAuthStore.getState().clearSession(true, 'expired');
   });
 }

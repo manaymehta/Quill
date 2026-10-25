@@ -5,7 +5,6 @@ import SearchBar from '../Cards/SearchBar';
 import { FiMenu } from 'react-icons/fi';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
-import { useTabsStore } from '../../store/useTabsStore';
 import { useSearchStore } from '../../store/useSearchStore';
 
 const Navbar = () => {
@@ -71,8 +70,7 @@ const Navbar = () => {
   }, []);
 
   const onLogout = () => {
-    useTabsStore.getState().resetTabs();
-    logout();
+    logout();   // closes the tabs too (main.jsx, on auth:changed)
     navigate('/');
   };
 

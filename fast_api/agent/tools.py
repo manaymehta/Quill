@@ -166,6 +166,17 @@ async def _call_express(
             "not_found", "Not found (it may have been deleted or never existed).",
             recoverable=False, summary=f"{summary} -> not found",
         )
+    if response.status_code in (400, 422):
+        # The call's arguments were rejected (e.g. a folder id that doesn't exist): the model gets
+        # Express's reason and one more try (the loop stops a call that keeps failing the same way)
+        try:
+            reason = str(response.json().get("message") or "")[:300]
+        except (ValueError, AttributeError):
+            reason = ""
+        return None, error_result(
+            "bad_request", reason or f"Notes backend rejected the request (HTTP {response.status_code}).",
+            recoverable=True, summary=f"{summary} -> rejected: {reason or response.status_code}",
+        )
     if not 200 <= response.status_code < 300:   # 201 = saved (proposals, selections)
         return None, error_result(
             "upstream_error", f"Notes backend failed (HTTP {response.status_code}).",

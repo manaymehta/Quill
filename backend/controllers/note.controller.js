@@ -1,3 +1,4 @@
+const { setTimeout, clearTimeout } = require("node:timers");
 const Note = require("../models/note.model");
 const axios = require("axios");
 const { buildIndexText, indexTextHash } = require("../services/note-index.service");
@@ -6,7 +7,9 @@ const {
     isValidFolderId, findLivingFolder, moveToFolder, setArchived, trashFields, restoreFromTrash,
 } = require("../services/note-actions.service");
 const FASTAPI_REQUEST_TIMEOUT_MS = 30_000;
-const FASTAPI_EMBEDDING_TIMEOUT_MS = 10_000;
+// An 85-piece note took ~7 s to embed and store; FastAPI finishes anyway when this runs out, so a
+// too-short wait only reports a false "Embedding failed"
+const FASTAPI_EMBEDDING_TIMEOUT_MS = 20_000;
 const embeddingLocks = new Map();
 const NOTE_LIST_FIELDS = "_id title content tags folderId showInHome isArchived isChecklist checklist orderIndex homeOrderIndex archiveOrderIndex linkPreviews createdAt updatedAt";
 const NOTE_TRASH_FIELDS = `${NOTE_LIST_FIELDS} isDeleted deletedAt deletedBatchId`;
@@ -43,6 +46,11 @@ const runEmbeddingOperation = (noteId, operation) => {
     });
 };
 
+// Records what the search index now holds for a note (Note.indexedKey; null = nothing known). The
+// timestamps stay put: updatedAt dates the user's edits and versions the index.
+const setIndexedKey = (noteId, indexedKey) => Note.updateOne({ _id: noteId }, { $set: { indexedKey } }, { timestamps: false })
+    .catch((error) => console.error(`Recording the index state failed for ${noteId}:`, error.message));
+
 const performDeleteEmbed = async (noteId) => {
     const url = process.env.FASTAPI_SUMMARIZE_URL;
     if (!url) return { status: "skipped", reason: "not-configured" };
@@ -52,6 +60,7 @@ const performDeleteEmbed = async (noteId) => {
         if (response.data?.status !== "ok" || String(response.data.noteId) !== String(noteId)) {
             throw new Error("Invalid embedding deletion response");
         }
+        await setIndexedKey(noteId, null);
         return { status: "ok" };
     } catch (error) {
         console.error(`Delete embedding failed for ${noteId}:`, error.message);
@@ -59,7 +68,10 @@ const performDeleteEmbed = async (noteId) => {
     }
 };
 
-const deleteEmbed = (noteId) => runEmbeddingOperation(String(noteId), () => performDeleteEmbed(String(noteId)));
+const deleteEmbed = (noteId) => {
+    cancelScheduledIndexing(noteId);
+    return runEmbeddingOperation(String(noteId), () => performDeleteEmbed(String(noteId)));
+};
 
 // Saving no longer waits for the agent's search index: the reply goes out once MongoDB has the
 // note, and indexing runs after it (it used to take up to 10s per save, longer while the FastAPI
@@ -71,9 +83,22 @@ const INDEX_RESULT_KEEP_MS = 5 * 60 * 1000;
 const pendingIndexing = new Map();   // noteId -> promise of the embedding result
 const recentIndexing = new Map();    // noteId -> { result, at }
 
+// Saves of one note this close together are indexed once, from the last of them: five quick ticks on
+// a checklist cost one embedding run, not five. The status question waits through the delay too.
+const INDEX_DEBOUNCE_MS = 2000;
+const scheduledIndexing = new Map();   // noteId -> { note, userId, timer, start }
+
 const indexInBackground = (note, userId) => {
     const noteId = String(note._id);
-    const run = triggerEmbed(note, userId).then((result) => {
+    const scheduled = scheduledIndexing.get(noteId);
+    if (scheduled) {
+        // Not started yet: run it later, from this newer save (its status promise stays the same)
+        clearTimeout(scheduled.timer);
+        Object.assign(scheduled, { note, userId, timer: setTimeout(scheduled.start, INDEX_DEBOUNCE_MS) });
+        return;
+    }
+    let begin;
+    const run = new Promise((resolve) => { begin = resolve; }).then((result) => {
         const now = Date.now();
         recentIndexing.set(noteId, { result, at: now });
         for (const [id, entry] of recentIndexing) {
@@ -83,7 +108,24 @@ const indexInBackground = (note, userId) => {
     }).finally(() => {
         if (pendingIndexing.get(noteId) === run) pendingIndexing.delete(noteId);
     });
+    const entry = { note, userId };
+    // Called by the timer (no result: index now) or by a cancel (with the result to report)
+    entry.start = (result) => {
+        scheduledIndexing.delete(noteId);
+        begin(result ?? triggerEmbed(entry.note, entry.userId));
+    };
+    entry.timer = setTimeout(entry.start, INDEX_DEBOUNCE_MS);
+    scheduledIndexing.set(noteId, entry);
     pendingIndexing.set(noteId, run);
+};
+
+// The note is being trashed or deleted: a run still waiting to start is dropped, so it can't put the
+// note back into the index after its pieces are removed
+const cancelScheduledIndexing = (noteId) => {
+    const scheduled = scheduledIndexing.get(String(noteId));
+    if (!scheduled) return;
+    clearTimeout(scheduled.timer);
+    scheduled.start({ status: "skipped", reason: "deleted" });
 };
 
 // GET /note-index-status/:noteId -> { embedding: { status, … } }; "unknown" when nothing was
@@ -123,7 +165,10 @@ const runEmbeddingBatch = async (operations, batchSize = 4) => {
 
 // The note is saved before this operation is started. Embedding failures therefore
 // never roll back or hide a successful MongoDB save.
-const triggerEmbed = (note, userId) => runEmbeddingOperation(String(note._id), async () => {
+// Skips the embedding call when the index already holds this text and archived flag (see
+// Note.indexedKey); force re-embeds anyway (the agent's self-heal and the re-index script, which run
+// exactly when the index and that record may disagree).
+const triggerEmbed = (note, userId, { force = false } = {}) => runEmbeddingOperation(String(note._id), async () => {
     const url = process.env.FASTAPI_SUMMARIZE_URL;
     if (!url) return { status: "skipped", reason: "not-configured" };
 
@@ -135,6 +180,13 @@ const triggerEmbed = (note, userId) => runEmbeddingOperation(String(note._id), a
     // A note that became blank must not leave its old vectors searchable.
     if (!embedText.trim()) return performDeleteEmbed(String(note._id));
 
+    const textHash = indexTextHash(indexText);
+    const indexedKey = `${textHash}:${note.isArchived ? 1 : 0}`;
+    if (!force) {
+        const stored = await Note.findById(note._id).select("+indexedKey").lean();
+        if (stored?.indexedKey === indexedKey) return { status: "skipped", reason: "unchanged" };
+    }
+
     try {
         const response = await axios.post(`${url}/embed-note`, {
             noteId: String(note._id),
@@ -142,7 +194,7 @@ const triggerEmbed = (note, userId) => runEmbeddingOperation(String(note._id), a
             title: note.title || "",
             text: embedText,
             tags: indexText.tags,
-            textHash: indexTextHash(indexText),
+            textHash,
             embeddingVersion: getEmbeddingVersion(note),
             isArchived: Boolean(note.isArchived),
         }, getFastApiHeaders(FASTAPI_EMBEDDING_TIMEOUT_MS));
@@ -157,6 +209,10 @@ const triggerEmbed = (note, userId) => runEmbeddingOperation(String(note._id), a
             || !hasValidStaleChunkCount) {
             throw new Error("Invalid embedding response");
         }
+        // ok: the index holds exactly this now. partial: unknown, so the next save embeds again.
+        // stale: a newer version was already indexed and its record stands.
+        if (data.status === "ok") await setIndexedKey(note._id, indexedKey);
+        else if (data.status === "partial") await setIndexedKey(note._id, null);
         return { status: data.status, chunks: data.chunks, staleChunks: data.staleChunks };
     } catch (error) {
         console.error(`Embedding process failed for note ${note._id}:`, error.message);
@@ -472,11 +528,12 @@ const deleteNote = async (req, res) => {
         if (updateResult.modifiedCount !== 1) {
             return res.status(409).json({ error: true, message: "Note changed before it could be moved to Trash" });
         }
-        const embedding = await deleteEmbed(noteId);
+        // Its search pieces are removed after the reply: nothing waits on that (the agent's search
+        // already drops trashed notes), unlike a permanent delete, whose toast reports a failed cleanup
+        void deleteEmbed(noteId);
 
         return res.json({
             error: false,
-            embedding,
             message: "Note moved to trash",
         });
     } catch (error) {

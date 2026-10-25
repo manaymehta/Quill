@@ -67,9 +67,9 @@ export const publishRefreshFailure = (error) => {
   });
 };
 
-export const publishLogout = () => {
+export const publishLogout = (reason = 'logout') => {
   clearRefreshFailure();
-  authChannel?.postMessage({ type: 'logout', senderId: tabId });
+  authChannel?.postMessage({ type: 'logout', reason, senderId: tabId });
 };
 
 export const subscribeToAuthEvents = (listener) => {

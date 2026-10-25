@@ -206,7 +206,7 @@ const getUser = async (req, res) => {
         const userInfo = await User.findOne({ _id: userId });
 
         if (!userInfo) {
-            return res.status(401);
+            return res.status(401).json({ error: true, message: "Account not found" });
         }
         return res.json({
             error: false,

@@ -171,7 +171,7 @@ const searchSupport = async (req, res) => {
             const indexText = buildIndexText(note);
             const isStale = candidate.textHash && candidate.textHash !== indexTextHash(indexText);
             if (isStale) {
-                healOnce(`embed:${candidate.noteId}:${indexTextHash(indexText)}`, () => triggerEmbed(note, userId));
+                healOnce(`embed:${candidate.noteId}:${indexTextHash(indexText)}`, () => triggerEmbed(note, userId, { force: true }));
                 notes[candidate.noteId] = {
                     status: "stale",
                     ...noteMeta(note, folderNames),
