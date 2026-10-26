@@ -25,7 +25,6 @@ const FolderCard = ({
     isOverlay = false
 }) => {
     const navigate = useNavigate();
-    const activeDropdownFolderId = useFoldersStore((state) => state.activeDropdownFolderId);
     const setActiveDropdownFolderId = useFoldersStore((state) => state.setActiveDropdownFolderId);
     const [isEditing, setIsEditing] = useState(false);
     const [nameVal, setNameVal] = useState(folder.name);
@@ -52,7 +51,8 @@ const FolderCard = ({
         attributes, listeners, setNodeRef, transform, transition, isDragging,
     } = useSortable({ id: folder._id, disabled: isTrash || isOverlay });
 
-    const showDropdown = activeDropdownFolderId === folder._id;
+    // only "is MY menu open", so opening one folder's menu doesn't re-render every folder card
+    const showDropdown = useFoldersStore((state) => state.activeDropdownFolderId === folder._id);
 
     const style = {
         transform: CSS.Translate.toString(transform),
@@ -64,7 +64,7 @@ const FolderCard = ({
 
     // Auto-close dropdown when clicking outside anywhere or on scroll
     useEffect(() => {
-        if (activeDropdownFolderId !== folder._id) return;
+        if (!showDropdown) return;
         const handleOutsideClick = (e) => {
             if (e.target.closest?.('.no-card-click')) return;
             setActiveDropdownFolderId(null);
@@ -81,7 +81,7 @@ const FolderCard = ({
             document.removeEventListener('contextmenu', handleOutsideClick);
             document.removeEventListener('scroll', handleScroll, { capture: true });
         };
-    }, [activeDropdownFolderId, folder._id, setActiveDropdownFolderId]);
+    }, [showDropdown, setActiveDropdownFolderId]);
 
     const longPressTimerRef = useRef(null);
     const touchStartPosRef = useRef({ x: 0, y: 0 });

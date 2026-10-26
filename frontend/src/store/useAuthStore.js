@@ -9,6 +9,26 @@ import {
 
 let initializationPromise = null;
 
+// Not a secret, just a hint: did this browser have a session last time? With it, a page load waits to
+// learn who's here (it's about to go to the dashboard); without it, the public pages show at once
+// while the session is checked (App.jsx).
+const SESSION_HINT_KEY = 'quill:hadSession';
+export const hadSessionHint = () => {
+  try { return localStorage.getItem(SESSION_HINT_KEY) === '1'; } catch { return false; }
+};
+const setSessionHint = (on) => {
+  try {
+    if (on) localStorage.setItem(SESSION_HINT_KEY, '1');
+    else localStorage.removeItem(SESSION_HINT_KEY);
+  } catch { /* storage blocked: every load then waits only on the protected pages */ }
+};
+
+// The first session check keeps asking while the backend can't answer (asleep, restarting, timing
+// out) — only the server saying no means logged out — and gives up after this long
+const INIT_GIVE_UP_MS = 90_000;
+const INIT_RETRY_MS = [2000, 4000, 8000];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // detail: { loggedIn, userId } on login, { loggedIn: false, reason: 'logout' | 'expired' } when the
 // session ends (main.jsx decides what to clear from it)
 const notifyAuthChanged = (detail) => {
@@ -26,6 +46,7 @@ const applyAuthentication = (set, data) => {
     isLoading: false,
     error: null,
   });
+  setSessionHint(true);
   notifyAuthChanged({ loggedIn: true, userId: data.user?._id || null });
 };
 
@@ -45,17 +66,34 @@ export const useAuthStore = create((set, get) => ({
     // Remove tokens from the previous localStorage-based implementation.
     localStorage.removeItem('token');
     initializationPromise = (async () => {
-      try {
-        const response = await axiosInstance.post('/auth/refresh', undefined, { _skipAuthRefresh: true });
-        if (!response.data?.accessToken) throw new Error('Invalid refresh response');
-        applyAuthentication(set, response.data);
-      } catch {
-        clearAccessToken();
-        set({ token: null, user: null, isLoggedIn: false });
-      } finally {
-        set({ isInitialized: true });
-        initializationPromise = null;
+      const giveUpAt = Date.now() + INIT_GIVE_UP_MS;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const response = await axiosInstance.post('/auth/refresh', undefined, { _skipAuthRefresh: true });
+          if (response.data?.accessToken) {
+            applyAuthentication(set, response.data);
+            break;
+          }
+          // An answer without a token is an answer: logged out
+          clearAccessToken();
+          setSessionHint(false);
+          set({ token: null, user: null, isLoggedIn: false });
+          break;
+        } catch (error) {
+          const status = error?.response?.status;
+          const answered = status >= 400 && status < 500;   // e.g. 401: no session, or it was revoked
+          if (answered || Date.now() >= giveUpAt) {
+            clearAccessToken();
+            // Gave up without an answer: keep the hint, the session may still be good next time
+            if (answered) setSessionHint(false);
+            set({ token: null, user: null, isLoggedIn: false });
+            break;
+          }
+          await sleep(INIT_RETRY_MS[Math.min(attempt, INIT_RETRY_MS.length - 1)]);
+        }
       }
+      set({ isInitialized: true });
+      initializationPromise = null;
     })();
 
     return initializationPromise;
@@ -118,6 +156,7 @@ export const useAuthStore = create((set, get) => ({
   clearSession: (broadcast = true, reason = 'logout') => {
     clearAccessToken();
     set({ token: null, user: null, isLoggedIn: false, isLoading: false });
+    setSessionHint(false);
     if (broadcast) publishLogout(reason);
     notifyAuthChanged({ loggedIn: false, reason });
   },

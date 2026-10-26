@@ -6,6 +6,8 @@ import { FiMenu } from 'react-icons/fi';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useSearchStore } from '../../store/useSearchStore';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { MOBILE_QUERY } from '../../constants/breakpoints';
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -20,8 +22,11 @@ const Navbar = () => {
   const navbarRef = useRef(null);
 
   // Mobile scroll direction listener (Quick Return / Headroom pattern).
-  // Desktop/tablet pinning is handled purely in CSS via sm:translate-y-0.
+  // Desktop/tablet pinning is handled purely in CSS via sm:translate-y-0, so the listener (with its layout
+  // reads on every scroll) runs on phones only.
+  const isMobile = useMediaQuery(MOBILE_QUERY);
   useEffect(() => {
+    if (!isMobile) return undefined;
     let lastY = window.scrollY;
 
     const handleScroll = () => {
@@ -67,7 +72,7 @@ const Navbar = () => {
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [isMobile]);
 
   const onLogout = () => {
     logout();   // closes the tabs too (main.jsx, on auth:changed)

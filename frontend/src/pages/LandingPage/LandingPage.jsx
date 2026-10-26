@@ -2,8 +2,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './LandingPage.css';
-// the page is landing-drafts/v4, ported as is: its markup (landing.html), its styles scoped to .lp-root (LandingPage.css)
-// and its script (landing.js); the old page's procedural quill is kept in OldQuill.jsx
+// the page in three parts: its markup (landing.html), its styles scoped to .lp-root (LandingPage.css) and its script (landing.js)
 import markup from './landing.html?raw';
 import { startLanding } from './landing.js';
 import AuthCard from './AuthCard';
@@ -71,7 +70,6 @@ const LandingPage = () => {
     root.innerHTML = html;
     root.querySelector('#authSlot').appendChild(slotEl);
     document.documentElement.classList.add('lp-on');
-    const title = document.title;
     const stop = startLanding(root);
     // desktop: the quill and the card form one group, a set gap apart, centred on the screen; --qx and --cx are how far
     // each moves from its own place (offsets, which ignore the transforms the move itself adds). One column: neither moves sideways
@@ -104,14 +102,13 @@ const LandingPage = () => {
       root.classList.remove('auth', 'rest-out', 'rest-gone', 'snap', 'snaptext', 'blink');
       first.current = true;
       document.documentElement.classList.remove('lp-on');
-      document.title = title;
     };
   }, [slotEl]);
 
   // moving between the page and the card
   useLayoutEffect(() => {
+    // (the tab stays "Quill" on every page: index.html's title)
     const root = rootRef.current, auth = mode !== 'home';
-    document.title = auth ? (mode === 'signup' ? 'Sign up · Quill' : 'Log in · Quill') : 'Quill — write it down, ask it later';
     // what can't be seen can't be reached: the words and the header's links while the card is up (the card itself is
     // inert while it's away, in AuthCard)
     root.querySelector('#htxt').inert = auth;

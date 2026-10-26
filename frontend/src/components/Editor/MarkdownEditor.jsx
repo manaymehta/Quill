@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { historyField, redo } from '@codemirror/commands';
@@ -75,8 +75,8 @@ const EDITOR_BASIC_SETUP = {
 };
 
 // The note's live text area. Rehydrates the tab's CodeMirror state (doc, selection, undo/redo
-// history) from the in-memory registry and keeps that snapshot current; when it closes, saves it
-// once more if keepOnClose() says the tab is still open and unchanged from outside.
+// history) from the in-memory registry; when it closes, saves that snapshot if keepOnClose() says
+// the tab is still open and unchanged from outside (a closed tab or an outside change drops it).
 // keyboardOverlap: how much of the scroll area the on-screen keyboard covers (px, 0 when closed).
 const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepOnClose, keyboardOverlap = 0 }) => {
   const initialState = useMemo(() => {
@@ -106,14 +106,9 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
   }, [keyboardOverlap, viewRef]);
   useEffect(() => () => { keyboardMarginPx = 0; }, []);
 
-  // Kept stable: @uiw/react-codemirror reconfigures the whole editor whenever onChange or onUpdate
-  // is a new function, which an inline arrow is on every render (so on every keystroke)
-  const handleUpdate = useCallback((viewUpdate) => {
-    if (viewUpdate.docChanged || viewUpdate.selectionSet) {
-      editorRegistry.saveEditorSnapshot(noteId, viewUpdate.view, SNAPSHOT_FIELDS);
-    }
-  }, [noteId]);
-
+  // (No snapshot on every keystroke or cursor move: the save above, when the text area closes, is the one
+  // that's read back. onChange must stay a stable function: @uiw/react-codemirror reconfigures the whole
+  // editor whenever it changes, see AddEditNotes.)
   return (
     <CodeMirror
       value={value}
@@ -124,7 +119,6 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
         keyboardOnTapOnly(view);
         if (autoFocus) view.focus();
       }}
-      onUpdate={handleUpdate}
       extensions={EDITOR_EXTENSIONS}
       placeholder="Start typing..."
       basicSetup={EDITOR_BASIC_SETUP}

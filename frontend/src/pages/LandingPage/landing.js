@@ -1,4 +1,4 @@
-// The landing page's behaviour, ported from landing-drafts/v4: the sky, the header, the arrivals and each section's
+// The landing page's behaviour: the sky, the header, the arrivals and each section's
 // little demo. startLanding runs on a fresh copy of the markup and returns a cleanup that removes every window and
 // document listener, timer, frame loop and observer it made, so leaving the page (or React's dev double-mount) leaves nothing behind.
 export function startLanding(root) {
@@ -17,14 +17,19 @@ export function startLanding(root) {
     const cv = document.getElementById('sky'), ctx = cv.getContext('2d');
     let W, H, nodes = [], dpr = 1;
     const make = (w, h, sp) => ({ x: Math.random() * w, y: Math.random() * h, vx: (Math.random() - .5) * sp, vy: (Math.random() - .5) * sp, r: Math.random() * 1.2 + .5, accent: Math.random() < .2 });
+    // On a touch screen a height-only resize is the browser's bars sliding in or out while scrolling (a rotation also
+    // changes the width): it's skipped, so the sky doesn't reset mid-scroll (as ParticleBackground does)
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     function size(){
+      if (isTouch && W !== undefined && innerWidth === W) return;
       dpr = Math.min(devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight;
       cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const n = Math.max(15, Math.min(50, Math.round(W * H / 35000))), sp = W < 768 ? .28 : .5;
       while (nodes.length < n) nodes.push(make(W, H, sp)); nodes.length = n;
+      if (reduce) draw();   // still: drawn once per size, not every frame
     }
     addEventListener('resize', size, sig); size();
-    function tick(){
+    function draw(){
       const maxD = W < 768 ? 115 : 165;
       ctx.clearRect(0, 0, W, H);
       for (const p of nodes) {
@@ -35,9 +40,10 @@ export function startLanding(root) {
         const a = nodes[i], b = nodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
         if (d < maxD) { const o = 1 - d / maxD; ctx.lineWidth = .75; ctx.strokeStyle = (a.accent || b.accent) ? `rgba(255,107,107,${o * .65})` : `rgba(244,234,220,${o * .35})`; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
       }
-      raf(tick);
     }
-    tick();
+    // moving sky: a frame loop; reduced motion: the still picture size() drew
+    function tick(){ draw(); raf(tick); }
+    if (!reduce) tick();
   })();
 
   // Header lifts into glass once the page moves
@@ -156,7 +162,7 @@ export function startLanding(root) {
     let W, H, dpr, scale, maxScale, cx = 0, cy = 0, tag = null, hover = null, drag = null, alpha = 1;
     const lerp = (a, b, t) => a + (b - a) * t;
     function size(){ dpr = Math.min(devicePixelRatio || 1, 2); W = box.clientWidth; H = box.clientHeight; cv.width = W * dpr; cv.height = H * dpr; maxScale = innerWidth < 640 ? 2 : 2.4; scale = scale || maxScale; }
-    new RO(() => { size(); alpha = Math.max(alpha, .3); }).observe(box); size();
+    new RO(() => { size(); alpha = Math.max(alpha, .3); wake(); }).observe(box); size();
     // start each note near the others of its first tag, so the layout settles untangled (graph units; the canvas is drawn zoomed, as the app's view is)
     NOTES.forEach((n, i) => { const g = TAGS.indexOf(n.tags[0]), a = g / TAGS.length * 6.283, j = i * 2.39996; const sx = innerWidth < 640 ? 40 : 90, sy = innerWidth < 640 ? 120 : 90; n.x = Math.cos(a) * sx + Math.cos(j) * 14; n.y = Math.sin(a) * sy + Math.sin(j) * 14; });
     // the app's forces: charge -50 (-40 phone), links 50 long (45) at strength 1, a gentle pull to the centre, collision 16
@@ -208,7 +214,7 @@ export function startLanding(root) {
     const card = document.getElementById('gcard');
     let sel = null;
     function open(n){
-      sel = n;
+      sel = n; wake();
       if (!n) { card.classList.remove('open'); return; }
       card.innerHTML = `<h4>${n.name}</h4><p>${BODY[n.name] || ''}</p><div class="tg">${n.tags.map((t) => `<span>#${t}</span>`).join('')}</div>`;
       place(); card.classList.add('open');
@@ -244,16 +250,27 @@ export function startLanding(root) {
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (const n of NOTES) { x0 = Math.min(x0, n.x - 40); x1 = Math.max(x1, n.x + 40); y0 = Math.min(y0, n.y - 14); y1 = Math.max(y1, n.y + 24); }
       const top = 56, ts = Math.max(maxScale * .6, Math.min(maxScale, W / (x1 - x0), (H - top) / (y1 - y0))), tx = (x0 + x1) / 2, ty = (y0 + y1) / 2 - top / 2 / ts;
-      const k = snap ? 1 : .06; scale = lerp(scale, ts, k); cx = lerp(cx, tx, k); cy = lerp(cy, ty, k);
+      const k = snap ? 1 : .06;
+      const moving = Math.abs(ts - scale) > scale * 1e-3 || Math.abs(tx - cx) > .05 || Math.abs(ty - cy) > .05;
+      scale = lerp(scale, ts, k); cx = lerp(cx, tx, k); cy = lerp(cy, ty, k);
+      return moving;
     }
+    // the picture rests once nothing on it moves (the layout settled, the zoom fitted, every fade done): the loop stops
+    // until something can change it again (wake). It used to redraw the same picture every frame while on screen.
+    const near = (a, b) => Math.abs(a - b) < .003;
+    let busy = true;
     function frame(){
-      if (intro) introStep(); else { step(); if (!drag) fit(false); }
+      busy = intro || !!drag;
+      if (intro) introStep(); else { step(); if (!drag && fit(false)) busy = true; }
+      if (!busy) busy = alpha > .0025 || NOTES.some((n) => Math.abs(n.vx) > .01 || Math.abs(n.vy) > .01);
       const hl = highlighted(), has = hl.size > 0;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
       ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(scale, scale); ctx.translate(-cx, -cy);
       for (const l of LINKS) {
         const f = hover || sel, lit = has && (f ? (l.a === f || l.b === f) : l.sh.includes(tag));
-        const target = has ? (lit ? .8 : .02) : .2; l.op = has ? lerp(l.op, target, .15) : .2;
+        const target = has ? (lit ? .8 : .02) : .2, lop = has ? lerp(l.op, target, .15) : .2;
+        if (!near(lop, l.op)) busy = true;
+        l.op = lop;
         ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y);
         const lo = l.op * Math.min(l.a.ap, l.b.ap);
         ctx.strokeStyle = lit ? `rgba(232,93,86,${lo})` : `rgba(255,255,255,${lo})`; ctx.lineWidth = lit ? 3.5 : .8; ctx.stroke();
@@ -261,7 +278,9 @@ export function startLanding(root) {
       ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = innerWidth < 640 ? '6px Sans-Serif' : '5px Sans-Serif'; // a size up on phones, where the view can't zoom as far
       for (const n of NOTES) {
         const isH = hl.has(n), isHov = hover === n || sel === n;
-        n.op = has ? lerp(n.op, isH ? 1 : .08, .15) : 1; n.rad = lerp(n.rad, isHov ? 12 : 9, .15);
+        const nop = has ? lerp(n.op, isH ? 1 : .08, .15) : 1, nrad = lerp(n.rad, isHov ? 12 : 9, .15);
+        if (!near(nop, n.op) || !near(nrad, n.rad)) busy = true;
+        n.op = nop; n.rad = nrad;
         ctx.beginPath(); ctx.arc(n.x, n.y, n.rad * (.45 + .55 * n.ap), 0, 6.283);
         ctx.fillStyle = isHov ? `rgba(232,93,86,${n.op})` : `rgba(248,236,220,${n.op * n.ap})`; ctx.fill();
         const ta = has ? (isHov ? n.op : isH ? n.op * .85 : n.op * .5) : .8;
@@ -269,11 +288,13 @@ export function startLanding(root) {
       }
       ctx.restore();
       place();
-      if (onScreen) raf(frame); else looping = false;
+      if (onScreen && busy) raf(frame); else looping = false;
     }
-    // draw only while the graph is on screen (or nearly): no work, and no battery, for a picture nobody can see
+    // draw only while the graph is on screen (or nearly) and something on it moves: no work, and no battery, for a
+    // picture nobody can see or that hasn't changed
     let onScreen = true, looping = true;
-    new IO(([e]) => { onScreen = e.isIntersecting; if (onScreen && !looping) { looping = true; raf(frame); } }, { rootMargin: '150px 0px' }).observe(box);
+    const wake = () => { if (onScreen && !looping) { looping = true; raf(frame); } };
+    new IO(([e]) => { onScreen = e.isIntersecting; wake(); }, { rootMargin: '150px 0px' }).observe(box);
     raf(frame);
     // pointer: hover a node, drag it around
     const at = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left - W / 2) / scale + cx, (e.clientY - r.top - H / 2) / scale + cy]; };
@@ -293,12 +314,19 @@ export function startLanding(root) {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sel) open(null); }, sig);
     cv.addEventListener('pointerup', end, sig); cv.addEventListener('pointercancel', end, sig);
     cv.addEventListener('pointerleave', () => { if (!drag) hover = null; }, sig);
+    // any pointer activity can change the picture (hover ring, drag, a click): the resting loop starts again
+    for (const type of ['pointermove', 'pointerdown', 'pointerup', 'pointercancel', 'pointerleave']) cv.addEventListener(type, wake, sig);
     // the tag filter: a round tag button that opens the list; a chosen tag becomes a pill with a close button
     const fl = document.getElementById('gfilter');
     const TAGICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m21.41 11.58-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58s1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41s-.23-1.06-.59-1.42M5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7"/></svg>';
-    function setTag(t){ tag = t; open(null); render(); }
+    function setTag(t){ tag = t; open(null); render(); }   // open() wakes the loop for the new highlight
+    // the list closes on a press anywhere else: one listener for whichever list render() made last (one per render
+    // used to pile up, all kept until the page went away)
+    let menu = null, menuBtn = null;
+    document.addEventListener('pointerdown', (e) => { if (menu && !fl.contains(e.target)) { menu.classList.remove('open'); menuBtn.classList.remove('open'); } }, sig);
     function render(){
       fl.innerHTML = '';
+      menu = menuBtn = null;
       if (tag) {
         const p = document.createElement('div'); p.className = 'gbtn pill'; p.innerHTML = `<i></i>#${tag}<button type="button" aria-label="Clear tag filter"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
         p.querySelector('button').onclick = () => setTag(null); fl.appendChild(p); return;
@@ -307,7 +335,7 @@ export function startLanding(root) {
       const m = document.createElement('div'); m.className = 'gmenu';
       TAGS.forEach((t) => { const it = document.createElement('button'); it.type = 'button'; it.innerHTML = `#${t}<span>${NOTES.filter((n) => n.tags.includes(t)).length}</span>`; it.onclick = () => setTag(t); m.appendChild(it); });
       b.onclick = (e) => { e.stopPropagation(); const open = !m.classList.contains('open'); m.classList.toggle('open', open); b.classList.toggle('open', open); b.setAttribute('aria-expanded', String(open)); };
-      document.addEventListener('pointerdown', (e) => { if (!fl.contains(e.target)) { m.classList.remove('open'); b.classList.remove('open'); } }, { signal: ac.signal, once: false });
+      menu = m; menuBtn = b;
       fl.appendChild(b); fl.appendChild(m);
     }
     render();

@@ -7,6 +7,7 @@ import { useGraphNotesQuery, QUERY_KEYS } from '../../hooks/useNotesQuery';
 import { useUIStore } from '../../store/useUIStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useTabsStore } from '../../store/useTabsStore';
+import { useSearchStore } from '../../store/useSearchStore';
 import { useToastStore } from '../../store/useToastStore';
 import { useDeleteNoteMutation, useArchiveNoteMutation } from '../../hooks/useNoteMutations';
 import { forceX, forceY, forceCollide } from 'd3-force';
@@ -83,8 +84,18 @@ const Graph = () => {
   const [hoveredNode, setHoveredNode] = useState(null);
   const [selectedTag, setSelectedTag] = useState(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [animTick, setAnimTick] = useState(0);
   const filterDropdownRef = useRef(null);
+
+  // A note or the agent chat covers this page (it stays mounted underneath): the graph's drawing loop
+  // rests until the page shows again, then carries on where it was (the layout itself isn't touched)
+  const isNoteOpen = useTabsStore((state) => state.activeTabId !== 'home');
+  const isAgentMode = useSearchStore((state) => state.searchMode === 'agent');
+  useEffect(() => {
+    const graph = fgRef.current;
+    if (!graph) return;
+    if (isNoteOpen || isAgentMode) graph.pauseAnimation();
+    else graph.resumeAnimation();
+  }, [isNoteOpen, isAgentMode]);
 
   // Close filter dropdown on outside click or touch
   useEffect(() => {
@@ -581,24 +592,14 @@ const Graph = () => {
     }
   }, [graphData]);
 
-  // Temporary frame pump to ensure canvas redraws smoothly during lerp transitions
-  // even if the force graph physics engine has settled and stopped voluntarily redrawing.
+  // For 250 ms after the highlight changes, the graph redraws every frame (autoPauseRedraw off) so the
+  // fade, eased inside the canvas callbacks, plays out even when the layout has settled and the graph
+  // would otherwise stop redrawing. This used to be done by re-rendering the whole page 15 times.
+  const [isFading, setIsFading] = useState(false);
   useEffect(() => {
-    let frameCount = 0;
-    let animationFrameId;
-
-    const animate = () => {
-      frameCount++;
-      setAnimTick(t => t + 1); // trigger re-render
-
-      if (frameCount < 15) { // ~250ms at 60fps
-        animationFrameId = requestAnimationFrame(animate);
-      }
-    };
-
-    animationFrameId = requestAnimationFrame(animate);
-
-    return () => cancelAnimationFrame(animationFrameId);
+    const start = setTimeout(() => setIsFading(true), 0);
+    const end = setTimeout(() => setIsFading(false), 250);
+    return () => { clearTimeout(start); clearTimeout(end); };
   }, [highlightedNodes, activeHoveredNode]);
 
   const isMobile = dimensions.width < 640;
@@ -614,7 +615,7 @@ const Graph = () => {
         ref={fgRef}
         width={dimensions.width}
         height={dimensions.height}
-        extraRenderTick={animTick}
+        autoPauseRedraw={!isFading}
         graphData={graphData}
         nodeLabel={node => {
           const tags = (node.connectingTags && node.connectingTags.length > 0)

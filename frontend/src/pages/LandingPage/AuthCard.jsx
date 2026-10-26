@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { validateEmail } from '../../utils/helper';
+import { loadGoogleIdentity } from '../../utils/googleIdentity';
 import { FaRegEye, FaRegEyeSlash } from 'react-icons/fa6';
 
 // Google's sign-in is set up once per page load; the button itself is drawn again for each card
@@ -41,17 +42,22 @@ const AuthCard = ({ mode, visit, active, onSwitch }) => {
   // drops the placeholder a frame or two later; the box's fixed height (LandingPage.css) keeps that from jolting the card,
   // and drawing once ("Continue with Google" fits both cards) keeps switching cards from redrawing it
   const drawn = useRef(false), firstRun = useRef(true);
+  // Google's script couldn't load (offline or blocked): the "or" line and the button's placeholder go, rather than a
+  // button-shaped shape that does nothing
+  const [googleFailed, setGoogleFailed] = useState(false);
   useEffect(() => {
     // when: at once if the page opened on the card (nothing is moving); otherwise early, while the card is still put
     // away, so it's ready before the card opens; and if the card opens first, just after its glide, as building it
-    // mid-move stalled the page
+    // mid-move stalled the page. The script itself starts loading now, whatever the delay.
     const delay = firstRun.current && active ? 0 : active ? 1150 : 1200;
     firstRun.current = false;
     if (drawn.current) return;
-    let tries = 0, t;
-    const draw = () => {
-      const g = window.google?.accounts?.id, box = gRef.current;
-      if (!g || !box) { if (tries++ < 50) t = setTimeout(draw, 200); return; }
+    const google = loadGoogleIdentity();
+    google.catch(() => {});
+    let t, later, mo, cancelled = false;
+    const draw = (loaded) => {
+      const g = loaded.accounts.id, box = gRef.current;
+      if (cancelled || !box) return;
       if (!googleReady) {
         g.initialize({ client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID, callback: (r) => useAuthStore.getState().googleLogin(r) });
         googleReady = true;
@@ -64,12 +70,14 @@ const AuthCard = ({ mode, visit, active, onSwitch }) => {
       const show = () => { clearTimeout(t); t = setTimeout(() => box.classList.add('ready'), 300); };
       const frame = box.querySelector('iframe');
       if (frame) frame.addEventListener('load', show, { once: true });
-      else new MutationObserver((_, mo) => { const f = box.querySelector('iframe'); if (f) { mo.disconnect(); f.addEventListener('load', show, { once: true }); } }).observe(box, { childList: true, subtree: true });
+      else {
+        mo = new MutationObserver(() => { const f = box.querySelector('iframe'); if (f) { mo.disconnect(); f.addEventListener('load', show, { once: true }); } });
+        mo.observe(box, { childList: true, subtree: true });
+      }
       later = setTimeout(() => box.classList.add('ready'), 3000);
     };
-    let later;
-    t = setTimeout(draw, delay);
-    return () => { clearTimeout(t); clearTimeout(later); };
+    t = setTimeout(() => google.then(draw, () => { if (!cancelled) setGoogleFailed(true); }), delay);
+    return () => { cancelled = true; clearTimeout(t); clearTimeout(later); mo?.disconnect(); };
   }, [active]);
 
   const submit = async (e) => {
@@ -124,8 +132,10 @@ const AuthCard = ({ mode, visit, active, onSwitch }) => {
         {up ? 'Already writing here? ' : 'New to Quill? '}
         <button type="button" onClick={() => onSwitch(up ? '/login' : '/signup')}>{up ? 'Log in' : 'Create an account'}</button>
       </p>
-      <div className="aor" role="separator"><span>or</span></div>
-      <div className="agoogle" ref={gRef} />
+      {!googleFailed && <>
+        <div className="aor" role="separator"><span>or</span></div>
+        <div className="agoogle" ref={gRef} />
+      </>}
     </div>
   );
 };

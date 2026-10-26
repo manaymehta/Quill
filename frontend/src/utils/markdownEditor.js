@@ -161,8 +161,10 @@ export const hideMarkdownSyntax = ViewPlugin.fromClass(
     }
 
     update(update) {
-      if (update.docChanged || update.viewportChanged) {
-        // Text changed or user scrolled — always rebuild.
+      if (update.docChanged || update.viewportChanged || syntaxTree(update.startState) !== syntaxTree(update.state)) {
+        // Text changed, user scrolled, or the background parser got further (a long note is parsed
+        // bit by bit, and the parts it reaches later would otherwise keep their ## and ** showing
+        // until the next edit) — always rebuild.
         this.decorations = this.buildDecorations(update.view);
         return;
       }

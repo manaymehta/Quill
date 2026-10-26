@@ -1,4 +1,4 @@
-/* The landing page (route "/"), ported from landing-drafts/v4. Every rule is scoped to .lp-root and every keyframe
+/* The landing page (routes "/", "/login", "/signup"). Every rule is scoped to .lp-root and every keyframe
    is prefixed lp-, so nothing here reaches the app once someone signs in; html.lp-on is set only while the page is shown. */
 /* Quill at night: a warm dark desk under a drifting constellation, one coral light (the quill's), and cream paper
    for the things you read. Built from the app's own materials; motion is ambient, scrolling stays normal. */
@@ -262,7 +262,8 @@ html.lp-on body{margin:0;background:#1d1c1a;overflow-x:hidden}
 .lp-root .ask.in .q{opacity:1;transform-origin:100% 100%;animation:lp-fadeIn .25s ease-out backwards,lp-bubble .5s var(--spring) backwards}
 @keyframes lp-bubble{from{transform:translateY(12px) scale(.94)}}
 .lp-root .dots{position:absolute;left:0;top:92px;display:flex;gap:5px;padding:16px 18px;border-radius:20px 20px 20px 6px;background:var(--paper);opacity:0;transform:scale(.8);transform-origin:0 100%;transition:opacity .15s ease,transform .15s ease}
-.lp-root .dots i{width:7px;height:7px;border-radius:50%;background:#a8a29e;animation:lp-dot 1s ease-in-out infinite}
+.lp-root .dots i{width:7px;height:7px;border-radius:50%;background:#a8a29e;animation:lp-dot 1s ease-in-out infinite;animation-play-state:paused} /* bounces only while shown (.typing); hidden it used to bounce forever */
+.lp-root .ask.typing:not(.said) .dots i{animation-play-state:running} /* the classes add up: .said comes on top of .typing */
 .lp-root .dots i:nth-child(2){animation-delay:.15s}.lp-root .dots i:nth-child(3){animation-delay:.3s}
 @keyframes lp-dot{0%,60%,100%{transform:none;opacity:.5}30%{transform:translateY(-4px);opacity:1}}
 .lp-root .ask.typing .dots{opacity:1;transform:none;transition:opacity .15s ease,transform .45s var(--spring)}

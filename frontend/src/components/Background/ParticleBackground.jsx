@@ -54,6 +54,8 @@ const ParticleBackground = ({
 }) => {
   const canvasRef = useRef(null);
   const isPausedRef = useRef(isPaused);
+  // Restarts the frame loop if it may run (tab visible, not paused); set by the canvas effect below
+  const resumeRef = useRef(null);
 
   useEffect(() => {
     isPausedRef.current = isPaused;
@@ -250,11 +252,15 @@ const ParticleBackground = ({
       animationFrameId = requestAnimationFrame(loop);
     };
 
-    const handleVisibilityChange = () => {
-      isTabVisible = !document.hidden;
+    resumeRef.current = () => {
       if (isTabVisible && !isPausedRef.current && !animationFrameId && !prefersReducedMotion) {
         animationFrameId = requestAnimationFrame(loop);
       }
+    };
+
+    const handleVisibilityChange = () => {
+      isTabVisible = !document.hidden;
+      resumeRef.current();
     };
 
     // Initialize dimensions and populate nodes once
@@ -271,6 +277,7 @@ const ParticleBackground = ({
     }
 
     return () => {
+      resumeRef.current = null;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('resize', resizeCanvas);
       if (animationFrameId) {
@@ -279,14 +286,10 @@ const ParticleBackground = ({
     };
   }, [variant]);
 
+  // Unpaused (the editor or the agent chat closed): the loop starts again. It used to send the whole
+  // document a fake "visibilitychange", which any other listener would also have taken as a tab switch.
   useEffect(() => {
-    if (!isPaused && !document.hidden && canvasRef.current) {
-      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (!prefersReducedMotion) {
-        const event = new Event('visibilitychange');
-        document.dispatchEvent(event);
-      }
-    }
+    if (!isPaused) resumeRef.current?.();
   }, [isPaused]);
 
   return <canvas ref={canvasRef} className={className} />;

@@ -99,7 +99,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   // Toolbar height: card mode's, easing to the full-screen one (fits the dock's dot) along the
   // full-screen transition (--fs, set by GlobalEditorOverlay)
   const dockMetrics = useMediaQuery(DOCK_MOBILE_QUERY) ? DOCK_METRICS.mobile : DOCK_METRICS.desktop;
-  const toolbarCardH = useMediaQuery(BELOW_TABLET_QUERY) ? EDITOR_TOOLBAR_H_PX.phone : EDITOR_TOOLBAR_H_PX.desktop;
+  const isBelowTablet = useMediaQuery(BELOW_TABLET_QUERY);
+  const toolbarCardH = isBelowTablet ? EDITOR_TOOLBAR_H_PX.phone : EDITOR_TOOLBAR_H_PX.desktop;
+  // a touch screen or a small one: the text area doesn't take focus by itself (it would pop the keyboard)
+  const isMobileOrTouchScreen = useMediaQuery('(pointer: coarse)') || isBelowTablet;
   const toolbarHeight = `calc(${toolbarCardH}px + ${fullscreenToolbarHeight(dockMetrics) - toolbarCardH}px * var(--fs, 0))`;
   const dotSlotWidth = dockMetrics.height[1] + 2 * EDITOR_TOOLBAR_DOT_SLOT_MARGIN_PX;
   const [error, setError] = useState("")
@@ -959,7 +962,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                   value={content}
                   onChange={handleContentChange}
                   viewRef={cmViewRef}
-                  autoFocus={isActive && !isChecklist && !isMobileOrTouch()}
+                  autoFocus={isActive && !isChecklist && !isMobileOrTouchScreen}
                   keepOnClose={canWriteBackOnClose}
                   keyboardOverlap={keyboardOverlap}
                 />

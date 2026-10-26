@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useLayoutEffect, useRef, useMemo, cloneElement } from 'react';
+import React, { memo, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, cloneElement } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
@@ -83,6 +83,13 @@ const InnerNoteCard = memo(({
   const observerTargetRef = useRef(null);
 
   const markdownSlice = useMemo(() => (content || '').slice(0, 500), [content]);
+  // Parsed once per text: the card still re-renders (e.g. to replay its fade-in after the editor closes),
+  // but React reuses this element as is instead of running the markdown parser again
+  const markdownPreview = useMemo(() => (
+    <ReactMarkdown remarkPlugins={CARD_MD_PLUGINS} components={CARD_MD_COMPONENTS}>
+      {markdownSlice}
+    </ReactMarkdown>
+  ), [markdownSlice]);
 
 
   const setActiveDropdownNoteId = useFoldersStore((s) => s.setActiveDropdownNoteId);
@@ -284,11 +291,7 @@ const InnerNoteCard = memo(({
               maskImage: 'linear-gradient(to bottom, black 0, black 8rem, transparent 9rem)',
             }}
           >
-            {hasBeenVisible ? (
-              <ReactMarkdown remarkPlugins={CARD_MD_PLUGINS} components={CARD_MD_COMPONENTS}>
-                {markdownSlice}
-              </ReactMarkdown>
-            ) : (
+            {hasBeenVisible ? markdownPreview : (
               <span className="whitespace-pre-wrap">{(content || '').slice(0, PREVIEW_CHARS)}{(content || '').length > PREVIEW_CHARS ? '…' : ''}</span>
             )}
           </div>
@@ -386,9 +389,10 @@ const NoteCard = ({
     animateLayoutChanges,
   });
 
-  const activeDropdownNoteId = useFoldersStore((s) => s.activeDropdownNoteId);
+  // Only "is MY menu open": a card subscribed to which menu is open re-rendered (every card) whenever
+  // any menu opened or closed
+  const isMenuOpen = useFoldersStore((s) => s.activeDropdownNoteId === id);
   const setActiveDropdownNoteId = useFoldersStore((s) => s.setActiveDropdownNoteId);
-  const isMenuOpen = activeDropdownNoteId === id;
   const [coords, setCoords] = useState(null);
 
   const longPressTimerRef = useRef(null);
@@ -398,7 +402,7 @@ const NoteCard = ({
   const skipReleaseTapRef = useRef(false);
 
   useEffect(() => {
-    if (activeDropdownNoteId !== id) return;
+    if (!isMenuOpen) return;
 
     const handleOutsideClick = (e) => {
       if (e.target.closest?.('.no-card-click')) return;
@@ -416,7 +420,7 @@ const NoteCard = ({
       document.removeEventListener('contextmenu', handleOutsideClick);
       document.removeEventListener('scroll', handleScroll, { capture: true });
     };
-  }, [activeDropdownNoteId, id, setActiveDropdownNoteId]);
+  }, [isMenuOpen, setActiveDropdownNoteId]);
 
   useEffect(() => {
     return () => {
@@ -426,7 +430,8 @@ const NoteCard = ({
     };
   }, [isDragging]);
 
-  const toggleMenu = (e) => {
+  // Stable, so the memoised inner card doesn't re-render just because this one did
+  const toggleMenu = useCallback((e) => {
     e?.stopPropagation?.();
     if (isMenuOpen) {
       setActiveDropdownNoteId(null);
@@ -434,7 +439,7 @@ const NoteCard = ({
       setCoords(buttonAnchor(e.currentTarget));
       setActiveDropdownNoteId(id);
     }
-  };
+  }, [isMenuOpen, id, setActiveDropdownNoteId]);
 
   const handleTouchStart = (e) => {
     skipReleaseTapRef.current = false;
