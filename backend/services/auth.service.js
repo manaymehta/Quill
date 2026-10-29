@@ -1,12 +1,13 @@
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const RefreshSession = require("../models/refresh-session.model");
+const {
+    ACCESS_TOKEN_SECRET,
+    ACCESS_TOKEN_TTL: ACCESS_TOKEN_EXPIRES_IN,
+    REFRESH_TOKEN_TTL_DAYS,
+    NODE_ENV,
+} = require("../config/env");
 
-const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_TTL || "15m";
-const configuredRefreshTtlDays = Number(process.env.REFRESH_TOKEN_TTL_DAYS || 30);
-const REFRESH_TOKEN_TTL_DAYS = Number.isFinite(configuredRefreshTtlDays) && configuredRefreshTtlDays > 0
-    ? Math.min(configuredRefreshTtlDays, 365)
-    : 30;
 const REFRESH_COOKIE_NAME = "quill_refresh";
 
 const getRefreshExpiry = () => new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -30,13 +31,13 @@ const createAccessToken = (user) => jwt.sign(
         fullName: user.fullName,
         tokenType: "access",
     },
-    process.env.ACCESS_TOKEN_SECRET,
+    ACCESS_TOKEN_SECRET,
     { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
 );
 
 const getCookieOptions = () => ({
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
@@ -137,7 +138,7 @@ const recoverLostRotation = async (staleSession, now, req, res, User) => {
     const claimedSuccessor = await RefreshSession.findOneAndUpdate(
         { _id: successor._id, revokedAt: null, expiresAt: { $gt: now } },
         { $set: { revokedAt: now } },
-        { new: true }
+        { returnDocument: "after" }
     );
 
     if (!claimedSuccessor) {
@@ -190,7 +191,7 @@ const rotateAuthentication = async (req, res, User) => {
     const claimedSession = await RefreshSession.findOneAndUpdate(
         { _id: existingSession._id, revokedAt: null, expiresAt: { $gt: now } },
         { $set: { revokedAt: now } },
-        { new: true }
+        { returnDocument: "after" }
     );
 
     if (!claimedSession) {
@@ -211,25 +212,23 @@ const revokeAuthentication = async (req, res) => {
     if (rawToken) {
         const tokenHash = hashRefreshToken(rawToken);
         const session = await RefreshSession.findOne({ tokenHash });
+        // No session with this hash means nothing to revoke. Expired as well as revoked: a revoked
+        // token is still answered for 30 s (two tabs refreshing at once), which must not cover a logout
         if (session) {
+            const now = new Date();
             await RefreshSession.updateMany(
                 { familyId: session.familyId, revokedAt: null },
-                { $set: { revokedAt: new Date() } }
+                { $set: { revokedAt: now } }
             );
-        } else {
-            await RefreshSession.updateOne(
-                { tokenHash, revokedAt: null },
-                { $set: { revokedAt: new Date() } }
-            );
+            // Every token of the family, including ones rotated moments ago (already revoked)
+            await RefreshSession.updateMany({ familyId: session.familyId }, { $set: { expiresAt: now } });
         }
     }
     clearRefreshCookie(res);
 };
 
 module.exports = {
-    REFRESH_REUSE_GRACE_PERIOD_MS,
     clearRefreshCookie,
-    createAccessToken,
     issueAuthentication,
     revokeAuthentication,
     rotateAuthentication,

@@ -1,19 +1,14 @@
-require("dotenv").config();
-
+const { FRONTEND_ORIGINS, PORT } = require("./config/env");   // loads .env and checks it first
 const connectDB = require("./config/db");
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const crypto = require("node:crypto");
-const { setTimeout: scheduleTimeout, clearTimeout: cancelTimeout } = require("node:timers");
+const { HttpError } = require("./utils/http-error");
 const app = express();
 
-const configuredOrigins = (process.env.FRONTEND_ORIGIN || "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-const allowedOrigins = configuredOrigins.length > 0
-  ? configuredOrigins
+const allowedOrigins = FRONTEND_ORIGINS.length > 0
+  ? FRONTEND_ORIGINS
   : ["http://localhost:5173", "http://localhost:3000"];
 
 const authRoutes = require("./routes/auth.routes");
@@ -67,9 +62,12 @@ app.use((req, res) => {
   res.status(404).json({ error: true, message: "Route not found" });
 });
 
-// Express identifies error middleware by its four-argument signature.
-// eslint-disable-next-line no-unused-vars
-app.use((error, req, res, _next) => {
+// Every route error ends here: Express 5 passes on whatever an async handler throws, so handlers
+// don't catch just to reply 500. Express identifies error middleware by its four arguments.
+app.use((error, req, res, next) => {
+  // A reply already under way can't become a JSON error; Express closes the connection instead
+  if (res.headersSent) return next(error);
+
   if (error.type === "entity.too.large") {
     return res.status(413).json({ error: true, message: "Request payload is too large" });
   }
@@ -78,11 +76,13 @@ app.use((error, req, res, _next) => {
     return res.status(400).json({ error: true, message: "Invalid JSON payload" });
   }
 
+  if (error instanceof HttpError) {
+    return res.status(error.statusCode).json({ error: true, message: error.message });
+  }
+
   console.error(`[${req.id || "no-req-id"}] Unhandled request error:`, error);
   return res.status(500).json({ error: true, message: "Internal Server Error" });
 });
-
-const PORT = process.env.PORT || 8000;
 
 const startServer = async () => {
   await connectDB();
@@ -96,13 +96,13 @@ const startServer = async () => {
     isShuttingDown = true;
     console.log(`${signal} received, shutting down gracefully`);
 
-    const forceExitTimer = scheduleTimeout(() => process.exit(1), 10_000);
+    const forceExitTimer = setTimeout(() => process.exit(1), 10_000);
     forceExitTimer.unref();
     server.close(async () => {
       try {
         await mongoose.connection.close(false);
       } finally {
-        cancelTimeout(forceExitTimer);
+        clearTimeout(forceExitTimer);
         process.exit(0);
       }
     });

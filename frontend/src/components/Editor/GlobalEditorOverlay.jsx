@@ -166,7 +166,7 @@ const GlobalEditorOverlay = () => {
       {/* Persistent Sidebar Hamburger Toggle in Editor Mode, and with the agent chat open (both hide the
           navbar; aligned to exact Home Navbar coordinates) */}
       {(isEditorOpen || isAgentMode) && (
-        <div className="fixed top-2.5 md:top-4 left-3 z-[90] flex items-center">
+        <div className="fixed top-2.5 sm:top-3.5 left-3 z-[90] flex items-center">
           <button
             onClick={toggleSidebar}
             className="sidebar-toggle-btn w-10 h-10 rounded-full bg-(--page-bg)/85 hover:bg-(--page-bg) backdrop-blur-md text-[#e85d56] hover:text-white border border-white/10 shadow-lg cursor-pointer transition-all duration-150 flex items-center justify-center"

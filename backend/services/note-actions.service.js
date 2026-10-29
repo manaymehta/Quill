@@ -1,8 +1,9 @@
 const crypto = require("node:crypto");
-const mongoose = require("mongoose");
 const Folder = require("../models/folder.model");
 const Note = require("../models/note.model");
 const { findNearestLivingAncestor, getUserFolders } = require("./folder-tree.service");
+const { isObjectId } = require("../utils/object-id");
+const { HttpError } = require("../utils/http-error");
 
 // The rules for moving, archiving, trashing and restoring a note, shared by
 // the app's own routes (note.controller) and the agent's bulk Apply/Undo
@@ -10,10 +11,9 @@ const { findNearestLivingAncestor, getUserFolders } = require("./folder-tree.ser
 // a loaded note document and takes the caller's transaction `session` (or
 // null); saving the note stays with the caller.
 
-const isValidFolderId = (folderId) => typeof folderId === "string" && mongoose.Types.ObjectId.isValid(folderId);
 
 // A folder the note may go into: this user's and not in Trash. Returns
-// { _id, name } or null. Check the ID with isValidFolderId first.
+// { _id, name } or null. Check the ID with isObjectId first.
 const findLivingFolder = (folderId, userId, session = null) => (
     Folder.findOne({ _id: folderId, userId, isDeleted: false })
         .select("_id name")
@@ -21,15 +21,24 @@ const findLivingFolder = (folderId, userId, session = null) => (
         .lean()
 );
 
+// For a route putting something into a folder: throws a 400 for a malformed ID and a 404 when the
+// folder isn't this user's living folder. `label` names it in the message ("folder",
+// "target folder", "parent folder").
+const requireLivingFolder = async (folderId, userId, label = "folder") => {
+    if (!isObjectId(folderId)) throw new HttpError(400, `Invalid ${label}`);
+    if (!(await findLivingFolder(folderId, userId))) {
+        throw new HttpError(404, `${label[0].toUpperCase()}${label.slice(1)} not found`);
+    }
+};
+
 // The folder a note should sit in: its own if still alive, otherwise the
-// nearest living parent folder, otherwise none (null).
-const livingFolderId = async (folderId, userId, session = null) => {
+// nearest living parent folder, otherwise none (null). `folders`: the user's
+// folders already loaded (getUserFolders), for a caller handling many notes;
+// the answer then needs no database reads.
+const livingFolderId = async (folderId, userId, session = null, folders = null) => {
     if (!folderId) return null;
-    const alive = await Folder.findOne({ _id: folderId, userId, isDeleted: false })
-        .select("_id")
-        .session(session)
-        .lean();
-    if (alive) return String(folderId);
+    if (folders) return findNearestLivingAncestor(folderId, folders);
+    if (await findLivingFolder(folderId, userId, session)) return String(folderId);
     return findNearestLivingAncestor(folderId, await getUserFolders(userId, session));
 };
 
@@ -58,10 +67,10 @@ const trashFields = () => ({ isDeleted: true, deletedAt: new Date(), deletedBatc
 // Take a trashed note out of Trash. Returns null on success, or the reason it
 // can't be restored: a note trashed together with its folder must come back
 // with that folder.
-const restoreFromTrash = async (note, userId, session = null) => {
+const restoreFromTrash = async (note, userId, session = null, folders = null) => {
     if (!note.isDeleted) return "Only a trashed note can be restored";
     if (note.deletedBatchId) return "Restore the containing folder instead";
-    if (note.folderId) note.folderId = await livingFolderId(note.folderId, userId, session);
+    if (note.folderId) note.folderId = await livingFolderId(note.folderId, userId, session, folders);
     note.isDeleted = false;
     note.deletedAt = null;
     note.deletedBatchId = null;
@@ -104,8 +113,8 @@ const trashFolderIfEmpty = async (folderId, userId, session = null) => {
 module.exports = {
     createFolderRecord,
     trashFolderIfEmpty,
-    isValidFolderId,
     findLivingFolder,
+    requireLivingFolder,
     livingFolderId,
     moveToFolder,
     setArchived,

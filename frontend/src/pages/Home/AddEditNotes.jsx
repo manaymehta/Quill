@@ -673,7 +673,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       )}
 
       {/* editor content area */}
-      <div ref={scrollAreaRef} className='editor-column [--column-pad:1.25rem] md:[--column-pad:1.75rem] flex-grow flex flex-col pt-5 md:pt-6 pb-2 overflow-y-auto editor-scrollbar'>
+      <div ref={scrollAreaRef} className='editor-column [--column-pad:1.25rem] md:[--column-pad:1.75rem] flex-grow flex flex-col pt-5 md:pt-6 pb-2 overflow-y-auto overflow-x-hidden editor-scrollbar'>
 
         {/* metadata area */}
         <div className="text-[11px] md:text-[13px] font-medium tracking-wider md:tracking-[0.15em] text-stone-500 mb-1 md:mb-1.5 uppercase flex items-center justify-between gap-1.5 md:gap-2 shrink-0">
@@ -741,7 +741,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         )}
         <input
           type='text'
-          className={`w-full bg-transparent outline-none font-medium text-[32px] md:text-[40px] text-[#333] placeholder-stone-400 mb-2 md:mb-3 caret-[#333] cursor-text shrink-0 leading-tight tracking-tight ${isShowingBefore ? 'hidden' : ''}`}
+          className={`w-full bg-transparent outline-none font-medium text-[32px] md:text-[40px] text-[#333] placeholder-stone-400 mb-2 md:mb-3 caret-[#333] cursor-text shrink-0 h-[1.5em] leading-normal overflow-x-auto overflow-y-hidden tracking-tight ${isShowingBefore ? 'hidden' : ''}`}
           style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
           placeholder='Untitled Note'
           value={title}
@@ -936,7 +936,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           ) : (
             /* ── CodeMirror live-preview markdown editor ── */
              <div 
-               className={`flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] cursor-text ${isShowingBefore || isShowingChanges ? 'hidden' : ''}`}
+               className={`flex-grow min-w-0 overflow-x-hidden text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] cursor-text ${isShowingBefore || isShowingChanges ? 'hidden' : ''}`}
                onClick={(e) => {
                  if (e.target === e.currentTarget && cmViewRef.current) {
                    const view = cmViewRef.current;

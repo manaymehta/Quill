@@ -40,11 +40,13 @@ const makeFixedWindowLimiter = ({ limit, windowMs, message, keyOf = (req) => Str
     };
 };
 
+const { AGENT_CHAT_RATE_LIMIT, AGENT_CHAT_RATE_WINDOW_MINUTES } = require("../config/env");
+
 const MINUTE = 60 * 1000;
 
 const agentChatLimiter = makeFixedWindowLimiter({
-    limit: Math.max(1, parseInt(process.env.AGENT_CHAT_RATE_LIMIT || "20", 10)),
-    windowMs: Math.max(1, parseInt(process.env.AGENT_CHAT_RATE_WINDOW_MINUTES || "10", 10)) * MINUTE,
+    limit: AGENT_CHAT_RATE_LIMIT,
+    windowMs: AGENT_CHAT_RATE_WINDOW_MINUTES * MINUTE,
     message: "Agent rate limit reached. Try again in a few minutes.",
 });
 

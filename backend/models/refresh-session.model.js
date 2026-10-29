@@ -2,7 +2,8 @@ const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
 const refreshSessionSchema = new Schema({
-    userId: { type: String, required: true, index: true },
+    // Not indexed: sessions are looked up by tokenHash and revoked by familyId, never by user
+    userId: { type: String, required: true },
     familyId: { type: String, required: true, index: true },
     tokenHash: { type: String, required: true, unique: true },
     replacedByHash: { type: String, default: null },

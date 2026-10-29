@@ -1,7 +1,7 @@
 const Note = require("../models/note.model");
 const Folder = require("../models/folder.model");
-const { buildIndexText, indexTextHash } = require("../services/note-index.service");
-const { triggerEmbed, deleteEmbed } = require("./note.controller");
+const { buildIndexText, indexTextHash, triggerEmbed, deleteEmbed } = require("../services/note-index.service");
+const { isObjectId } = require("../utils/object-id");
 
 // The agent's search does its meaning search in FastAPI, then makes this ONE
 // call (architecture plan §2.4, step 2a):
@@ -12,7 +12,6 @@ const { triggerEmbed, deleteEmbed } = require("./note.controller");
 //   tags or checklist items.
 // Runs with the user's own token, so everything is scoped to req.user._id.
 
-const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 const HASH_RE = /^[a-f0-9]{1,64}$/;
 // Bulk selection (step 3b) checks up to ~200 matched notes at once.
 const MAX_CANDIDATES = 200;
@@ -29,9 +28,14 @@ const recentHeals = new Map();
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const healOnce = (key, operation) => {
+    const now = Date.now();
     const last = recentHeals.get(key);
-    if (last && Date.now() - last < HEAL_COOLDOWN_MS) return;
-    recentHeals.set(key, Date.now());
+    if (last && now - last < HEAL_COOLDOWN_MS) return;
+    // Entries past their cooldown are dropped here, so the map holds only the last few minutes
+    for (const [oldKey, at] of recentHeals) {
+        if (now - at >= HEAL_COOLDOWN_MS) recentHeals.delete(oldKey);
+    }
+    recentHeals.set(key, now);
     Promise.resolve().then(operation).catch((error) => {
         console.error(`Search self-heal failed (${key}):`, error.message);
     });
@@ -49,7 +53,7 @@ const sanitizeBody = (body) => {
     if (!Array.isArray(list) || list.length > MAX_CANDIDATES) return null;
     const cleaned = [];
     for (const c of list) {
-        if (!c || typeof c !== "object" || typeof c.noteId !== "string" || !OBJECT_ID_RE.test(c.noteId)) return null;
+        if (!c || typeof c !== "object" || !isObjectId(c.noteId)) return null;
         if (c.textHash !== undefined && c.textHash !== null && c.textHash !== ""
             && (typeof c.textHash !== "string" || !HASH_RE.test(c.textHash))) return null;
         cleaned.push({ noteId: c.noteId, textHash: c.textHash || null });
@@ -115,86 +119,81 @@ const searchSupport = async (req, res) => {
     }
     const userId = req.user._id;
 
-    try {
-        const candidateIds = [...new Set(input.candidates.map((c) => c.noteId))];
-        const candidateNotes = candidateIds.length
-            ? await Note.find({ _id: { $in: candidateIds }, userId }).select(NOTE_FIELDS).lean()
-            : [];
+    const candidateIds = [...new Set(input.candidates.map((c) => c.noteId))];
+    const candidateNotes = candidateIds.length
+        ? await Note.find({ _id: { $in: candidateIds }, userId }).select(NOTE_FIELDS).lean()
+        : [];
 
-        let keywordNotes = [];
-        let regexes = [];
-        if (input.keywords.length > 0) {
-            regexes = input.keywords.map((k) => new RegExp(escapeRegex(k), "i"));
-            keywordNotes = await Note.find({
-                userId,
-                isDeleted: { $ne: true },
-                $or: regexes.flatMap((re) => [
-                    { title: re }, { content: re }, { tags: re }, { "checklist.text": re },
-                ]),
-            }).select(NOTE_FIELDS).sort({ updatedAt: -1 }).limit(input.keywordLimit).lean();
-        }
-
-        const folderIds = [...new Set([...candidateNotes, ...keywordNotes]
-            .map((n) => n.folderId).filter(Boolean).map(String))];
-        const folders = folderIds.length
-            ? await Folder.find({ _id: { $in: folderIds }, userId }).select("_id name").lean()
-            : [];
-        const folderNames = new Map(folders.map((f) => [String(f._id), f.name || ""]));
-
-        const notes = {};
-        const byId = new Map(candidateNotes.map((n) => [String(n._id), n]));
-
-        // Candidates not found for this user: heal only if the note no longer
-        // exists at all (never touch another user's pieces).
-        const missing = candidateIds.filter((id) => !byId.has(id));
-        if (missing.length > 0) {
-            const existing = await Note.find({ _id: { $in: missing } }).select("_id").lean();
-            const existsElsewhere = new Set(existing.map((n) => String(n._id)));
-            for (const id of missing) {
-                notes[id] = { status: "gone" };
-                if (existsElsewhere.has(id)) {
-                    console.warn(`[${req.id}] search piece for note ${id} is not this user's; dropped`);
-                } else {
-                    healOnce(`delete:${id}`, () => deleteEmbed(id));
-                }
-            }
-        }
-
-        for (const candidate of input.candidates) {
-            const note = byId.get(candidate.noteId);
-            if (!note || notes[candidate.noteId]?.status === "stale") continue;
-            if (note.isDeleted) {
-                notes[candidate.noteId] = { status: "gone" };
-                healOnce(`delete:${candidate.noteId}`, () => deleteEmbed(candidate.noteId));
-                continue;
-            }
-            const indexText = buildIndexText(note);
-            const isStale = candidate.textHash && candidate.textHash !== indexTextHash(indexText);
-            if (isStale) {
-                healOnce(`embed:${candidate.noteId}:${indexTextHash(indexText)}`, () => triggerEmbed(note, userId, { force: true }));
-                notes[candidate.noteId] = {
-                    status: "stale",
-                    ...noteMeta(note, folderNames),
-                    currentText: indexText.text.slice(0, OPENING_CHARS),
-                };
-            } else if (!notes[candidate.noteId]) {
-                notes[candidate.noteId] = { status: "ok", ...noteMeta(note, folderNames) };
-            }
-        }
-
-        const keywordHits = keywordNotes
-            .map((note) => ({ noteId: String(note._id), ...describeKeywordHit(note, regexes) }))
-            .sort((a, b) => keywordRank(b) - keywordRank(a));
-        for (const note of keywordNotes) {
-            const id = String(note._id);
-            if (!notes[id]) notes[id] = { status: "ok", ...noteMeta(note, folderNames) };
-        }
-
-        return res.json({ error: false, notes, keywordHits });
-    } catch (error) {
-        console.error(`[${req.id}] Agent search-support failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    let keywordNotes = [];
+    let regexes = [];
+    if (input.keywords.length > 0) {
+        regexes = input.keywords.map((k) => new RegExp(escapeRegex(k), "i"));
+        keywordNotes = await Note.find({
+            userId,
+            isDeleted: { $ne: true },
+            $or: regexes.flatMap((re) => [
+                { title: re }, { content: re }, { tags: re }, { "checklist.text": re },
+            ]),
+        }).select(NOTE_FIELDS).sort({ updatedAt: -1 }).limit(input.keywordLimit).lean();
     }
+
+    const folderIds = [...new Set([...candidateNotes, ...keywordNotes]
+        .map((n) => n.folderId).filter(Boolean).map(String))];
+    const folders = folderIds.length
+        ? await Folder.find({ _id: { $in: folderIds }, userId }).select("_id name").lean()
+        : [];
+    const folderNames = new Map(folders.map((f) => [String(f._id), f.name || ""]));
+
+    const notes = {};
+    const byId = new Map(candidateNotes.map((n) => [String(n._id), n]));
+
+    // Candidates not found for this user: heal only if the note no longer
+    // exists at all (never touch another user's pieces).
+    const missing = candidateIds.filter((id) => !byId.has(id));
+    if (missing.length > 0) {
+        const existing = await Note.find({ _id: { $in: missing } }).select("_id").lean();
+        const existsElsewhere = new Set(existing.map((n) => String(n._id)));
+        for (const id of missing) {
+            notes[id] = { status: "gone" };
+            if (existsElsewhere.has(id)) {
+                console.warn(`[${req.id}] search piece for note ${id} is not this user's; dropped`);
+            } else {
+                healOnce(`delete:${id}`, () => deleteEmbed(id));
+            }
+        }
+    }
+
+    for (const candidate of input.candidates) {
+        const note = byId.get(candidate.noteId);
+        if (!note || notes[candidate.noteId]?.status === "stale") continue;
+        if (note.isDeleted) {
+            notes[candidate.noteId] = { status: "gone" };
+            healOnce(`delete:${candidate.noteId}`, () => deleteEmbed(candidate.noteId));
+            continue;
+        }
+        const indexText = buildIndexText(note);
+        const isStale = candidate.textHash && candidate.textHash !== indexTextHash(indexText);
+        if (isStale) {
+            healOnce(`embed:${candidate.noteId}:${indexTextHash(indexText)}`, () => triggerEmbed(note, userId, { force: true }));
+            notes[candidate.noteId] = {
+                status: "stale",
+                ...noteMeta(note, folderNames),
+                currentText: indexText.text.slice(0, OPENING_CHARS),
+            };
+        } else if (!notes[candidate.noteId]) {
+            notes[candidate.noteId] = { status: "ok", ...noteMeta(note, folderNames) };
+        }
+    }
+
+    const keywordHits = keywordNotes
+        .map((note) => ({ noteId: String(note._id), ...describeKeywordHit(note, regexes) }))
+        .sort((a, b) => keywordRank(b) - keywordRank(a));
+    for (const note of keywordNotes) {
+        const id = String(note._id);
+        if (!notes[id]) notes[id] = { status: "ok", ...noteMeta(note, folderNames) };
+    }
+
+    return res.json({ error: false, notes, keywordHits });
 };
 
 module.exports = { searchSupport };

@@ -7,6 +7,7 @@ const Note = require("../models/note.model");
 // (archiveOrderIndex); Trash has no order of its own (newest deletion first).
 // Rule: a note arriving in a list goes to the bottom of it.
 
+// Not trashed and not archived: what every list but Archive and Trash is made of
 const LIVE = { isDeleted: { $ne: true }, isArchived: { $ne: true } };
 
 // Unfiled notes, folder notes shown on Home, and notes whose folder is gone.
@@ -92,4 +93,4 @@ const reorderList = async (name, folderId, ids, userId) => {
     return null;
 };
 
-module.exports = { LISTS, sortFor, homeFilter, listsOf, placeArrivals, reorderList };
+module.exports = { LIVE, LISTS, sortFor, homeFilter, listsOf, placeArrivals, reorderList };

@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const crypto = require("node:crypto");
 const Note = require("../models/note.model");
 const Folder = require("../models/folder.model");
@@ -8,7 +9,7 @@ const AgentChat = require("../models/agent-chat.model");
 const { withRequiredTransaction, TransactionsUnavailableError } = require("../services/mongo-transaction.service");
 const { collectSubtreeFolderIds, getUserFolders } = require("../services/folder-tree.service");
 const {
-    isValidFolderId, findLivingFolder, livingFolderId, moveToFolder, setArchived, trashFields, restoreFromTrash,
+    findLivingFolder, livingFolderId, moveToFolder, setArchived, trashFields, restoreFromTrash,
     createFolderRecord, trashFolderIfEmpty,
 } = require("../services/note-actions.service");
 const { listsOf, placeArrivals } = require("../services/note-order.service");
@@ -16,9 +17,11 @@ const {
     MAX_LIST, groupParts, planFromProposal, planFromSelection, restrictPlan, mergePlans, buildCandidates, applyChanges, changeTitle, splitParts,
 } = require("../services/bulk-plan.service");
 const { changesOf, pendingOf, pendingSummary, markMoved, summarizeReceipt } = require("../services/pending-list.service");
-const { triggerEmbed, deleteEmbed, runEmbeddingBatch } = require("./note.controller");
-const { appendTurns } = require("./agent.controller");
+const { triggerEmbed, deleteEmbed, runEmbeddingBatch } = require("../services/note-index.service");
+const { appendTurns } = require("../services/agent-chat.service");
+const { callFastApi } = require("../services/fastapi.service");
 const { allowsBulkAction, getAgentScopes } = require("../services/agent-scopes.service");
+const { isObjectId } = require("../utils/object-id");
 
 const SCOPE_OFF_MESSAGE = (action) => (action === "trash"
     ? "Sending notes to trash is turned off in the agent settings"
@@ -41,7 +44,6 @@ const MAX_TAG_CHARS = 50;
 const MAX_REASON_CHARS = 300;
 const MAX_INSTRUCTION_CHARS = 500;
 const MAX_FOLDER_NAME_CHARS = 80;
-const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 const OVER_LIMIT_MESSAGE = `Your pending list would go over ${MAX_NOTES} notes with this — apply or discard it first.`;
 
 // The fields an action reads or writes; compared to detect a note changed by
@@ -87,7 +89,7 @@ const normalizeParams = async (action, params, userId) => {
         }
         const target = p.targetFolderId ?? null;
         if (target === null) return { params: { targetFolderId: null } };
-        if (!isValidFolderId(target)) return { error: "Invalid target folder" };
+        if (!isObjectId(target)) return { error: "Invalid target folder" };
         const folder = await findLivingFolder(target, userId);
         if (!folder) return { error: "Target folder not found" };
         return { params: { targetFolderId: String(folder._id), targetFolderName: folder.name || "" } };
@@ -174,7 +176,7 @@ const parseCandidates = (list, key, items) => {
     }
     const seen = new Set();
     for (const cand of list) {
-        if (!cand || typeof cand.noteId !== "string" || !OBJECT_ID_RE.test(cand.noteId) || seen.has(cand.noteId)) {
+        if (!cand || !isObjectId(cand.noteId) || seen.has(cand.noteId)) {
             return "candidates must be distinct note IDs";
         }
         if (cand.verdict !== undefined && !VERDICTS.has(cand.verdict)) return "Invalid verdict";
@@ -234,7 +236,7 @@ const planFromGroups = (groups) => {
             || !Array.isArray(g.noteIds) || g.noteIds.length < 2 || !Array.isArray(g.misfits || [])) {
             return { error: "each group needs a name, a tag and 2+ notes" };
         }
-        if (g.noteIds.some((id) => typeof id !== "string" || !OBJECT_ID_RE.test(id) || items.has(id))) {
+        if (g.noteIds.some((id) => !isObjectId(id) || items.has(id))) {
             return { error: "groups must not share notes" };
         }
         const misfits = new Map();
@@ -355,12 +357,33 @@ const splitSelection = async (userId, plan, built, chatId) => {
     };
 };
 
+// Another request changed the pending list between our read and our write: the database refused a
+// second open list (another request created one a moment ago), or Mongoose refused saving over a
+// newer version of it. Nothing was written, so the operation runs again, reads the newer list and
+// merges into it. Safe because everything before that write only reads or writes held lists.
+// A short random pause before each retry spreads requests that collided, so they don't collide again
+const LIST_RACE_ATTEMPTS = 5;
+const isOpenListRace = (error) => (error?.code === 11000 && Boolean(error.keyPattern?.status))
+    || error instanceof mongoose.Error.VersionError;
+const retryOnOpenListRace = async (operation) => {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await operation();
+        } catch (error) {
+            if (!isOpenListRace(error) || attempt >= LIST_RACE_ATTEMPTS) throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25 + Math.random() * 75));
+    }
+};
+
 // Saves new changes. `mode`: "add" (into the pending list, or a new one when
 // none is pending) or "separate" (held when a list is pending — the agent
 // judged it a different task). `source`: "agent" holds what doesn't fit
 // under 50 with the pending list; "button" refuses it. `heldId`: the held
 // list this reply already started (extended in place).
-const savePlan = async (userId, plan, {
+const savePlan = (...args) => retryOnOpenListRace(() => savePlanOnce(...args));
+
+const savePlanOnce = async (userId, plan, {
     mode = "add", source = "agent", heldId = null, chatId = null, openedFrom = [], allowSplit = false, requiredNoteIds = [],
 } = {}) => {
     const required = [...new Set(requiredNoteIds)];
@@ -426,84 +449,66 @@ const hostInTurn = async (userId, turnProposalId, body) => {
 const createProposal = async (req, res) => {
     const userId = req.user._id;
     const body = req.body || {};
-    try {
-        const parsed = await planFromInput(body, userId);
-        if (parsed.error) return res.status(400).json({ error: true, message: parsed.error });
-        const chatId = typeof body.chatId === "string" && OBJECT_ID_RE.test(body.chatId) ? body.chatId : null;
-        const { status, body: out } = await savePlan(userId, parsed.plan, {
-            mode: body.mode === "separate" ? "separate" : "add",
-            heldId: typeof body.heldId === "string" ? body.heldId : null,
-            chatId,
-            allowSplit: body.split === true,
-            requiredNoteIds: [...parsed.plan.items.keys()],
-        });
-        return res.status(status).json(out);
-    } catch (error) {
-        console.error(`[${req.id}] Agent proposal failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    const parsed = await planFromInput(body, userId);
+    if (parsed.error) return res.status(400).json({ error: true, message: parsed.error });
+    const chatId = isObjectId(body.chatId) ? body.chatId : null;
+    const { status, body: out } = await savePlan(userId, parsed.plan, {
+        mode: body.mode === "separate" ? "separate" : "add",
+        heldId: typeof body.heldId === "string" ? body.heldId : null,
+        chatId,
+        allowSplit: body.split === true,
+        requiredNoteIds: [...parsed.plan.items.keys()],
+    });
+    return res.status(status).json(out);
 };
 
 // GET /v1/agent/proposals/pending — the user's pending list in brief (for
 // the agent's context), or null.
 const getPending = async (req, res) => {
-    try {
-        return res.json({ error: false, pending: pendingSummary(await pendingOf(req.user._id)) });
-    } catch (error) {
-        console.error(`[${req.id}] Agent pending lookup failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    return res.json({ error: false, pending: pendingSummary(await pendingOf(req.user._id)) });
 };
 
 // POST /v1/agent/proposals/:proposalId/add — a held list's changes go into
 // the pending list (or it becomes the pending list when none is).
 // POST /v1/agent/proposals/:proposalId/show — "show it after": a held list
 // becomes the pending list once nothing else is pending.
-const releaseHeld = (into) => async (req, res) => {
+const releaseHeld = (into) => (req, res) => retryOnOpenListRace(() => releaseHeldOnce(into, req, res));
+
+const releaseHeldOnce = async (into, req, res) => {
     const userId = req.user._id;
-    try {
-        const held = await AgentProposal.findOne({ proposalId: req.params.proposalId, userId });
-        if (!held) return res.status(404).json({ error: true, message: "These changes expired — ask again" });
-        if (held.status !== "held") return res.status(409).json({ error: true, message: `These changes were already ${held.status === "open" ? "shown" : held.status}`, status: held.status });
-        const pending = await pendingOf(userId);
-        if (pending && into === "show") {
-            return res.status(409).json({ error: true, message: "Apply or discard your pending list first", pendingChatId: pending.chatId });
-        }
-        const built = await buildList(userId, pending ? mergePlans([planFromProposal(pending), planFromProposal(held)]) : planFromProposal(held));
-        if (built.candidates.length === 0) {
-            held.status = "discarded";
-            await held.save();
-            return res.json({ error: false, empty: true, message: "Nothing to change any more — those notes are already like that." });
-        }
-        if (built.candidates.length > MAX_NOTES) return res.status(409).json({ error: true, message: OVER_LIMIT_MESSAGE });
-        const doc = await writeList(userId, built, { doc: pending || held, status: "open", chatId: held.chatId });
-        if (pending) await AgentProposal.deleteOne({ proposalId: held.proposalId, userId });
-        const out = proposalBody(doc.toObject(), built.folderNames, built.notesById, { clashCount: built.clashCount, extended: Boolean(pending) });
-        await hostInTurn(userId, held.proposalId, out);
-        return res.json({ ...out, releasedFrom: held.proposalId });
-    } catch (error) {
-        console.error(`[${req.id}] Agent release-held failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    const held = await AgentProposal.findOne({ proposalId: req.params.proposalId, userId });
+    if (!held) return res.status(404).json({ error: true, message: "These changes expired — ask again" });
+    if (held.status !== "held") return res.status(409).json({ error: true, message: `These changes were already ${held.status === "open" ? "shown" : held.status}`, status: held.status });
+    const pending = await pendingOf(userId);
+    if (pending && into === "show") {
+        return res.status(409).json({ error: true, message: "Apply or discard your pending list first", pendingChatId: pending.chatId });
     }
+    const built = await buildList(userId, pending ? mergePlans([planFromProposal(pending), planFromProposal(held)]) : planFromProposal(held));
+    if (built.candidates.length === 0) {
+        held.status = "discarded";
+        await held.save();
+        return res.json({ error: false, empty: true, message: "Nothing to change any more — those notes are already like that." });
+    }
+    if (built.candidates.length > MAX_NOTES) return res.status(409).json({ error: true, message: OVER_LIMIT_MESSAGE });
+    const doc = await writeList(userId, built, { doc: pending || held, status: "open", chatId: held.chatId });
+    if (pending) await AgentProposal.deleteOne({ proposalId: held.proposalId, userId });
+    const out = proposalBody(doc.toObject(), built.folderNames, built.notesById, { clashCount: built.clashCount, extended: Boolean(pending) });
+    await hostInTurn(userId, held.proposalId, out);
+    return res.json({ ...out, releasedFrom: held.proposalId });
 };
 
 // POST /v1/agent/proposals/:proposalId/discard — close a pending or held
 // list unapplied.
 const discardProposal = async (req, res) => {
-    try {
-        const doc = await AgentProposal.findOneAndUpdate(
-            { proposalId: req.params.proposalId, userId: req.user._id, status: { $in: ["open", "held"] } },
-            { $set: { status: "discarded" } },
-            { new: true },
-        ).lean();
-        if (doc) return res.json({ error: false, status: "discarded" });
-        const existing = await AgentProposal.findOne({ proposalId: req.params.proposalId, userId: req.user._id }).select("status").lean();
-        if (!existing) return res.status(404).json({ error: true, message: "This list expired" });
-        return res.status(409).json({ error: true, message: `This list was already ${existing.status}`, status: existing.status });
-    } catch (error) {
-        console.error(`[${req.id}] Agent discard failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    const doc = await AgentProposal.findOneAndUpdate(
+        { proposalId: req.params.proposalId, userId: req.user._id, status: { $in: ["open", "held"] } },
+        { $set: { status: "discarded" } },
+        { returnDocument: "after" },
+    ).lean();
+    if (doc) return res.json({ error: false, status: "discarded" });
+    const existing = await AgentProposal.findOne({ proposalId: req.params.proposalId, userId: req.user._id }).select("status").lean();
+    if (!existing) return res.status(404).json({ error: true, message: "This list expired" });
+    return res.status(409).json({ error: true, message: `This list was already ${existing.status}`, status: existing.status });
 };
 
 // POST /v1/agent/select-notes — the complete list of this user's notes
@@ -519,60 +524,55 @@ const selectNotes = async (req, res) => {
     const query = { userId, isDeleted: { $ne: true } };
     query.isArchived = f.archived === true ? true : { $ne: true };
 
-    try {
-        if (f.tag !== undefined) {
-            if (typeof f.tag !== "string" || !f.tag.trim() || f.tag.length > MAX_TAG_CHARS) return res.status(400).json({ error: true, message: "Invalid tag" });
-            query.tags = f.tag.trim().replace(/^#+/, "");
-        }
-        if (f.folderId !== undefined) {
-            if (f.folderId === "none") {
-                query.folderId = null;
-            } else {
-                if (typeof f.folderId !== "string" || !OBJECT_ID_RE.test(f.folderId)) return res.status(400).json({ error: true, message: "Invalid folderId" });
-                const folders = await getUserFolders(userId);
-                const alive = folders.filter((folder) => !folder.isDeleted);
-                const subtree = collectSubtreeFolderIds(alive, f.folderId);
-                if (subtree.length === 0) return res.status(400).json({ error: true, message: "Folder not found" });
-                query.folderId = { $in: subtree };
-            }
-        }
-        // Untitled = missing, null or blank — notes saved without a title are
-        // stored with a single space, so match whitespace-only titles too.
-        if (f.untitled === true) query.$or = [{ title: { $exists: false } }, { title: null }, { title: /^\s*$/ }];
-        const dayMs = 24 * 60 * 60 * 1000;
-        for (const key of ["notEditedForDays", "editedWithinDays"]) {
-            if (f[key] !== undefined && (!Number.isInteger(f[key]) || f[key] < 0 || f[key] > 36500)) {
-                return res.status(400).json({ error: true, message: `${key} must be a whole number of days` });
-            }
-        }
-        if (f.notEditedForDays !== undefined || f.editedWithinDays !== undefined) {
-            query.updatedAt = {};
-            if (f.notEditedForDays !== undefined) query.updatedAt.$lt = new Date(Date.now() - f.notEditedForDays * dayMs);
-            if (f.editedWithinDays !== undefined) query.updatedAt.$gte = new Date(Date.now() - f.editedWithinDays * dayMs);
-        }
-
-        const notes = await Note.find(query).select("_id title folderId tags isArchived updatedAt")
-            .sort({ updatedAt: -1 }).limit(MAX_SELECT_NOTES + 1).lean();
-        const truncated = notes.length > MAX_SELECT_NOTES;
-        const shown = notes.slice(0, MAX_SELECT_NOTES);
-        const folderNames = await folderNameMap(shown, userId);
-        return res.json({
-            error: false,
-            truncated,
-            notes: shown.map((n) => ({
-                noteId: String(n._id),
-                title: n.title || "",
-                folderId: n.folderId || null,
-                folder: n.folderId ? folderNames.get(String(n.folderId)) || null : null,
-                tags: n.tags || [],
-                isArchived: Boolean(n.isArchived),
-                lastEdited: n.updatedAt,
-            })),
-        });
-    } catch (error) {
-        console.error(`[${req.id}] Agent select-notes failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    if (f.tag !== undefined) {
+        if (typeof f.tag !== "string" || !f.tag.trim() || f.tag.length > MAX_TAG_CHARS) return res.status(400).json({ error: true, message: "Invalid tag" });
+        query.tags = f.tag.trim().replace(/^#+/, "");
     }
+    if (f.folderId !== undefined) {
+        if (f.folderId === "none") {
+            query.folderId = null;
+        } else {
+            if (!isObjectId(f.folderId)) return res.status(400).json({ error: true, message: "Invalid folderId" });
+            const folders = await getUserFolders(userId);
+            const alive = folders.filter((folder) => !folder.isDeleted);
+            const subtree = collectSubtreeFolderIds(alive, f.folderId);
+            if (subtree.length === 0) return res.status(400).json({ error: true, message: "Folder not found" });
+            query.folderId = { $in: subtree };
+        }
+    }
+    // Untitled = missing, null or blank — notes saved without a title are
+    // stored with a single space, so match whitespace-only titles too.
+    if (f.untitled === true) query.$or = [{ title: { $exists: false } }, { title: null }, { title: /^\s*$/ }];
+    const dayMs = 24 * 60 * 60 * 1000;
+    for (const key of ["notEditedForDays", "editedWithinDays"]) {
+        if (f[key] !== undefined && (!Number.isInteger(f[key]) || f[key] < 0 || f[key] > 36500)) {
+            return res.status(400).json({ error: true, message: `${key} must be a whole number of days` });
+        }
+    }
+    if (f.notEditedForDays !== undefined || f.editedWithinDays !== undefined) {
+        query.updatedAt = {};
+        if (f.notEditedForDays !== undefined) query.updatedAt.$lt = new Date(Date.now() - f.notEditedForDays * dayMs);
+        if (f.editedWithinDays !== undefined) query.updatedAt.$gte = new Date(Date.now() - f.editedWithinDays * dayMs);
+    }
+
+    const notes = await Note.find(query).select("_id title folderId tags isArchived updatedAt")
+        .sort({ updatedAt: -1 }).limit(MAX_SELECT_NOTES + 1).lean();
+    const truncated = notes.length > MAX_SELECT_NOTES;
+    const shown = notes.slice(0, MAX_SELECT_NOTES);
+    const folderNames = await folderNameMap(shown, userId);
+    return res.json({
+        error: false,
+        truncated,
+        notes: shown.map((n) => ({
+            noteId: String(n._id),
+            title: n.title || "",
+            folderId: n.folderId || null,
+            folder: n.folderId ? folderNames.get(String(n.folderId)) || null : null,
+            tags: n.tags || [],
+            isArchived: Boolean(n.isArchived),
+            lastEdited: n.updatedAt,
+        })),
+    });
 };
 
 // POST /v1/agent/selections/:selectionId/parts/:index/open — one split
@@ -582,19 +582,11 @@ const selectNotes = async (req, res) => {
 const JUDGE_TIMEOUT_MS = 45_000;
 
 const judgeNotes = async (req, userId, topic, keywords, noteIds) => {
-    const url = process.env.FASTAPI_SUMMARIZE_URL;
-    if (!url) throw new Error("AI service is not configured");
-    const key = process.env.FASTAPI_INTERNAL_KEY;
-    const response = await fetch(`${url}/agent/judge-part`, {
+    const response = await callFastApi("/agent/judge-part", {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: req.headers["authorization"],
-            "x-user-id": String(userId),
-            ...(key ? { "x-api-key": key } : {}),
-        },
-        body: JSON.stringify({ topic, keywords, noteIds }),
-        signal: AbortSignal.timeout(JUDGE_TIMEOUT_MS),
+        asUser: { authorization: req.headers["authorization"], userId },
+        body: { topic, keywords, noteIds },
+        timeoutMs: JUDGE_TIMEOUT_MS,
     });
     const data = await response.json().catch(() => null);
     if (!response.ok || !Array.isArray(data?.candidates)) {
@@ -607,55 +599,50 @@ const judgeNotes = async (req, userId, topic, keywords, noteIds) => {
 const openSelectionPart = async (req, res) => {
     const userId = req.user._id;
     const index = Number(req.params.index);
-    try {
-        const selection = await AgentSelection.findOne({ selectionId: req.params.selectionId, userId }).lean();
-        if (!selection) return res.status(404).json({ error: true, message: "These choices have expired — ask the agent again" });
-        const part = Number.isInteger(index) ? selection.parts[index] : null;
-        if (!part) return res.status(404).json({ error: true, message: "Choice not found" });
+    const selection = await AgentSelection.findOne({ selectionId: req.params.selectionId, userId }).lean();
+    if (!selection) return res.status(404).json({ error: true, message: "These choices have expired — ask the agent again" });
+    const part = Number.isInteger(index) ? selection.parts[index] : null;
+    if (!part) return res.status(404).json({ error: true, message: "Choice not found" });
 
-        const plan = restrictPlan(planFromSelection(selection), part.noteIds);
-        for (const change of plan.changes) {
-            if (!change.topic) continue;
-            const pending = [...plan.items].filter(([, list]) => list.some((i) => i.change === change.key && i.pending)).map(([noteId]) => noteId);
-            if (pending.length === 0) continue;
-            let verdicts;
-            try {
-                verdicts = await judgeNotes(req, userId, change.topic, change.keywords || [], pending);
-            } catch {
-                return res.status(502).json({ error: true, message: "The assistant couldn't check these notes right now. Try again shortly." });
-            }
-            for (const noteId of pending) {
-                const v = verdicts.get(noteId);
-                plan.items.set(noteId, plan.items.get(noteId).map((i) => (i.change === change.key
-                    ? { ...i, pending: false, verdict: v?.verdict || "unjudged", reason: v?.reason || "couldn't judge — check it yourself" }
-                    : i)));
-            }
+    const plan = restrictPlan(planFromSelection(selection), part.noteIds);
+    for (const change of plan.changes) {
+        if (!change.topic) continue;
+        const pending = [...plan.items].filter(([, list]) => list.some((i) => i.change === change.key && i.pending)).map(([noteId]) => noteId);
+        if (pending.length === 0) continue;
+        let verdicts;
+        try {
+            verdicts = await judgeNotes(req, userId, change.topic, change.keywords || [], pending);
+        } catch {
+            return res.status(502).json({ error: true, message: "The assistant couldn't check these notes right now. Try again shortly." });
         }
-
-        const openedFrom = `part:${selection.selectionId}:${index}`;
-        const { status, body } = await savePlan(userId, plan, { source: "button", chatId: selection.chatId || null, openedFrom: [openedFrom] });
-        if (status === 201 && selection.chatId) {
-            // The list now lives in a new turn of this chat (older turns
-            // showing it point here), so it's still there after a refresh.
-            try {
-                await markMoved(userId, body.proposalId);
-                await appendTurns(userId, selection.chatId, [{
-                    role: "assistant",
-                    text: body.extended
-                        ? `Added “${part.label}” to your pending list — review it below.`
-                        : `Opened “${part.label}” — ${body.candidates.length} notes to review below.`,
-                    citations: [],
-                    proposal: chatProposal(body),
-                }]);
-            } catch (persistError) {
-                console.error(`[${req.id}] Saving the opened part to the chat failed:`, persistError.message);
-            }
+        for (const noteId of pending) {
+            const v = verdicts.get(noteId);
+            plan.items.set(noteId, plan.items.get(noteId).map((i) => (i.change === change.key
+                ? { ...i, pending: false, verdict: v?.verdict || "unjudged", reason: v?.reason || "couldn't judge — check it yourself" }
+                : i)));
         }
-        return res.status(status).json({ ...body, partLabel: part.label });
-    } catch (error) {
-        console.error(`[${req.id}] Agent open-part failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
     }
+
+    const openedFrom = `part:${selection.selectionId}:${index}`;
+    const { status, body } = await savePlan(userId, plan, { source: "button", chatId: selection.chatId || null, openedFrom: [openedFrom] });
+    if (status === 201 && selection.chatId) {
+        // The list now lives in a new turn of this chat (older turns
+        // showing it point here), so it's still there after a refresh.
+        try {
+            await markMoved(userId, body.proposalId);
+            await appendTurns(userId, selection.chatId, [{
+                role: "assistant",
+                text: body.extended
+                    ? `Added “${part.label}” to your pending list — review it below.`
+                    : `Opened “${part.label}” — ${body.candidates.length} notes to review below.`,
+                citations: [],
+                proposal: chatProposal(body),
+            }]);
+        } catch (persistError) {
+            console.error(`[${req.id}] Saving the opened part to the chat failed:`, persistError.message);
+        }
+    }
+    return res.status(status).json({ ...body, partLabel: part.label });
 };
 
 // ── Apply / Undo ──
@@ -687,7 +674,7 @@ const applyProposal = async (req, res) => {
             ? picks
             : Array.isArray(noteIds) ? noteIds.map((id) => ({ noteId: id, changes: candidates.has(id) ? itemsOf(candidates.get(id)).map((i) => i.change) : [] })) : null;
         if (!chosen || chosen.length === 0 || chosen.length > MAX_NOTES
-            || !chosen.every((p) => p && typeof p.noteId === "string" && OBJECT_ID_RE.test(p.noteId) && Array.isArray(p.changes) && p.changes.length > 0)
+            || !chosen.every((p) => p && isObjectId(p.noteId) && Array.isArray(p.changes) && p.changes.length > 0)
             || new Set(chosen.map((p) => p.noteId)).size !== chosen.length) {
             return res.status(400).json({ error: true, message: `Pick 1-${MAX_NOTES} distinct notes from the review list` });
         }
@@ -735,6 +722,7 @@ const applyProposal = async (req, res) => {
                     trash: (note) => Object.assign(note, trashFields()),
                 };
                 const ops = [];
+                const toSave = [];        // saved together after the loop (one database call)
                 const ends = new Map();   // next bottom position per list, shared across these notes
                 for (const pick of chosen) {
                     const candidate = candidates.get(pick.noteId);
@@ -752,10 +740,12 @@ const applyProposal = async (req, res) => {
                         continue;
                     }
                     await placeArrivals(note, listsBefore, userId, session, ends);
-                    await note.save({ session });
+                    toSave.push(note);
                     ops.push({ noteId: pick.noteId, title: note.title, before, after, status: "applied", changes: applied });
                     if (indexedChange(before, after)) indexChanges.push({ noteId: pick.noteId, wasDeleted: before.isDeleted, isDeleted: after.isDeleted });
                 }
+                // Validates, sets updatedAt and checks versions like note.save() does, for all at once
+                if (toSave.length > 0) await Note.bulkSave(toSave, { session });
                 const allChanges = changesOf(proposal);
                 const createdFolderIds = [...newFolders.values()];
                 const single = allChanges.length === 1 ? allChanges[0] : null;
@@ -793,7 +783,7 @@ const applyProposal = async (req, res) => {
 const undoReceipt = async (req, res) => {
     const userId = req.user._id;
     const { receiptId } = req.params;
-    if (!OBJECT_ID_RE.test(receiptId || "")) return res.status(400).json({ error: true, message: "Invalid receipt" });
+    if (!isObjectId(receiptId)) return res.status(400).json({ error: true, message: "Invalid receipt" });
 
     try {
         const found = await AgentReceipt.findOne({ _id: receiptId, userId }).lean();
@@ -812,6 +802,10 @@ const undoReceipt = async (req, res) => {
                 const notes = await Note.find({ _id: { $in: appliedIds }, userId }).session(session);
                 const byId = new Map(notes.map((n) => [String(n._id), n]));
                 const ends = new Map();
+                const toSave = [];
+                // The user's folders, read once for every note's "own folder or nearest living parent"
+                // (no folder changes until the loop is done)
+                const folders = await getUserFolders(userId, session);
                 for (const op of doc.ops) {
                     if (op.status !== "applied") continue;
                     const note = byId.get(op.noteId);
@@ -830,19 +824,20 @@ const undoReceipt = async (req, res) => {
                         // Refused if it went to Trash with its folder since (e.g.
                         // restored, then the folder was trashed): it comes back
                         // with the folder. The unsaved edits above are dropped.
-                        if (await restoreFromTrash(note, userId, session)) {
+                        if (await restoreFromTrash(note, userId, session, folders)) {
                             op.status = "undo-skipped";
                             continue;
                         }
                     } else {
-                        note.folderId = await livingFolderId(note.folderId, userId, session);
+                        note.folderId = await livingFolderId(note.folderId, userId, session, folders);
                         if (op.before.isDeleted && !note.isDeleted) Object.assign(note, trashFields());
                     }
                     await placeArrivals(note, listsBefore, userId, session, ends);
-                    await note.save({ session });
+                    toSave.push(note);
                     op.status = "undone";
                     if (indexedChange(op.before, op.after)) indexChanges.push({ noteId: op.noteId, wasDeleted, isDeleted: Boolean(note.isDeleted) });
                 }
+                if (toSave.length > 0) await Note.bulkSave(toSave, { session });
                 // Folders this change created go to Trash once empty again
                 // (restorable); kept if anything else is in them now.
                 const createdIds = [...new Set([...(doc.createdFolderIds || []), ...(doc.params?.createdFolderId ? [doc.params.createdFolderId] : [])])];
@@ -873,16 +868,10 @@ const undoReceipt = async (req, res) => {
 
 // GET /v1/agent/receipts — newest first (the activity log, step 3d).
 const listReceipts = async (req, res) => {
-    try {
-        const receipts = await AgentReceipt.find({ userId: req.user._id }).sort({ createdAt: -1 }).limit(50).lean();
-        return res.json({ error: false, receipts: receipts.map(summarizeReceipt) });
-    } catch (error) {
-        console.error(`[${req.id}] Agent receipts list failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    const receipts = await AgentReceipt.find({ userId: req.user._id }).sort({ createdAt: -1 }).limit(50).lean();
+    return res.json({ error: false, receipts: receipts.map(summarizeReceipt) });
 };
 
 module.exports = {
     createProposal, getPending, releaseHeld, discardProposal, applyProposal, undoReceipt, listReceipts, selectNotes, openSelectionPart,
-    stateOf, sameState,
 };

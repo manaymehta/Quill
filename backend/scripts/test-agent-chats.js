@@ -6,40 +6,17 @@
 //
 // Usage (from backend/): node scripts/test-agent-chats.js [--live]
 //   --live also sends one real chat turn (FastAPI + Gemini running; 1 turn of quota).
-const path = require("node:path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env"), override: true });
-const jwt = require("jsonwebtoken");
+const { USER_A, USER_B, makeCall, check, fail, summary } = require("./lib/harness");
 const mongoose = require("mongoose");
 const AgentChat = require("../models/agent-chat.model");
 const AgentProposal = require("../models/agent-proposal.model");
 const AgentReceipt = require("../models/agent-receipt.model");
 const AgentSelection = require("../models/agent-selection.model");
 const User = require("../models/user.model");
-const { appendTurns } = require("../controllers/agent.controller");
+const { appendTurns } = require("../services/agent-chat.service");
 
-const BASE = `http://localhost:${process.env.PORT || 8100}/v1`;
-const USER_A = "000000000000000000000001";
-const USER_B = "000000000000000000000002";
 const DAY_MS = 24 * 60 * 60 * 1000;
-const token = (id) => jwt.sign({ _id: id, email: `chats-${id.slice(-1)}@example.invalid`, fullName: "Chats Test", tokenType: "access" },
-    process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
-
-const call = async (user, method, p, body) => {
-    const r = await fetch(BASE + p, {
-        method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token(user)}` },
-        body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await r.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = text; }
-    return { status: r.status, data };
-};
-
-const results = [];
-const check = (name, ok, detail = "") => {
-    results.push(Boolean(ok));
-    console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
-};
+const call = makeCall("chats");
 const near = (date, ms, slack = 60_000) => date && Math.abs(new Date(date).getTime() - (Date.now() + ms)) < slack;
 
 (async () => {
@@ -193,8 +170,7 @@ const near = (date, ms, slack = 60_000) => date && Math.abs(new Date(date).getTi
                 Boolean(saved) && saved.title === "How many tags do I have?" && saved.turns.length === 2, final ? "" : String(r.data).slice(0, 200));
         }
     } catch (error) {
-        console.log("ERROR:", error.stack || error.message);
-        results.push(false);
+        fail(error);
     } finally {
         for (const id of createdNotes) {
             await call(USER_A, "DELETE", `/delete-note/${id}`);
@@ -206,7 +182,6 @@ const near = (date, ms, slack = 60_000) => date && Math.abs(new Date(date).getTi
         await AgentSelection.deleteMany({ userId: { $in: [USER_A, USER_B] } });
         await User.deleteMany({ _id: { $in: [USER_A, USER_B] } });
         await mongoose.connection.close();
-        console.log(`\n${results.filter(Boolean).length}/${results.length} passed; cleanup done`);
-        process.exitCode = results.every(Boolean) ? 0 : 1;
+        summary();
     }
 })();

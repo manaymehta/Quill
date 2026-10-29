@@ -23,7 +23,7 @@ const mongoose = require("mongoose");
 const { setTimeout: sleep } = require("node:timers/promises");
 const connectDB = require("../config/db");
 const Note = require("../models/note.model");
-const { triggerEmbed, deleteEmbed } = require("../controllers/note.controller");
+const { triggerEmbed, deleteEmbed } = require("../services/note-index.service");
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);

@@ -10,7 +10,8 @@ const {
     rotateAuthentication,
 } = require("../services/auth.service");
 
-const client = new OAuth2Client(process.env.VITE_GOOGLE_CLIENT_ID);
+const { GOOGLE_CLIENT_ID } = require("../config/env");
+const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Unknown email and wrong password get one answer (the Google-account hint stays on purpose)
 const INVALID_LOGIN_MESSAGE = "Invalid email or password";
@@ -71,32 +72,27 @@ const createAccount = async (req, res) => {
         return res.status(400).json({ error: true, message: "Password is required" });
     }
 
-    try {
-        const isUser = await User.findOne({ email: email });
-        if (isUser) {
-            return res.status(400).json({ error: true, message: "User already exists" });
-        }
-
-        const user = new User({
-            fullName,
-            email,
-            password,
-        });
-        await user.save();
-
-        await createInitialNotes(user._id);
-
-        const authentication = await issueAuthentication(user, req, res);
-
-        return res.json({
-            error: false,
-            ...authentication,
-            message: "Registration Successful",
-        });
-    } catch (error) {
-        console.error("Error in createAccount:", error);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    const isUser = await User.findOne({ email: email });
+    if (isUser) {
+        return res.status(400).json({ error: true, message: "User already exists" });
     }
+
+    const user = new User({
+        fullName,
+        email,
+        password,
+    });
+    await user.save();
+
+    await createInitialNotes(user._id);
+
+    const authentication = await issueAuthentication(user, req, res);
+
+    return res.json({
+        error: false,
+        ...authentication,
+        message: "Registration Successful",
+    });
 };
 
 const login = async (req, res) => {
@@ -111,40 +107,35 @@ const login = async (req, res) => {
         return res.status(400).json({ error: true, message: "Password is required" });
     }
 
-    try {
-        const userInfo = await User.findOne({ email: email });
-        if (!userInfo) {
-            // The same check a real account gets, so neither the answer nor its timing tells
-            // whether this email has an account
-            await bcrypt.compare(password, UNKNOWN_ACCOUNT_HASH);
-            return res.status(400).json({ error: true, message: INVALID_LOGIN_MESSAGE });
-        }
+    const userInfo = await User.findOne({ email: email });
+    if (!userInfo) {
+        // The same check a real account gets, so neither the answer nor its timing tells
+        // whether this email has an account
+        await bcrypt.compare(password, UNKNOWN_ACCOUNT_HASH);
+        return res.status(400).json({ error: true, message: INVALID_LOGIN_MESSAGE });
+    }
 
-        // reject google auth users from this route
-        if (!userInfo.password) {
-            return res.status(400).json({ error: true, message: "This account uses Google Sign-In. Please login with Google." });
-        }
+    // reject google auth users from this route
+    if (!userInfo.password) {
+        return res.status(400).json({ error: true, message: "This account uses Google Sign-In. Please login with Google." });
+    }
 
-        // Use bcrypt to compare the plain password with the stored hash
-        const isPasswordValid = await userInfo.comparePassword(password);
+    // Use bcrypt to compare the plain password with the stored hash
+    const isPasswordValid = await userInfo.comparePassword(password);
 
-        if (isPasswordValid) {
-            const authentication = await issueAuthentication(userInfo, req, res);
+    if (isPasswordValid) {
+        const authentication = await issueAuthentication(userInfo, req, res);
 
-            return res.json({
-                error: false,
-                message: "Login successful",
-                ...authentication,
-            });
-        } else {
-            return res.status(400).json({
-                error: true,
-                message: INVALID_LOGIN_MESSAGE,
-            });
-        }
-    } catch (error) {
-        console.error("Error in login:", error);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
+        return res.json({
+            error: false,
+            message: "Login successful",
+            ...authentication,
+        });
+    } else {
+        return res.status(400).json({
+            error: true,
+            message: INVALID_LOGIN_MESSAGE,
+        });
     }
 };
 
@@ -154,7 +145,7 @@ const googleAuth = async (req, res) => {
     try {
         const ticket = await client.verifyIdToken({
             idToken: token,
-            audience: process.env.VITE_GOOGLE_CLIENT_ID,
+            audience: GOOGLE_CLIENT_ID,
         });
 
         const payload = ticket.getPayload();
@@ -212,26 +203,21 @@ const logout = async (req, res) => {
 const getUser = async (req, res) => {
     const userId = req.user._id;
 
-    try {
-        const userInfo = await User.findOne({ _id: userId });
+    const userInfo = await User.findOne({ _id: userId });
 
-        if (!userInfo) {
-            return res.status(401).json({ error: true, message: "Account not found" });
-        }
-        return res.json({
-            error: false,
-            message: "User Info",
-            user: {
-                fullName: userInfo.fullName,
-                email: userInfo.email,
-                _id: userInfo._id,
-                createdOn: userInfo.createdOn,
-            },
-        });
-    } catch (error) {
-        console.error("Error in getUser:", error);
-        res.status(500).json({ error: true, message: "Internal Server Error" });
+    if (!userInfo) {
+        return res.status(401).json({ error: true, message: "Account not found" });
     }
+    return res.json({
+        error: false,
+        message: "User Info",
+        user: {
+            fullName: userInfo.fullName,
+            email: userInfo.email,
+            _id: userInfo._id,
+            createdOn: userInfo.createdOn,
+        },
+    });
 };
 
 module.exports = {

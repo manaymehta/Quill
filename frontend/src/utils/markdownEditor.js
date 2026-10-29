@@ -30,6 +30,8 @@ export const quillTheme = EditorView.theme({
     caretColor: '#e85d56',
     fontFamily: 'inherit',
     padding: '0',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
     // minHeight removed — let content grow naturally
   },
 
@@ -42,13 +44,15 @@ export const quillTheme = EditorView.theme({
     lineHeight: 'inherit',
     paddingLeft: '0',
     paddingRight: '0',
+    overflowWrap: 'anywhere',
   },
 
   // Scrollable panel — no height, no overflow override; the outer wrapper
-  // div (`overflow-y-auto`) scrolls, so cm-scroller just shows all content.
+  // div (`overflow-y-auto overflow-x-hidden`) scrolls, so cm-scroller just shows all content.
   '.cm-scroller': {
     fontFamily: "'Lora', Georgia, serif",
     overflowY: 'visible',
+    overflowX: 'hidden',
   },
 
   // Text cursor

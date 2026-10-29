@@ -5,20 +5,14 @@
 // pieces go too). Costs ~9 embedding calls + one chat turn of quota.
 //
 // Usage (from backend/): node scripts/live-grouping-turn.js
-const path = require("node:path");
-const { setTimeout } = require("node:timers");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env"), override: true });
-const jwt = require("jsonwebtoken");
+const { BASE, USER_B: USER, token: signToken } = require("./lib/harness");
 const mongoose = require("mongoose");
 const AgentChat = require("../models/agent-chat.model");
 const AgentProposal = require("../models/agent-proposal.model");
 const Note = require("../models/note.model");
 const User = require("../models/user.model");
 
-const BASE = `http://localhost:${process.env.PORT || 8100}/v1`;
-const USER = "000000000000000000000002";
-const token = jwt.sign({ _id: USER, email: "live-groups@example.invalid", fullName: "Live Groups", tokenType: "access" },
-    process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+const token = signToken(USER, "live-groups");
 const call = (method, p, body) => fetch(BASE + p, {
     method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: body === undefined ? undefined : JSON.stringify(body),

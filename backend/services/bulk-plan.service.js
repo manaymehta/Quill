@@ -14,8 +14,6 @@
 const MAX_LIST = 50;
 const MAX_PARTS = 40;
 
-const cloneItems = (items) => new Map([...items].map(([noteId, list]) => [noteId, list.map((i) => ({ ...i }))]));
-
 // ── Reading stored lists / selections as plans ──
 const legacyChange = (doc) => ({
     key: "c1",
@@ -154,6 +152,12 @@ const clash = (a, b) => {
 
 const tagList = (tags, sign) => tags.map((t) => `${sign}#${t}`);
 
+// A move's label, the same in a list row and in a heading
+const moveLabel = (p) => {
+    if (p.newFolderName) return `Move to new folder “${p.newFolderName}”`;
+    return p.targetFolderId ? `Move to “${p.targetFolderName || "that folder"}”` : "Move out of folders";
+};
+
 // The row text for one change on one note.
 const itemLabel = (change, effect) => {
     const p = change.params || {};
@@ -163,10 +167,7 @@ const itemLabel = (change, effect) => {
         }
         return [...tagList(effect.remove, "−"), ...tagList(effect.add, "+")].join(" ");
     }
-    if (change.action === "move") {
-        if (p.newFolderName) return `Move to new folder “${p.newFolderName}”`;
-        return p.targetFolderId ? `Move to “${p.targetFolderName || "that folder"}”` : "Move out of folders";
-    }
+    if (change.action === "move") return moveLabel(p);
     if (change.action === "archive") return effect.archived ? "Archive" : "Unarchive";
     return "Send to trash";
 };
@@ -179,10 +180,7 @@ const changeTitle = (change) => {
         if ((p.add || []).length === 1 && (p.remove || []).length === 1) return `#${p.remove[0]} → #${p.add[0]}`;
         return `Tags ${[...tagList(p.add || [], "+"), ...tagList(p.remove || [], "−")].join(" ")}`;
     }
-    if (change.action === "move") {
-        if (p.newFolderName) return `Move to new folder “${p.newFolderName}”`;
-        return p.targetFolderId ? `Move to “${p.targetFolderName || "that folder"}”` : "Move out of folders";
-    }
+    if (change.action === "move") return moveLabel(p);
     if (change.action === "archive") return p.archived === false ? "Unarchive" : "Archive";
     return "Send to trash (recoverable)";
 };
@@ -337,6 +335,6 @@ const groupParts = (groups) => {
 };
 
 module.exports = {
-    MAX_LIST, groupParts, planFromProposal, planFromSelection, restrictPlan, mergePlans, effectOf, clash, buildCandidates,
-    applyChanges, changeTitle, itemLabel, splitParts, cloneItems,
+    MAX_LIST, groupParts, planFromProposal, planFromSelection, restrictPlan, mergePlans, buildCandidates,
+    applyChanges, changeTitle, splitParts,
 };

@@ -1,224 +1,26 @@
-const { setTimeout, clearTimeout } = require("node:timers");
 const Note = require("../models/note.model");
-const axios = require("axios");
-const { buildIndexText, indexTextHash } = require("../services/note-index.service");
-const { LISTS, sortFor, homeFilter, listsOf, placeArrivals, reorderList } = require("../services/note-order.service");
+const { indexInBackground, deleteEmbed, indexStatusOf } = require("../services/note-index.service");
+const { isFastApiConfigured, callFastApi } = require("../services/fastapi.service");
+const { LIVE, LISTS, sortFor, homeFilter, listsOf, placeArrivals, reorderList } = require("../services/note-order.service");
 const {
-    isValidFolderId, findLivingFolder, moveToFolder, setArchived, trashFields, restoreFromTrash,
+    requireLivingFolder, moveToFolder, setArchived, trashFields, restoreFromTrash,
 } = require("../services/note-actions.service");
-const FASTAPI_REQUEST_TIMEOUT_MS = 30_000;
-// An 85-piece note took ~7 s to embed and store; FastAPI finishes anyway when this runs out, so a
-// too-short wait only reports a false "Embedding failed"
-const FASTAPI_EMBEDDING_TIMEOUT_MS = 20_000;
-const embeddingLocks = new Map();
+const { isObjectId } = require("../utils/object-id");
 const NOTE_LIST_FIELDS = "_id title content tags folderId showInHome isArchived isChecklist checklist orderIndex homeOrderIndex archiveOrderIndex linkPreviews createdAt updatedAt";
 const NOTE_TRASH_FIELDS = `${NOTE_LIST_FIELDS} isDeleted deletedAt deletedBatchId`;
 const NOTE_GRAPH_FIELDS = "_id title tags isArchived";
-
-const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const getFastApiHeaders = (timeout = FASTAPI_REQUEST_TIMEOUT_MS) => {
-    const key = process.env.FASTAPI_INTERNAL_KEY;
-    return {
-        timeout,
-        ...(key ? { headers: { "x-api-key": key } } : {}),
-    };
-};
-
-const getEmbeddingVersion = (note) => {
-    const updatedAt = note.updatedAt instanceof Date
-        ? note.updatedAt
-        : new Date(note.updatedAt || Date.now());
-    return Number.isNaN(updatedAt.getTime()) ? new Date().toISOString() : updatedAt.toISOString();
-};
-
-const runEmbeddingOperation = (noteId, operation) => {
-    const previous = embeddingLocks.get(noteId) || Promise.resolve();
-    const current = previous
-        .catch(() => undefined)
-        .then(operation);
-    embeddingLocks.set(noteId, current);
-
-    return current.finally(() => {
-        if (embeddingLocks.get(noteId) === current) {
-            embeddingLocks.delete(noteId);
-        }
-    });
-};
-
-// Records what the search index now holds for a note (Note.indexedKey; null = nothing known). The
-// timestamps stay put: updatedAt dates the user's edits and versions the index.
-const setIndexedKey = (noteId, indexedKey) => Note.updateOne({ _id: noteId }, { $set: { indexedKey } }, { timestamps: false })
-    .catch((error) => console.error(`Recording the index state failed for ${noteId}:`, error.message));
-
-const performDeleteEmbed = async (noteId) => {
-    const url = process.env.FASTAPI_SUMMARIZE_URL;
-    if (!url) return { status: "skipped", reason: "not-configured" };
-
-    try {
-        const response = await axios.delete(`${url}/delete-embedding/${noteId}`, getFastApiHeaders(FASTAPI_EMBEDDING_TIMEOUT_MS));
-        if (response.data?.status !== "ok" || String(response.data.noteId) !== String(noteId)) {
-            throw new Error("Invalid embedding deletion response");
-        }
-        await setIndexedKey(noteId, null);
-        return { status: "ok" };
-    } catch (error) {
-        console.error(`Delete embedding failed for ${noteId}:`, error.message);
-        return { status: "failed", message: "Embedding cleanup failed" };
-    }
-};
-
-const deleteEmbed = (noteId) => {
-    cancelScheduledIndexing(noteId);
-    return runEmbeddingOperation(String(noteId), () => performDeleteEmbed(String(noteId)));
-};
-
-// Saving no longer waits for the agent's search index: the reply goes out once MongoDB has the
-// note, and indexing runs after it (it used to take up to 10s per save, longer while the FastAPI
-// service woke up). The app asks how it went through GET /note-index-status/:noteId, which waits
-// for a run still going, so a failure can still be reported. Results are kept a few minutes for
-// that question. A missed index also heals on its own: the agent's search re-indexes a note whose
-// text no longer matches its index (agent-search.controller).
-const INDEX_RESULT_KEEP_MS = 5 * 60 * 1000;
-const pendingIndexing = new Map();   // noteId -> promise of the embedding result
-const recentIndexing = new Map();    // noteId -> { result, at }
-
-// Saves of one note this close together are indexed once, from the last of them: five quick ticks on
-// a checklist cost one embedding run, not five. The status question waits through the delay too.
-const INDEX_DEBOUNCE_MS = 2000;
-const scheduledIndexing = new Map();   // noteId -> { note, userId, timer, start }
-
-const indexInBackground = (note, userId) => {
-    const noteId = String(note._id);
-    const scheduled = scheduledIndexing.get(noteId);
-    if (scheduled) {
-        // Not started yet: run it later, from this newer save (its status promise stays the same)
-        clearTimeout(scheduled.timer);
-        Object.assign(scheduled, { note, userId, timer: setTimeout(scheduled.start, INDEX_DEBOUNCE_MS) });
-        return;
-    }
-    let begin;
-    const run = new Promise((resolve) => { begin = resolve; }).then((result) => {
-        const now = Date.now();
-        recentIndexing.set(noteId, { result, at: now });
-        for (const [id, entry] of recentIndexing) {
-            if (now - entry.at > INDEX_RESULT_KEEP_MS) recentIndexing.delete(id);
-        }
-        return result;
-    }).finally(() => {
-        if (pendingIndexing.get(noteId) === run) pendingIndexing.delete(noteId);
-    });
-    const entry = { note, userId };
-    // Called by the timer (no result: index now) or by a cancel (with the result to report)
-    entry.start = (result) => {
-        scheduledIndexing.delete(noteId);
-        begin(result ?? triggerEmbed(entry.note, entry.userId));
-    };
-    entry.timer = setTimeout(entry.start, INDEX_DEBOUNCE_MS);
-    scheduledIndexing.set(noteId, entry);
-    pendingIndexing.set(noteId, run);
-};
-
-// The note is being trashed or deleted: a run still waiting to start is dropped, so it can't put the
-// note back into the index after its pieces are removed
-const cancelScheduledIndexing = (noteId) => {
-    const scheduled = scheduledIndexing.get(String(noteId));
-    if (!scheduled) return;
-    clearTimeout(scheduled.timer);
-    scheduled.start({ status: "skipped", reason: "deleted" });
-};
 
 // GET /note-index-status/:noteId -> { embedding: { status, … } }; "unknown" when nothing was
 // indexed for it recently
 const getNoteIndexStatus = async (req, res) => {
     const noteId = req.params.noteId;
     const userId = req.user._id;
-    try {
-        if (!(await Note.exists({ _id: noteId, userId }))) {
-            return res.status(404).json({ error: true, message: "Note not found" });
-        }
-        const pending = pendingIndexing.get(String(noteId));
-        const embedding = pending
-            ? await pending
-            : recentIndexing.get(String(noteId))?.result || { status: "unknown" };
-        return res.json({ error: false, embedding });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    if (!(await Note.exists({ _id: noteId, userId }))) {
+        return res.status(404).json({ error: true, message: "Note not found" });
     }
+    const embedding = (await indexStatusOf(noteId)) || { status: "unknown" };
+    return res.json({ error: false, embedding });
 };
-
-const runEmbeddingBatch = async (operations, batchSize = 4) => {
-    let failures = 0;
-    for (let index = 0; index < operations.length; index += batchSize) {
-        const results = await Promise.allSettled(operations.slice(index, index + batchSize).map(operation => operation()));
-        failures += results.filter(result => (
-            result.status === "rejected"
-            || ["failed", "partial"].includes(result.value?.status)
-        )).length;
-    }
-    if (failures > 0) {
-        console.error(`Embedding batch completed with ${failures} failed operation(s)`);
-    }
-    return failures;
-};
-
-// The note is saved before this operation is started. Embedding failures therefore
-// never roll back or hide a successful MongoDB save.
-// Skips the embedding call when the index already holds this text and archived flag (see
-// Note.indexedKey); force re-embeds anyway (the agent's self-heal and the re-index script, which run
-// exactly when the index and that record may disagree).
-const triggerEmbed = (note, userId, { force = false } = {}) => runEmbeddingOperation(String(note._id), async () => {
-    const url = process.env.FASTAPI_SUMMARIZE_URL;
-    if (!url) return { status: "skipped", reason: "not-configured" };
-
-    // Content + checklist + link previews (title alone for a body-less note);
-    // shared with the agent's search check so both compute the same hash.
-    const indexText = buildIndexText(note);
-    const embedText = indexText.text;
-
-    // A note that became blank must not leave its old vectors searchable.
-    if (!embedText.trim()) return performDeleteEmbed(String(note._id));
-
-    const textHash = indexTextHash(indexText);
-    const indexedKey = `${textHash}:${note.isArchived ? 1 : 0}`;
-    if (!force) {
-        const stored = await Note.findById(note._id).select("+indexedKey").lean();
-        if (stored?.indexedKey === indexedKey) return { status: "skipped", reason: "unchanged" };
-    }
-
-    try {
-        const response = await axios.post(`${url}/embed-note`, {
-            noteId: String(note._id),
-            userId: String(userId),
-            title: note.title || "",
-            text: embedText,
-            tags: indexText.tags,
-            textHash,
-            embeddingVersion: getEmbeddingVersion(note),
-            isArchived: Boolean(note.isArchived),
-        }, getFastApiHeaders(FASTAPI_EMBEDDING_TIMEOUT_MS));
-
-        const data = response.data;
-        const hasValidChunkCount = Number.isInteger(data?.chunks) && data.chunks >= 0;
-        const hasValidStaleChunkCount = data?.status !== "partial"
-            || (Number.isInteger(data?.staleChunks) && data.staleChunks > 0);
-        if (!data || !["ok", "stale", "partial"].includes(data.status)
-            || String(data.noteId) !== String(note._id)
-            || (["ok", "partial"].includes(data.status) && !hasValidChunkCount)
-            || !hasValidStaleChunkCount) {
-            throw new Error("Invalid embedding response");
-        }
-        // ok: the index holds exactly this now. partial: unknown, so the next save embeds again.
-        // stale: a newer version was already indexed and its record stands.
-        if (data.status === "ok") await setIndexedKey(note._id, indexedKey);
-        else if (data.status === "partial") await setIndexedKey(note._id, null);
-        return { status: data.status, chunks: data.chunks, staleChunks: data.staleChunks };
-    } catch (error) {
-        console.error(`Embedding process failed for note ${note._id}:`, error.message);
-        return { status: "failed", message: "Embedding failed" };
-    }
-});
 
 const addNote = async (req, res) => {
     const { title, content, tags, isChecklist, checklist, folderId, showInHome, linkPreviews } = req.body;
@@ -228,45 +30,32 @@ const addNote = async (req, res) => {
         return res.status(400).json({ error: true, message: "Content or Title is required" });
     }
 
-    try {
-        const targetFolderId = folderId || null;
-        if (targetFolderId) {
-            if (!isValidFolderId(targetFolderId)) {
-                return res.status(400).json({ error: true, message: "Invalid folder" });
-            }
-            if (!(await findLivingFolder(targetFolderId, userId))) {
-                return res.status(404).json({ error: true, message: "Folder not found" });
-            }
-        }
-        const note = new Note({
-            title: title || " ",
-            content: content || " ",
-            tags: tags || [],
-            isChecklist: isChecklist || false,
-            checklist: checklist || [],
-            userId,
-            folderId: targetFolderId,
-            showInHome: typeof showInHome !== "undefined" ? showInHome : false,
-            linkPreviews: linkPreviews || []
-        });
-
-        await placeArrivals(note, null, userId);
-        await note.save();
-        indexInBackground(note, userId);
-
-        return res.json({
-            error: false,
-            note,
-            indexing: true,
-            message: "Note created successfully",
-        });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            error: true,
-            message: error.message || "Internal Server Error",
-        });
+    const targetFolderId = folderId || null;
+    if (targetFolderId) {
+        await requireLivingFolder(targetFolderId, userId);
     }
+    const note = new Note({
+        title: title || " ",
+        content: content || " ",
+        tags: tags || [],
+        isChecklist: isChecklist || false,
+        checklist: checklist || [],
+        userId,
+        folderId: targetFolderId,
+        showInHome: typeof showInHome !== "undefined" ? showInHome : false,
+        linkPreviews: linkPreviews || []
+    });
+
+    await placeArrivals(note, null, userId);
+    await note.save();
+    indexInBackground(note, userId);
+
+    return res.json({
+        error: false,
+        note,
+        indexing: true,
+        message: "Note created successfully",
+    });
 };
 
 const editNote = async (req, res) => {
@@ -274,182 +63,135 @@ const editNote = async (req, res) => {
     const { title, content, tags, isChecklist, checklist, folderId, showInHome, linkPreviews } = req.body;
     const userId = req.user._id;
 
-    try {
-        const note = await Note.findOne({ _id: noteId, userId: userId, isDeleted: { $ne: true } });
+    const note = await Note.findOne({ _id: noteId, userId: userId, isDeleted: { $ne: true } });
 
-        if (!note) {
-            return res.status(404).json({ error: true, message: "Note doesn't exist" });
-        }
-        const listsBefore = listsOf(note);
-
-        if (typeof title !== "undefined") note.title = title;
-        if (typeof content !== "undefined") note.content = content;
-        if (typeof tags !== "undefined") note.tags = tags;
-        if (typeof isChecklist !== "undefined") {
-            note.isChecklist = isChecklist;
-        }
-        if (typeof checklist !== "undefined") note.checklist = checklist;
-        if (typeof folderId !== "undefined") {
-            if (folderId !== null) {
-                if (!isValidFolderId(folderId)) {
-                    return res.status(400).json({ error: true, message: "Invalid folder" });
-                }
-                if (!(await findLivingFolder(folderId, userId))) {
-                    return res.status(404).json({ error: true, message: "Folder not found" });
-                }
-            }
-            note.folderId = folderId;
-        }
-        if (typeof showInHome !== "undefined") {
-            note.showInHome = showInHome;
-        }
-        if (typeof linkPreviews !== "undefined") {
-            note.linkPreviews = linkPreviews;
-        }
-
-        await placeArrivals(note, listsBefore, userId);
-        await note.save();
-
-        // Only re-embed when indexed content changed (tags are indexed too) —
-        // not for pin/folder-only edits.
-        const contentChanged = typeof title !== "undefined"
-            || typeof tags !== "undefined"
-            || typeof content !== "undefined"
-            || typeof checklist !== "undefined"
-            || typeof isChecklist !== "undefined"
-            || typeof linkPreviews !== "undefined";
-        if (contentChanged) indexInBackground(note, userId);
-
-        return res.json({
-            error: false,
-            note,
-            indexing: contentChanged,
-            message: "Note edited successfully",
-        });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            error: true,
-            message: "Internal Server Error",
-        });
+    if (!note) {
+        return res.status(404).json({ error: true, message: "Note doesn't exist" });
     }
+    const listsBefore = listsOf(note);
+
+    if (typeof title !== "undefined") note.title = title;
+    if (typeof content !== "undefined") note.content = content;
+    if (typeof tags !== "undefined") note.tags = tags;
+    if (typeof isChecklist !== "undefined") {
+        note.isChecklist = isChecklist;
+    }
+    if (typeof checklist !== "undefined") note.checklist = checklist;
+    if (typeof folderId !== "undefined") {
+        if (folderId !== null) await requireLivingFolder(folderId, userId);
+        note.folderId = folderId;
+    }
+    if (typeof showInHome !== "undefined") {
+        note.showInHome = showInHome;
+    }
+    if (typeof linkPreviews !== "undefined") {
+        note.linkPreviews = linkPreviews;
+    }
+
+    await placeArrivals(note, listsBefore, userId);
+    await note.save();
+
+    // Only re-embed when indexed content changed (tags are indexed too) —
+    // not for pin/folder-only edits.
+    const contentChanged = typeof title !== "undefined"
+        || typeof tags !== "undefined"
+        || typeof content !== "undefined"
+        || typeof checklist !== "undefined"
+        || typeof isChecklist !== "undefined"
+        || typeof linkPreviews !== "undefined";
+    if (contentChanged) indexInBackground(note, userId);
+
+    return res.json({
+        error: false,
+        note,
+        indexing: contentChanged,
+        message: "Note edited successfully",
+    });
 };
 
 const getAllNotes = async (req, res) => {
     const userId = req.user._id;
 
-    try {
-        const notes = await Note.find({ userId: userId, isDeleted: { $ne: true }, isArchived: { $ne: true } })
-            .select(NOTE_LIST_FIELDS)
-            .sort({ orderIndex: 1, createdAt: -1 })
-            .lean();
+    const notes = await Note.find({ userId, ...LIVE })
+        .select(NOTE_LIST_FIELDS)
+        .sort(sortFor(LISTS.folder.field))
+        .lean();
 
-        return res.json({
-            error: false,
-            message: "All notes retrieved successfully",
-            notes,
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({
-            error: true,
-            message: "Internal Server Error",
-        });
-    }
+    return res.json({
+        error: false,
+        message: "All notes retrieved successfully",
+        notes,
+    });
 };
 
 const getGraphNotes = async (req, res) => {
     const userId = req.user._id;
     const includeArchived = req.query.includeArchived === "true";
 
-    try {
-        const query = {
-            userId,
-            isDeleted: { $ne: true },
-        };
-        if (!includeArchived) {
-            query.isArchived = { $ne: true };
-        }
-
-        const notes = await Note.find(query)
-            .select(NOTE_GRAPH_FIELDS)
-            .sort({ orderIndex: 1, createdAt: -1 })
-            .lean();
-
-        const formattedNotes = notes.map((note) => ({
-            _id: note._id,
-            title: note.title || "",
-            tags: Array.isArray(note.tags)
-                ? [...new Set(note.tags.filter((t) => t != null).map((t) => String(t).trim()).filter(Boolean))]
-                : [],
-            isArchived: Boolean(note.isArchived),
-        }));
-
-        return res.json({
-            error: false,
-            message: "Graph notes retrieved successfully",
-            notes: formattedNotes,
-        });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            error: true,
-            message: "Internal Server Error",
-        });
+    const query = {
+        userId,
+        isDeleted: { $ne: true },
+    };
+    if (!includeArchived) {
+        query.isArchived = { $ne: true };
     }
+
+    const notes = await Note.find(query)
+        .select(NOTE_GRAPH_FIELDS)
+        .sort(sortFor(LISTS.folder.field))
+        .lean();
+
+    const formattedNotes = notes.map((note) => ({
+        _id: note._id,
+        title: note.title || "",
+        tags: Array.isArray(note.tags)
+            ? [...new Set(note.tags.filter((t) => t != null).map((t) => String(t).trim()).filter(Boolean))]
+            : [],
+        isArchived: Boolean(note.isArchived),
+    }));
+
+    return res.json({
+        error: false,
+        message: "Graph notes retrieved successfully",
+        notes: formattedNotes,
+    });
 };
 
 const getNoteById = async (req, res) => {
     const noteId = req.params.noteId;
     const userId = req.user._id;
 
-    try {
-        const note = await Note.findOne({
-            _id: noteId,
-            userId,
-            isDeleted: { $ne: true },
-        })
-            .select(NOTE_LIST_FIELDS)
-            .lean();
+    const note = await Note.findOne({
+        _id: noteId,
+        userId,
+        isDeleted: { $ne: true },
+    })
+        .select(NOTE_LIST_FIELDS)
+        .lean();
 
-        if (!note) {
-            return res.status(404).json({ error: true, message: "Note not found" });
-        }
-
-        return res.json({
-            error: false,
-            message: "Note retrieved successfully",
-            note,
-        });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            error: true,
-            message: "Internal Server Error",
-        });
+    if (!note) {
+        return res.status(404).json({ error: true, message: "Note not found" });
     }
+
+    return res.json({
+        error: false,
+        message: "Note retrieved successfully",
+        note,
+    });
 };
 
 const getHomeNotes = async (req, res) => {
     const userId = req.user._id;
 
-    try {
-        // Unfiled notes, folder notes shown on Home, and notes whose folder is gone
-        const notes = await Note.find(await homeFilter(userId))
-            .select(NOTE_LIST_FIELDS).sort(sortFor(LISTS.home.field)).lean();
+    // Unfiled notes, folder notes shown on Home, and notes whose folder is gone
+    const notes = await Note.find(await homeFilter(userId))
+        .select(NOTE_LIST_FIELDS).sort(sortFor(LISTS.home.field)).lean();
 
-        return res.json({
-            error: false,
-            message: "Home notes retrieved successfully",
-            notes,
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({
-            error: true,
-            message: "Internal Server Error",
-        });
-    }
+    return res.json({
+        error: false,
+        message: "Home notes retrieved successfully",
+        notes,
+    });
 };
 
 // GET /folder-note-counts -> { counts: { [folderId]: n } }: notes filed directly in each folder that
@@ -457,198 +199,157 @@ const getHomeNotes = async (req, res) => {
 // downloading the notes themselves.
 const getFolderNoteCounts = async (req, res) => {
     const userId = String(req.user._id);
-    try {
-        const rows = await Note.aggregate([
-            { $match: { userId, isDeleted: { $ne: true }, isArchived: { $ne: true }, folderId: { $ne: null } } },
-            { $group: { _id: "$folderId", count: { $sum: 1 } } },
-        ]);
-        return res.json({ error: false, counts: Object.fromEntries(rows.map((row) => [String(row._id), row.count])) });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    const rows = await Note.aggregate([
+        { $match: { userId, ...LIVE, folderId: { $ne: null } } },
+        { $group: { _id: "$folderId", count: { $sum: 1 } } },
+    ]);
+    return res.json({ error: false, counts: Object.fromEntries(rows.map((row) => [String(row._id), row.count])) });
 };
 
 const getFolderNotes = async (req, res) => {
     const userId = req.user._id;
     const { folderIds } = req.query;
 
-    try {
-        let filter = { userId, isDeleted: { $ne: true }, isArchived: { $ne: true } };
-        if (folderIds && folderIds !== "all") {
-            const ids = typeof folderIds === "string" ? folderIds.split(",") : folderIds;
-            filter.folderId = { $in: ids };
-        }
-
-        const notes = await Note.find(filter)
-            .select(NOTE_LIST_FIELDS)
-            .sort({ orderIndex: 1, createdAt: -1 })
-            .lean();
-
-        return res.json({
-            error: false,
-            message: "Folder notes retrieved successfully",
-            notes,
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: true, message: "Internal Server Error" });
+    const filter = { userId, ...LIVE };
+    if (folderIds && folderIds !== "all") {
+        const ids = typeof folderIds === "string" ? folderIds.split(",") : folderIds;
+        filter.folderId = { $in: ids };
     }
+
+    const notes = await Note.find(filter)
+        .select(NOTE_LIST_FIELDS)
+        .sort(sortFor(LISTS.folder.field))
+        .lean();
+
+    return res.json({
+        error: false,
+        message: "Folder notes retrieved successfully",
+        notes,
+    });
 };
 
 
 const getArchivedNotes = async (req, res) => {
     const userId = req.user._id;
 
-    try {
-        const notes = await Note.find({ userId: userId, isArchived: true, isDeleted: { $ne: true } })
-            .select(NOTE_LIST_FIELDS)
-            .sort(sortFor(LISTS.archive.field))
-            .lean();
+    const notes = await Note.find(await LISTS.archive.filter(userId))
+        .select(NOTE_LIST_FIELDS)
+        .sort(sortFor(LISTS.archive.field))
+        .lean();
 
-        return res.json({
-            error: false,
-            message: "Archived notes retrieved successfully",
-            notes,
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({
-            error: true,
-            message: "Internal Server Error",
-        });
-    }
+    return res.json({
+        error: false,
+        message: "Archived notes retrieved successfully",
+        notes,
+    });
 };
 
 const deleteNote = async (req, res) => {
     const noteId = req.params.noteId;
     const userId = req.user._id;
 
-    try {
-        const note = await Note.findOne({ userId: userId, _id: noteId });
+    const note = await Note.findOne({ userId: userId, _id: noteId });
 
-        if (!note) {
-            return res.status(404).json({
-                error: true,
-                message: "Note not found",
-            });
-        }
-
-        if (note.isDeleted) {
-            return res.status(409).json({ error: true, message: "Note is already in Trash" });
-        }
-
-        const updateResult = await Note.updateOne(
-            { _id: noteId, userId: userId, isDeleted: { $ne: true } },
-            { $set: trashFields() }
-        );
-        if (updateResult.modifiedCount !== 1) {
-            return res.status(409).json({ error: true, message: "Note changed before it could be moved to Trash" });
-        }
-        // Its search pieces are removed after the reply: nothing waits on that (the agent's search
-        // already drops trashed notes), unlike a permanent delete, whose toast reports a failed cleanup
-        void deleteEmbed(noteId);
-
-        return res.json({
-            error: false,
-            message: "Note moved to trash",
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({
+    if (!note) {
+        return res.status(404).json({
             error: true,
-            message: "Internal Server Error",
+            message: "Note not found",
         });
     }
+
+    if (note.isDeleted) {
+        return res.status(409).json({ error: true, message: "Note is already in Trash" });
+    }
+
+    const updateResult = await Note.updateOne(
+        { _id: noteId, userId: userId, isDeleted: { $ne: true } },
+        { $set: trashFields() }
+    );
+    if (updateResult.modifiedCount !== 1) {
+        return res.status(409).json({ error: true, message: "Note changed before it could be moved to Trash" });
+    }
+    // Its search pieces are removed after the reply: nothing waits on that (the agent's search
+    // already drops trashed notes), unlike a permanent delete, whose toast reports a failed cleanup
+    void deleteEmbed(noteId);
+
+    return res.json({
+        error: false,
+        message: "Note moved to trash",
+    });
 };
 
 const getTrashNotes = async (req, res) => {
     const userId = req.user._id;
 
-    try {
-        const notes = await Note.find({ userId: userId, isDeleted: true, deletedBatchId: null })
-            .select(NOTE_TRASH_FIELDS)
-            .sort({ deletedAt: -1 })
-            .lean();
+    const notes = await Note.find({ userId: userId, isDeleted: true, deletedBatchId: null })
+        .select(NOTE_TRASH_FIELDS)
+        .sort({ deletedAt: -1 })
+        .lean();
 
-        return res.json({
-            error: false,
-            message: "Trash notes retrieved successfully",
-            notes,
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    return res.json({
+        error: false,
+        message: "Trash notes retrieved successfully",
+        notes,
+    });
 };
 
 const restoreNote = async (req, res) => {
     const noteId = req.params.noteId;
     const userId = req.user._id;
 
-    try {
-        const note = await Note.findOne({ _id: noteId, userId: userId });
+    const note = await Note.findOne({ _id: noteId, userId: userId });
 
-        if (!note) {
-            return res.status(404).json({ error: true, message: "Note not found" });
-        }
-
-        const listsBefore = listsOf(note);
-        const refusal = await restoreFromTrash(note, userId);
-        if (refusal) {
-            return res.status(409).json({ error: true, message: refusal });
-        }
-        await placeArrivals(note, listsBefore, userId);
-        await note.save();
-        indexInBackground(note, userId);
-
-        return res.json({
-            error: false,
-            message: "Note restored successfully",
-            note,
-            indexing: true,
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: true, message: "Internal Server Error" });
+    if (!note) {
+        return res.status(404).json({ error: true, message: "Note not found" });
     }
+
+    const listsBefore = listsOf(note);
+    const refusal = await restoreFromTrash(note, userId);
+    if (refusal) {
+        return res.status(409).json({ error: true, message: refusal });
+    }
+    await placeArrivals(note, listsBefore, userId);
+    await note.save();
+    indexInBackground(note, userId);
+
+    return res.json({
+        error: false,
+        message: "Note restored successfully",
+        note,
+        indexing: true,
+    });
 };
 
 const permanentDeleteNote = async (req, res) => {
     const noteId = req.params.noteId;
     const userId = req.user._id;
 
-    try {
-        const note = await Note.findOne({ _id: noteId, userId: userId });
+    const note = await Note.findOne({ _id: noteId, userId: userId });
 
-        if (!note) {
-            return res.status(404).json({ error: true, message: "Note not found" });
-        }
-
-        if (!note.isDeleted || note.deletedBatchId) {
-            return res.status(409).json({ error: true, message: "Only an individually trashed note can be permanently deleted" });
-        }
-
-        const deleteResult = await Note.deleteOne({
-            _id: noteId,
-            userId: userId,
-            isDeleted: true,
-            deletedBatchId: null,
-        });
-        if (deleteResult.deletedCount !== 1) {
-            return res.status(409).json({ error: true, message: "Note changed before permanent deletion" });
-        }
-        const embedding = await deleteEmbed(noteId);
-
-        return res.json({
-            error: false,
-            embedding,
-            message: "Note permanently deleted",
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: true, message: "Internal Server Error" });
+    if (!note) {
+        return res.status(404).json({ error: true, message: "Note not found" });
     }
+
+    if (!note.isDeleted || note.deletedBatchId) {
+        return res.status(409).json({ error: true, message: "Only an individually trashed note can be permanently deleted" });
+    }
+
+    const deleteResult = await Note.deleteOne({
+        _id: noteId,
+        userId: userId,
+        isDeleted: true,
+        deletedBatchId: null,
+    });
+    if (deleteResult.deletedCount !== 1) {
+        return res.status(409).json({ error: true, message: "Note changed before permanent deletion" });
+    }
+    const embedding = await deleteEmbed(noteId);
+
+    return res.json({
+        error: false,
+        embedding,
+        message: "Note permanently deleted",
+    });
 };
 
 
@@ -662,72 +363,30 @@ const updateNoteArchive = async (req, res) => {
         return res.status(400).json({ error: true, message: "isArchived must be a boolean" });
     }
 
-    try {
-        const note = await Note.findOne({ userId: userId, _id: noteId });
+    const note = await Note.findOne({ userId: userId, _id: noteId });
 
-        if (!note) {
-            return res.status(404).json({ error: true, message: "Note not found" });
-        }
-
-        if (note.isDeleted) {
-            return res.status(409).json({ error: true, message: "Trashed notes cannot be archived" });
-        }
-
-        const listsBefore = listsOf(note);
-        await setArchived(note, isArchived, userId);
-        await placeArrivals(note, listsBefore, userId);
-        await note.save();
-
-        // Archived notes remain part of semantic search; only Trash notes are removed.
-        indexInBackground(note, userId);
-
-        return res.json({
-            error: false,
-            message: isArchived ? "Note archived" : "Note unarchived",
-            note,
-            indexing: true,
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
-};
-
-const searchNotes = async (req, res) => {
-    const userId = req.user._id;
-    const { query, scope, folderIds } = req.query;
-
-    if (!query) {
-        return res.status(400).json({ error: true, message: "Search query is required" });
+    if (!note) {
+        return res.status(404).json({ error: true, message: "Note not found" });
     }
 
-    try {
-        let folderFilter = {};
-        if (scope === "home") {
-            folderFilter = { $or: [{ folderId: null }, { showInHome: true }] };
-        } else if (folderIds) {
-            const ids = typeof folderIds === "string" ? folderIds.split(",") : folderIds;
-            folderFilter = { folderId: { $in: ids } };
-        }
-
-        const safeQuery = escapeRegex(query.trim());
-        const matchingNote = await Note.find({
-            userId: userId,
-            $or: [{ title: { $regex: new RegExp(safeQuery, "i") } }, { content: { $regex: new RegExp(safeQuery, "i") } }],
-            isDeleted: { $ne: true },
-            isArchived: { $ne: true },
-            ...folderFilter,
-        }).select(NOTE_LIST_FIELDS).limit(100).lean();
-
-        return res.json({
-            error: false,
-            message: "note found successfully",
-            notes: matchingNote,
-        });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    if (note.isDeleted) {
+        return res.status(409).json({ error: true, message: "Trashed notes cannot be archived" });
     }
+
+    const listsBefore = listsOf(note);
+    await setArchived(note, isArchived, userId);
+    await placeArrivals(note, listsBefore, userId);
+    await note.save();
+
+    // Archived notes remain part of semantic search; only Trash notes are removed.
+    indexInBackground(note, userId);
+
+    return res.json({
+        error: false,
+        message: isArchived ? "Note archived" : "Note unarchived",
+        note,
+        indexing: true,
+    });
 };
 
 const summarizeNote = async (req, res) => {
@@ -740,55 +399,46 @@ const summarizeNote = async (req, res) => {
         });
     }
 
-    try {
-        const FASTAPI_SUMMARIZE_URL = process.env.FASTAPI_SUMMARIZE_URL;
-
-        if (!FASTAPI_SUMMARIZE_URL) {
-            console.error("FASTAPI_SUMMARIZE_URL is not defined in environment variables.");
-            return res.status(500).json({
-                error: true,
-                message: "Summarization service URL is not configured.",
-            });
-        }
-
-        const fastapiResponse = await axios.post(`${FASTAPI_SUMMARIZE_URL}/summarize`, {
-            text: text,
-        }, getFastApiHeaders());
-
-        if (fastapiResponse.data && fastapiResponse.data.summary) {
-            return res.json({
-                error: false,
-                summary: fastapiResponse.data.summary,
-                message: "Note summarized successfully.",
-            });
-        } else {
-            return res.status(500).json({
-                error: true,
-                message: "FastAPI did not return a valid summary.",
-            });
-        }
-    } catch (error) {
-        console.error(error);
-        console.error("Error calling FastAPI summarization service:", error.message);
-
-        let errorMessage;
-        if (error.response) {
-            if (error.response.data && error.response.data.detail) {
-                errorMessage = "FastAPI Error: " + error.response.data.detail;
-            } else {
-                errorMessage = `FastAPI service responded with status ${error.response.status}: ${error.response.statusText}`;
-            }
-        } else if (error.request) {
-            errorMessage = "Could not connect to the summarization service. Is FastAPI running?";
-        } else {
-            errorMessage = "An unexpected error occurred before sending request to FastAPI.";
-        }
-
+    if (!isFastApiConfigured()) {
+        console.error("FASTAPI_SUMMARIZE_URL is not defined in environment variables.");
         return res.status(500).json({
             error: true,
-            message: errorMessage,
+            message: "Summarization service URL is not configured.",
         });
     }
+
+    let response;
+    try {
+        response = await callFastApi("/summarize", { method: "POST", body: { text } });
+    } catch (error) {
+        console.error("Error calling FastAPI summarization service:", error.message);
+        return res.status(500).json({
+            error: true,
+            message: "Could not connect to the summarization service. Is FastAPI running?",
+        });
+    }
+
+    const data = await response.json().catch(() => null);
+    if (response.ok && data?.summary) {
+        return res.json({
+            error: false,
+            summary: data.summary,
+            message: "Note summarized successfully.",
+        });
+    }
+    if (response.ok) {
+        return res.status(500).json({
+            error: true,
+            message: "FastAPI did not return a valid summary.",
+        });
+    }
+    console.error(`FastAPI summarization responded with status ${response.status}`);
+    return res.status(500).json({
+        error: true,
+        message: data?.detail
+            ? "FastAPI Error: " + data.detail
+            : `FastAPI service responded with status ${response.status}: ${response.statusText}`,
+    });
 };
 
 // A drag in one list: Home, a folder, or Archive (Trash has no order).
@@ -800,23 +450,18 @@ const reorderNotes = async (req, res) => {
     if (!Object.hasOwn(LISTS, list)) {
         return res.status(400).json({ error: true, message: "Unknown list" });
     }
-    if (list === "folder" && !isValidFolderId(folderId)) {
+    if (list === "folder" && !isObjectId(folderId)) {
         return res.status(400).json({ error: true, message: "Invalid folder" });
     }
     if (!Array.isArray(ids) || ids.length === 0 || ids.length > 5000 || ids.some((id) => typeof id !== "string")) {
         return res.status(400).json({ error: true, message: "A list of note ids is required" });
     }
 
-    try {
-        const refusal = await reorderList(list, list === "folder" ? folderId : null, ids, userId);
-        if (refusal) {
-            return res.status(409).json({ error: true, message: refusal });
-        }
-        return res.json({ error: false, message: "Notes reordered successfully" });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    const refusal = await reorderList(list, list === "folder" ? folderId : null, ids, userId);
+    if (refusal) {
+        return res.status(409).json({ error: true, message: refusal });
     }
+    return res.json({ error: false, message: "Notes reordered successfully" });
 };
 
 const moveNote = async (req, res) => {
@@ -824,30 +469,18 @@ const moveNote = async (req, res) => {
     const { targetFolderId } = req.body;
     const userId = req.user._id;
 
-    try {
-        const note = await Note.findOne({ _id: noteId, userId, isDeleted: { $ne: true } });
-        if (!note) {
-            return res.status(404).json({ error: true, message: "Note not found" });
-        }
-
-        if (targetFolderId) {
-            if (!isValidFolderId(targetFolderId)) {
-                return res.status(400).json({ error: true, message: "Invalid target folder" });
-            }
-            if (!(await findLivingFolder(targetFolderId, userId))) {
-                return res.status(404).json({ error: true, message: "Target folder not found" });
-            }
-        }
-
-        const listsBefore = listsOf(note);
-        moveToFolder(note, targetFolderId);
-        await placeArrivals(note, listsBefore, userId);
-        await note.save();
-        return res.json({ error: false, note, message: "Note moved successfully" });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: true, message: "Internal Server Error" });
+    const note = await Note.findOne({ _id: noteId, userId, isDeleted: { $ne: true } });
+    if (!note) {
+        return res.status(404).json({ error: true, message: "Note not found" });
     }
+
+    if (targetFolderId) await requireLivingFolder(targetFolderId, userId, "target folder");
+
+    const listsBefore = listsOf(note);
+    moveToFolder(note, targetFolderId);
+    await placeArrivals(note, listsBefore, userId);
+    await note.save();
+    return res.json({ error: false, note, message: "Note moved successfully" });
 };
 
 // "Home" / "Un Home" on a filed note: shows it on Home as well as in its folder (showInHome)
@@ -855,30 +488,25 @@ const toggleShowInHome = async (req, res) => {
     const noteId = req.params.noteId;
     const userId = req.user._id;
 
-    try {
-        const note = await Note.findOne({ _id: noteId, userId, isDeleted: { $ne: true } });
-        if (!note) {
-            return res.status(404).json({ error: true, message: "Note not found" });
-        }
-
-        if (note.folderId === null) {
-            return res.status(400).json({ error: true, message: "Unfiled notes are always shown on Home" });
-        }
-
-        const listsBefore = listsOf(note);
-        note.showInHome = !note.showInHome;
-        await placeArrivals(note, listsBefore, userId);
-        await note.save();
-
-        return res.json({
-            error: false,
-            message: note.showInHome ? "Added to Home" : "Removed from Home",
-            note,
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: true, message: "Internal Server Error" });
+    const note = await Note.findOne({ _id: noteId, userId, isDeleted: { $ne: true } });
+    if (!note) {
+        return res.status(404).json({ error: true, message: "Note not found" });
     }
+
+    if (note.folderId === null) {
+        return res.status(400).json({ error: true, message: "Unfiled notes are always shown on Home" });
+    }
+
+    const listsBefore = listsOf(note);
+    note.showInHome = !note.showInHome;
+    await placeArrivals(note, listsBefore, userId);
+    await note.save();
+
+    return res.json({
+        error: false,
+        message: note.showInHome ? "Added to Home" : "Removed from Home",
+        note,
+    });
 };
 
 module.exports = {
@@ -894,15 +522,11 @@ module.exports = {
     getTrashNotes,
     restoreNote,
     permanentDeleteNote,
-    searchNotes,
     summarizeNote,
     updateNoteArchive,
     getArchivedNotes,
     reorderNotes,
     moveNote,
     toggleShowInHome,
-    deleteEmbed,
-    triggerEmbed,
-    runEmbeddingBatch,
     getNoteIndexStatus,
 };

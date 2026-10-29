@@ -13,7 +13,6 @@ const {
     restoreNote,
     permanentDeleteNote,
     updateNoteArchive,
-    searchNotes,
     summarizeNote,
     getArchivedNotes,
     reorderNotes,
@@ -26,6 +25,7 @@ const { authenticateToken } = require("../middleware/auth.middleware");
 const { summarizeLimiter, linkPreviewLimiter } = require("../middleware/rate-limit");
 const {
     validateObjectBody,
+    validateNoteBody,
     validateObjectIdParam,
     validateQueryParam,
 } = require("../middleware/request-validation");
@@ -34,8 +34,8 @@ const router = express.Router();
 
 router.param("noteId", validateObjectIdParam("noteId"));
 
-router.post("/add-note", authenticateToken, validateObjectBody, addNote);
-router.put("/edit-note/:noteId", authenticateToken, validateObjectBody, editNote);
+router.post("/add-note", authenticateToken, validateObjectBody, validateNoteBody, addNote);
+router.put("/edit-note/:noteId", authenticateToken, validateObjectBody, validateNoteBody, editNote);
 router.get("/note-index-status/:noteId", authenticateToken, getNoteIndexStatus);
 router.post("/notes/extract-preview", authenticateToken, linkPreviewLimiter, validateObjectBody, extractLinkPreview);
 router.get("/get-note/:noteId", authenticateToken, getNoteById);
@@ -50,7 +50,6 @@ router.get("/get-trash-notes", authenticateToken, getTrashNotes);
 router.put("/restore-note/:noteId", authenticateToken, restoreNote);
 router.delete("/delete-trash-note/:noteId", authenticateToken, permanentDeleteNote);
 router.put("/update-note-archive/:noteId", authenticateToken, validateObjectBody, updateNoteArchive);
-router.get("/search-notes", authenticateToken, validateQueryParam("query", { required: true, maxLength: 4096 }), searchNotes);
 router.post("/summarize-note", authenticateToken, summarizeLimiter, validateObjectBody, summarizeNote);
 router.put("/reorder-notes", authenticateToken, validateObjectBody, reorderNotes);
 router.put("/move-note/:noteId", authenticateToken, validateObjectBody, moveNote);

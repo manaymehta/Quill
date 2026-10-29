@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import globals from "globals";
 
 export default [
     {
@@ -9,17 +10,8 @@ export default [
         languageOptions: {
             ecmaVersion: 2022,
             sourceType: "commonjs",
-            globals: {
-                console: "readonly",
-                process: "readonly",
-                module: "readonly",
-                require: "readonly",
-                __dirname: "readonly",
-                // Web-standard globals built into Node 18+ (no module to import them from).
-                fetch: "readonly",
-                AbortController: "readonly",
-                AbortSignal: "readonly"
-            }
+            // Every Node global (timers, URL, Buffer, TextDecoder, fetch, …), so code uses them directly
+            globals: globals.node,
         },
         rules: {
             "no-unused-vars": "warn",

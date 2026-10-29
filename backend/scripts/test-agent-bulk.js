@@ -7,35 +7,13 @@
 // >50 refused, and the TTL indexes.
 //
 // Usage (from backend/): node scripts/test-agent-bulk.js
-const path = require("node:path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env"), override: true });
-const jwt = require("jsonwebtoken");
+const { USER_A, USER_B, makeCall, check, fail, summary } = require("./lib/harness");
 const mongoose = require("mongoose");
 const AgentProposal = require("../models/agent-proposal.model");
 const AgentReceipt = require("../models/agent-receipt.model");
 const User = require("../models/user.model");
 
-const BASE = `http://localhost:${process.env.PORT || 8100}/v1`;
-const USER_A = "000000000000000000000001";
-const USER_B = "000000000000000000000002";
-const token = (id) => jwt.sign({ _id: id, email: `bulk-${id.slice(-1)}@example.invalid`, fullName: "Bulk Test", tokenType: "access" },
-    process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
-
-const call = async (user, method, p, body) => {
-    const r = await fetch(BASE + p, {
-        method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token(user)}` },
-        body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    let data = null;
-    try { data = await r.json(); } catch { /* empty */ }
-    return { status: r.status, data };
-};
-
-const results = [];
-const check = (name, ok, detail = "") => {
-    results.push(Boolean(ok));
-    console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
-};
+const call = makeCall("bulk");
 
 (async () => {
     const created = { notes: { [USER_A]: [], [USER_B]: [] }, folders: { [USER_A]: [], [USER_B]: [] }, proposals: [] };
@@ -197,8 +175,7 @@ const check = (name, ok, detail = "") => {
         check("proposalId unique on both collections",
             pIdx.some((i) => i.key.proposalId && i.unique) && rIdx.some((i) => i.key.proposalId && i.unique));
     } catch (error) {
-        console.log("ERROR:", error.stack || error.message);
-        results.push(false);
+        fail(error);
     } finally {
         for (const user of [USER_A, USER_B]) {
             for (const id of created.notes[user]) {
@@ -214,7 +191,6 @@ const check = (name, ok, detail = "") => {
         await AgentReceipt.deleteMany({ userId: { $in: [USER_A, USER_B] } });
         await User.deleteMany({ _id: { $in: [USER_A, USER_B] } });
         await mongoose.connection.close();
-        console.log(`\n${results.filter(Boolean).length}/${results.length} passed; cleanup done`);
-        process.exitCode = results.every(Boolean) ? 0 : 1;
+        summary();
     }
 })();

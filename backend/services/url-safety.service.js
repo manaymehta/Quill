@@ -1,4 +1,3 @@
-/* global URL, Buffer, setTimeout, clearTimeout */
 const net = require("net");
 const dns = require("dns");
 const http = require("http");

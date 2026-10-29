@@ -1,5 +1,3 @@
-const { setTimeout, clearTimeout, setInterval, clearInterval } = require("node:timers");
-const { TextDecoder } = require("node:util");
 const AgentChat = require("../models/agent-chat.model");
 const AgentProposal = require("../models/agent-proposal.model");
 const AgentReceipt = require("../models/agent-receipt.model");
@@ -7,8 +5,11 @@ const AgentSelection = require("../models/agent-selection.model");
 const User = require("../models/user.model");
 const { DEFAULT_SCOPES, SCOPE_KEYS, getAgentScopes } = require("../services/agent-scopes.service");
 const { pendingOf, pendingSummary, markMoved, summarizeReceipt } = require("../services/pending-list.service");
+const { appendTurns } = require("../services/agent-chat.service");
+const { isFastApiConfigured, callFastApi } = require("../services/fastapi.service");
+const { isObjectId } = require("../utils/object-id");
 
-const { MAX_STORED_TURNS, MAX_CHATS_PER_USER, CHAT_TITLE_MAX, expiryFor } = AgentChat;
+const { MAX_CHATS_PER_USER, CHAT_TITLE_MAX, expiryFor } = AgentChat;
 const CHAT_LIMIT_MESSAGE = `${MAX_CHATS_PER_USER} chats is the limit — delete one to start a new chat`;
 const CHAT_NOT_FOUND_MESSAGE = "Chat not found — it may have expired or been deleted";
 // A new chat's title: its first message, cut on a word boundary.
@@ -34,7 +35,6 @@ const MAX_WORKING_SET = 50;
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_HISTORY_MESSAGE_CHARS = 20_000;
 
-const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 
 const sanitizeHistory = (raw) => {
     if (raw === undefined || raw === null) return [];
@@ -69,7 +69,7 @@ const sanitizeWorkingSet = (raw) => {
     for (const entry of raw) {
         if (!entry || typeof entry !== "object") return null;
         const { noteId, title } = entry;
-        if (typeof noteId !== "string" || !OBJECT_ID_RE.test(noteId)) return null;
+        if (!isObjectId(noteId)) return null;
         if (title !== undefined && title !== null
             && (typeof title !== "string" || title.length > WORKING_SET_TITLE_MAX)) {
             return null;
@@ -87,8 +87,8 @@ const DRAFT_CHECKLIST_ITEMS_MAX = 100;
 const isValidDraft = (draft) => {
     if (!draft || typeof draft !== "object") return false;
     if (draft.action !== "create" && draft.action !== "edit") return false;
-    if (draft.action === "edit" && (typeof draft.noteId !== "string" || !OBJECT_ID_RE.test(draft.noteId))) return false;
-    if (draft.noteId !== undefined && draft.noteId !== null && (typeof draft.noteId !== "string" || !OBJECT_ID_RE.test(draft.noteId))) return false;
+    if (draft.action === "edit" && !isObjectId(draft.noteId)) return false;
+    if (draft.noteId !== undefined && draft.noteId !== null && !isObjectId(draft.noteId)) return false;
     if (draft.title !== undefined && draft.title !== null && (typeof draft.title !== "string" || draft.title.length > DRAFT_TITLE_MAX)) return false;
     if (draft.content !== undefined && draft.content !== null && (typeof draft.content !== "string" || draft.content.length > DRAFT_CONTENT_MAX)) return false;
     if (draft.tags !== undefined && draft.tags !== null) {
@@ -102,7 +102,7 @@ const isValidDraft = (draft) => {
                 && typeof item.text === "string"
                 && (item.completed === undefined || typeof item.completed === "boolean"))) return false;
     }
-    if (draft.folderId !== undefined && draft.folderId !== null && (typeof draft.folderId !== "string" || !OBJECT_ID_RE.test(draft.folderId))) return false;
+    if (draft.folderId !== undefined && draft.folderId !== null && !isObjectId(draft.folderId)) return false;
     if (draft.basedOnUnsaved !== undefined && typeof draft.basedOnUnsaved !== "boolean") return false;
     return true;
 };
@@ -122,7 +122,7 @@ const sanitizeUnsavedNotes = (raw) => {
     for (const note of raw) {
         if (!note || typeof note !== "object") return null;
         const { noteId, title = "", content = "", tags = [], isChecklist = false, checklist = [] } = note;
-        if (typeof noteId !== "string" || !OBJECT_ID_RE.test(noteId)) return null;
+        if (!isObjectId(noteId)) return null;
         if (typeof title !== "string" || title.length > DRAFT_TITLE_MAX) return null;
         if (typeof content !== "string" || content.length > DRAFT_CONTENT_MAX) return null;
         if (!Array.isArray(tags) || tags.length > UNSAVED_TAGS_MAX
@@ -172,7 +172,7 @@ const sanitizeProposal = (p) => {
     const keys = new Set(changes.map((c) => c.key));
     const candidates = [];
     for (const c of p.candidates) {
-        if (!isPlainObject(c) || typeof c.noteId !== "string" || !OBJECT_ID_RE.test(c.noteId) || !isShortString(c.title, 500)
+        if (!isPlainObject(c) || !isObjectId(c.noteId) || !isShortString(c.title, 500)
             || !(c.folder === null || c.folder === undefined || isShortString(c.folder, 200))
             || !Array.isArray(c.items) || c.items.length === 0 || c.items.length > 20) return null;
         const items = [];
@@ -188,7 +188,7 @@ const sanitizeProposal = (p) => {
     for (const g of Array.isArray(p.groups) ? p.groups.slice(0, 8) : []) {
         if (!isPlainObject(g) || !isShortString(g.name, 40) || !isShortString(g.tag, 30) || !Array.isArray(g.noteIds)
             || !Array.isArray(g.changes) || !g.changes.every((k) => keys.has(k))) return null;
-        groups.push({ name: g.name, tag: g.tag, noteIds: g.noteIds.filter((id) => typeof id === "string" && OBJECT_ID_RE.test(id)), changes: g.changes });
+        groups.push({ name: g.name, tag: g.tag, noteIds: g.noteIds.filter(isObjectId), changes: g.changes });
     }
     return {
         proposalId: p.proposalId, changes, candidates, groups, openedFrom: sanitizeIdList(p.openedFrom),
@@ -255,7 +255,7 @@ const chatWithAgent = async (req, res) => {
     if (typeof message !== "string" || !message.trim() || message.length > MAX_MESSAGE_CHARS) {
         return res.status(400).json({ error: true, message: "message must be a non-empty string (max 2000 chars)" });
     }
-    if (chatId !== null && (typeof chatId !== "string" || !OBJECT_ID_RE.test(chatId))) {
+    if (chatId !== null && !isObjectId(chatId)) {
         return res.status(400).json({ error: true, message: "Invalid chat" });
     }
 
@@ -274,25 +274,19 @@ const chatWithAgent = async (req, res) => {
         return res.status(400).json({ error: true, message: "unsavedNotes must be an array of open notes within the size limits" });
     }
 
-    const FASTAPI_URL = process.env.FASTAPI_SUMMARIZE_URL;
-    if (!FASTAPI_URL) {
+    if (!isFastApiConfigured()) {
         console.error("FASTAPI_SUMMARIZE_URL is not defined in environment variables.");
         return res.status(500).json({ error: true, message: "AI service is not configured" });
     }
 
     // An existing chat must be this user's; a new one (no chatId) must fit
     // under the limit. Both answered as plain JSON, before the stream starts.
-    try {
-        if (chatId) {
-            if (!(await AgentChat.exists({ _id: chatId, userId: String(req.user._id) }))) {
-                return res.status(404).json({ error: true, message: CHAT_NOT_FOUND_MESSAGE });
-            }
-        } else if (await AgentChat.countDocuments({ userId: String(req.user._id) }) >= MAX_CHATS_PER_USER) {
-            return res.status(409).json({ error: true, code: "chat-limit", message: CHAT_LIMIT_MESSAGE });
+    if (chatId) {
+        if (!(await AgentChat.exists({ _id: chatId, userId: String(req.user._id) }))) {
+            return res.status(404).json({ error: true, message: CHAT_NOT_FOUND_MESSAGE });
         }
-    } catch (chatError) {
-        console.error(`[${req.id}] Agent chat lookup failed:`, chatError.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
+    } else if (await AgentChat.countDocuments({ userId: String(req.user._id) }) >= MAX_CHATS_PER_USER) {
+        return res.status(409).json({ error: true, code: "chat-limit", message: CHAT_LIMIT_MESSAGE });
     }
 
     // The user's pending review list (one per account), so the agent can tell
@@ -348,20 +342,12 @@ const chatWithAgent = async (req, res) => {
 
     // Forward the user's own credentials so tool calls inside the agent run
     // with exactly this user's permissions through the normal routes.
-    const internalKey = process.env.FASTAPI_INTERNAL_KEY;
-    const headers = {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-        Authorization: req.headers["authorization"],
-        "x-user-id": String(req.user._id),
-        ...(internalKey ? { "x-api-key": internalKey } : {}),
-    };
-
     try {
-        const response = await fetch(`${FASTAPI_URL}/agent/chat`, {
+        const response = await callFastApi("/agent/chat", {
             method: "POST",
-            headers,
-            body: JSON.stringify({
+            headers: { Accept: "text/event-stream" },
+            asUser: { authorization: req.headers["authorization"], userId: req.user._id },
+            body: {
                 message: message.trim(),
                 history: sanitizedHistory,
                 workingSet: sanitizedWorkingSet,
@@ -369,7 +355,7 @@ const chatWithAgent = async (req, res) => {
                 scopes: agentScopes,
                 chatId,
                 pendingList,
-            }),
+            },
             signal: upstream.signal,
         });
         clearTimeout(wakeNotice);
@@ -493,9 +479,8 @@ async function* readSseEvents(body) {
 let agentWakeInFlight = null;
 
 const wakeAgent = (req, res) => {
-    const FASTAPI_URL = process.env.FASTAPI_SUMMARIZE_URL;
-    if (FASTAPI_URL && !agentWakeInFlight) {
-        agentWakeInFlight = fetch(`${FASTAPI_URL}/health`, { signal: AbortSignal.timeout(AGENT_WAKE_TIMEOUT_MS) })
+    if (isFastApiConfigured() && !agentWakeInFlight) {
+        agentWakeInFlight = callFastApi("/health", { timeoutMs: AGENT_WAKE_TIMEOUT_MS })
             .catch((error) => console.warn(`[${req.id}] Agent wake-up ping failed:`, error.message))
             .finally(() => {
                 agentWakeInFlight = null;
@@ -539,28 +524,6 @@ const titleFromMessage = (text) => {
     return `${(lastSpace > AUTO_TITLE_CHARS / 2 ? cut.slice(0, lastSpace) : cut).replace(/[\s,.;:!?-]+$/, "")}…`;
 };
 
-// Appends turns to a chat (capped at MAX_STORED_TURNS), keeping each stored
-// turn's review list / split choices, and restarts its 3-day clock (none
-// while pinned). chatId null creates the chat. `workingSet` undefined =
-// unchanged. Returns the chat's ID, or null when chatId no longer exists.
-const appendTurns = async (userId, chatId, turns, { workingSet, newChatTitle } = {}) => {
-    let doc = chatId ? await AgentChat.findOne({ _id: chatId, userId: String(userId) }) : null;
-    if (chatId && !doc) return null;
-    if (!doc) doc = new AgentChat({ userId: String(userId), title: newChatTitle || "New chat" });
-    doc.turns = [
-        ...doc.turns.map((t) => ({
-            role: t.role, text: t.text, citations: t.citations, proposal: t.proposal ?? null, splitChoices: t.splitChoices ?? null,
-            groupSuggestions: t.groupSuggestions ?? null, createdAt: t.createdAt,
-        })),
-        ...turns,
-    ].slice(-MAX_STORED_TURNS);
-    if (workingSet !== undefined) doc.workingSet = workingSet;
-    doc.lastActivityAt = new Date();
-    doc.expiresAt = expiryFor(doc.pinned);
-    await doc.save();
-    return String(doc._id);
-};
-
 const chatSummary = (doc) => ({
     chatId: String(doc._id),
     title: doc.title,
@@ -569,23 +532,18 @@ const chatSummary = (doc) => ({
     expiresAt: doc.expiresAt || null,
 });
 
-const ownChatFilter = (req) => (OBJECT_ID_RE.test(req.params.chatId || "")
+const ownChatFilter = (req) => (isObjectId(req.params.chatId)
     ? { _id: req.params.chatId, userId: String(req.user._id) }
     : null);
 
 // GET /v1/agent/chats — pinned first, then most recently active.
 const listChats = async (req, res) => {
-    try {
-        const chats = await AgentChat.find({ userId: String(req.user._id) })
-            .select("title pinned lastActivityAt expiresAt")
-            .sort({ pinned: -1, lastActivityAt: -1 })
-            .limit(MAX_CHATS_PER_USER * 2)
-            .lean();
-        return res.json({ error: false, chats: chats.map(chatSummary), limit: MAX_CHATS_PER_USER });
-    } catch (error) {
-        console.error(`[${req.id}] Agent chat list failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    const chats = await AgentChat.find({ userId: String(req.user._id) })
+        .select("title pinned lastActivityAt expiresAt")
+        .sort({ pinned: -1, lastActivityAt: -1 })
+        .limit(MAX_CHATS_PER_USER * 2)
+        .lean();
+    return res.json({ error: false, chats: chats.map(chatSummary), limit: MAX_CHATS_PER_USER });
 };
 
 // GET /v1/agent/chats/:chatId — the turns and working set. Review lists and
@@ -596,65 +554,60 @@ const listChats = async (req, res) => {
 // it's this chat or that chat is gone.
 const getChat = async (req, res) => {
     const filter = ownChatFilter(req);
-    try {
-        const doc = filter && await AgentChat.findOne(filter).lean();
-        if (!doc) return res.status(404).json({ error: true, message: CHAT_NOT_FOUND_MESSAGE });
-        const userId = String(req.user._id);
-        const proposalIds = doc.turns.map((t) => t.proposal?.proposalId).filter(Boolean);
-        const selectionIds = doc.turns.map((t) => t.splitChoices?.selectionId).filter(Boolean);
-        const [liveProposals, receipts, liveSelections] = await Promise.all([
-            proposalIds.length ? AgentProposal.find({ userId, proposalId: { $in: proposalIds } }).select("proposalId status chatId").lean() : [],
-            proposalIds.length ? AgentReceipt.find({ userId, proposalId: { $in: proposalIds } }).lean() : [],
-            selectionIds.length ? AgentSelection.find({ userId, selectionId: { $in: selectionIds } }).select("selectionId").lean() : [],
-        ]);
-        const usable = new Set([...liveProposals, ...receipts].map((p) => p.proposalId));
-        // replaced (older lists) / discarded (closed by the user); held = not
-        // added to the pending list yet.
-        const closed = new Map(liveProposals.filter((p) => p.status === "replaced" || p.status === "discarded").map((p) => [p.proposalId, p.status]));
-        const held = new Set(liveProposals.filter((p) => p.status === "held").map((p) => p.proposalId));
-        const liveSelectionIds = new Set(liveSelections.map((s) => s.selectionId));
-        const receiptOf = new Map(receipts.map((r) => [r.proposalId, summarizeReceipt(r)]));
-        const thisChatId = String(doc._id);
-        const listChat = new Map(liveProposals.map((p) => [p.proposalId, p.chatId]));
-        const otherChatIds = [...new Set(doc.turns
-            .filter((t) => t.proposal?.moved)
-            .map((t) => listChat.get(t.proposal.proposalId))
-            .filter((id) => id && id !== thisChatId && OBJECT_ID_RE.test(id)))];
-        const otherChats = otherChatIds.length
-            ? await AgentChat.find({ _id: { $in: otherChatIds }, userId }).select("title").lean()
-            : [];
-        const chatTitles = new Map(otherChats.map((c) => [String(c._id), c.title]));
-        const movedTo = (proposalId) => {
-            const chatId = listChat.get(proposalId);
-            return chatTitles.has(chatId) ? { chatId, title: chatTitles.get(chatId) } : null;
-        };
-        return res.json({
-            error: false,
-            chat: chatSummary(doc),
-            turns: doc.turns.map((t) => ({
-                role: t.role,
-                text: t.text,
-                citations: t.citations || [],
-                proposal: t.proposal
-                    ? {
-                        ...t.proposal,
-                        expired: !usable.has(t.proposal.proposalId),
-                        closed: closed.get(t.proposal.proposalId) || null,
-                        status: held.has(t.proposal.proposalId) ? "held" : t.proposal.status === "held" ? "open" : t.proposal.status,
-                        receipt: t.proposal.moved ? null : receiptOf.get(t.proposal.proposalId) || null,
-                        ...(t.proposal.moved && { movedTo: movedTo(t.proposal.proposalId) }),
-                    }
-                    : null,
-                splitChoices: t.splitChoices ? { ...t.splitChoices, expired: !liveSelectionIds.has(t.splitChoices.selectionId) } : null,
-                // Group cards from before grouping made review lists.
-                groupSuggestions: t.groupSuggestions ? { ...t.groupSuggestions, expired: true } : null,
-            })),
-            workingSet: doc.workingSet || [],
-        });
-    } catch (error) {
-        console.error(`[${req.id}] Agent chat fetch failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    const doc = filter && await AgentChat.findOne(filter).lean();
+    if (!doc) return res.status(404).json({ error: true, message: CHAT_NOT_FOUND_MESSAGE });
+    const userId = String(req.user._id);
+    const proposalIds = doc.turns.map((t) => t.proposal?.proposalId).filter(Boolean);
+    const selectionIds = doc.turns.map((t) => t.splitChoices?.selectionId).filter(Boolean);
+    const [liveProposals, receipts, liveSelections] = await Promise.all([
+        proposalIds.length ? AgentProposal.find({ userId, proposalId: { $in: proposalIds } }).select("proposalId status chatId").lean() : [],
+        proposalIds.length ? AgentReceipt.find({ userId, proposalId: { $in: proposalIds } }).lean() : [],
+        selectionIds.length ? AgentSelection.find({ userId, selectionId: { $in: selectionIds } }).select("selectionId").lean() : [],
+    ]);
+    const usable = new Set([...liveProposals, ...receipts].map((p) => p.proposalId));
+    // replaced (older lists) / discarded (closed by the user); held = not
+    // added to the pending list yet.
+    const closed = new Map(liveProposals.filter((p) => p.status === "replaced" || p.status === "discarded").map((p) => [p.proposalId, p.status]));
+    const held = new Set(liveProposals.filter((p) => p.status === "held").map((p) => p.proposalId));
+    const liveSelectionIds = new Set(liveSelections.map((s) => s.selectionId));
+    const receiptOf = new Map(receipts.map((r) => [r.proposalId, summarizeReceipt(r)]));
+    const thisChatId = String(doc._id);
+    const listChat = new Map(liveProposals.map((p) => [p.proposalId, p.chatId]));
+    const otherChatIds = [...new Set(doc.turns
+        .filter((t) => t.proposal?.moved)
+        .map((t) => listChat.get(t.proposal.proposalId))
+        .filter((id) => id && id !== thisChatId && isObjectId(id)))];
+    const otherChats = otherChatIds.length
+        ? await AgentChat.find({ _id: { $in: otherChatIds }, userId }).select("title").lean()
+        : [];
+    const chatTitles = new Map(otherChats.map((c) => [String(c._id), c.title]));
+    const movedTo = (proposalId) => {
+        const chatId = listChat.get(proposalId);
+        return chatTitles.has(chatId) ? { chatId, title: chatTitles.get(chatId) } : null;
+    };
+    return res.json({
+        error: false,
+        chat: chatSummary(doc),
+        turns: doc.turns.map((t) => ({
+            role: t.role,
+            text: t.text,
+            citations: t.citations || [],
+            proposal: t.proposal
+                ? {
+                    ...t.proposal,
+                    expired: !usable.has(t.proposal.proposalId),
+                    closed: closed.get(t.proposal.proposalId) || null,
+                    status: held.has(t.proposal.proposalId) ? "held" : t.proposal.status === "held" ? "open" : t.proposal.status,
+                    receipt: t.proposal.moved ? null : receiptOf.get(t.proposal.proposalId) || null,
+                    ...(t.proposal.moved && { movedTo: movedTo(t.proposal.proposalId) }),
+                }
+                : null,
+            splitChoices: t.splitChoices ? { ...t.splitChoices, expired: !liveSelectionIds.has(t.splitChoices.selectionId) } : null,
+            // Group cards from before grouping made review lists.
+            groupSuggestions: t.groupSuggestions ? { ...t.groupSuggestions, expired: true } : null,
+        })),
+        workingSet: doc.workingSet || [],
+    });
 };
 
 // PATCH /v1/agent/chats/:chatId — { title?, pinned? }. Pinning removes the
@@ -676,14 +629,9 @@ const updateChat = async (req, res) => {
     }
     if (Object.keys(changes).length === 0) return res.status(400).json({ error: true, message: "Nothing to change" });
     const filter = ownChatFilter(req);
-    try {
-        const doc = filter && await AgentChat.findOneAndUpdate(filter, { $set: changes }, { new: true }).lean();
-        if (!doc) return res.status(404).json({ error: true, message: CHAT_NOT_FOUND_MESSAGE });
-        return res.json({ error: false, chat: chatSummary(doc) });
-    } catch (error) {
-        console.error(`[${req.id}] Agent chat update failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    const doc = filter && await AgentChat.findOneAndUpdate(filter, { $set: changes }, { returnDocument: "after" }).lean();
+    if (!doc) return res.status(404).json({ error: true, message: CHAT_NOT_FOUND_MESSAGE });
+    return res.json({ error: false, chat: chatSummary(doc) });
 };
 
 // DELETE /v1/agent/chats/:chatId — also removes the pending / held lists
@@ -691,30 +639,20 @@ const updateChat = async (req, res) => {
 // the chat.
 const deleteChat = async (req, res) => {
     const filter = ownChatFilter(req);
-    try {
-        const doc = filter && await AgentChat.findOneAndDelete(filter).select("_id").lean();
-        if (!doc) return res.status(404).json({ error: true, message: CHAT_NOT_FOUND_MESSAGE });
-        const userId = String(req.user._id);
-        const chatId = String(doc._id);
-        await Promise.all([
-            AgentProposal.deleteMany({ userId, chatId, status: { $in: ["open", "held"] } }),
-            AgentSelection.deleteMany({ userId, chatId }),
-        ]);
-        return res.json({ error: false, message: "Chat deleted" });
-    } catch (error) {
-        console.error(`[${req.id}] Agent chat delete failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    const doc = filter && await AgentChat.findOneAndDelete(filter).select("_id").lean();
+    if (!doc) return res.status(404).json({ error: true, message: CHAT_NOT_FOUND_MESSAGE });
+    const userId = String(req.user._id);
+    const chatId = String(doc._id);
+    await Promise.all([
+        AgentProposal.deleteMany({ userId, chatId, status: { $in: ["open", "held"] } }),
+        AgentSelection.deleteMany({ userId, chatId }),
+    ]);
+    return res.json({ error: false, message: "Chat deleted" });
 };
 
 // GET /v1/agent/settings — the agent's permission toggles (read is always on).
 const getAgentSettings = async (req, res) => {
-    try {
-        return res.json({ error: false, scopes: await getAgentScopes(req.user._id) });
-    } catch (error) {
-        console.error(`[${req.id}] Agent settings read failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    return res.json({ error: false, scopes: await getAgentScopes(req.user._id) });
 };
 
 // PUT /v1/agent/settings — { compose?, organize?, destructive? } booleans.
@@ -727,16 +665,11 @@ const updateAgentSettings = async (req, res) => {
         changes[`agentScopes.${key}`] = body[key];
     }
     if (Object.keys(changes).length === 0) return res.status(400).json({ error: true, message: "Nothing to change" });
-    try {
-        const result = await User.updateOne({ _id: req.user._id }, { $set: changes });
-        if (result.matchedCount !== 1) return res.status(404).json({ error: true, message: "Account not found" });
-        return res.json({ error: false, scopes: await getAgentScopes(req.user._id) });
-    } catch (error) {
-        console.error(`[${req.id}] Agent settings update failed:`, error.message);
-        return res.status(500).json({ error: true, message: "Internal Server Error" });
-    }
+    const result = await User.updateOne({ _id: req.user._id }, { $set: changes });
+    if (result.matchedCount !== 1) return res.status(404).json({ error: true, message: "Account not found" });
+    return res.json({ error: false, scopes: await getAgentScopes(req.user._id) });
 };
 
 module.exports = {
-    chatWithAgent, wakeAgent, listChats, getChat, updateChat, deleteChat, getAgentSettings, updateAgentSettings, appendTurns,
+    chatWithAgent, wakeAgent, listChats, getChat, updateChat, deleteChat, getAgentSettings, updateAgentSettings,
 };

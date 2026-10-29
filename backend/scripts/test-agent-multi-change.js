@@ -8,9 +8,7 @@
 // Everything it creates is removed.
 //
 // Usage (from backend/): node scripts/test-agent-multi-change.js
-const path = require("node:path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env"), override: true });
-const jwt = require("jsonwebtoken");
+const { USER_A, USER_B, makeCall, check, fail, summary } = require("./lib/harness");
 const mongoose = require("mongoose");
 const AgentChat = require("../models/agent-chat.model");
 const AgentProposal = require("../models/agent-proposal.model");
@@ -19,29 +17,9 @@ const AgentSelection = require("../models/agent-selection.model");
 const Folder = require("../models/folder.model");
 const Note = require("../models/note.model");
 const User = require("../models/user.model");
-const { appendTurns } = require("../controllers/agent.controller");
+const { appendTurns } = require("../services/agent-chat.service");
 
-const BASE = `http://localhost:${process.env.PORT || 8100}/v1`;
-const USER_A = "000000000000000000000001";
-const USER_B = "000000000000000000000002";
-const token = (id) => jwt.sign({ _id: id, email: `multi-${id.slice(-1)}@example.invalid`, fullName: "Multi Test", tokenType: "access" },
-    process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
-
-const call = async (user, method, p, body) => {
-    const r = await fetch(BASE + p, {
-        method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token(user)}` },
-        body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    let data = null;
-    try { data = await r.json(); } catch { /* empty */ }
-    return { status: r.status, data };
-};
-
-const results = [];
-const check = (name, ok, detail = "") => {
-    results.push(Boolean(ok));
-    console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
-};
+const call = makeCall("multi");
 
 const rename = (from, to, ids) => ({ action: "tag", params: { remove: [from], add: [to] }, instruction: `rename #${from}`,
     candidates: ids.map((noteId) => ({ noteId, verdict: "likely", reason: `tagged #${from}` })) });
@@ -223,8 +201,7 @@ const discardAll = (user) => AgentProposal.updateMany({ userId: user, status: { 
         const bAdd = await call(USER_B, "POST", `/agent/proposals/${tooMany.data.proposalId}/add`);
         check("cross-user refused", bProp.status === 400 && bAdd.status === 404, `${bProp.status} ${bAdd.status}`);
     } catch (error) {
-        console.log("ERROR:", error.stack || error.message);
-        results.push(false);
+        fail(error);
     } finally {
         for (const user of users) {
             const notes = await Note.find({ userId: user }).select("_id").lean();
@@ -238,7 +215,6 @@ const discardAll = (user) => AgentProposal.updateMany({ userId: user, status: { 
         for (const Model of [AgentChat, AgentProposal, AgentReceipt, AgentSelection]) await Model.deleteMany({ userId: { $in: users } });
         await User.deleteMany({ _id: { $in: users } });
         await mongoose.connection.close();
-        console.log(`\n${results.filter(Boolean).length}/${results.length} passed; cleanup done`);
-        process.exitCode = results.every(Boolean) ? 0 : 1;
+        summary();
     }
 })();

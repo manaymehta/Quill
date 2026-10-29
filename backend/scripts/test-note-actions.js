@@ -5,34 +5,14 @@
 // did before the rules were shared. Everything it creates is removed at the end.
 //
 // Usage (from backend/): node scripts/test-note-actions.js
-const path = require("node:path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env"), override: true });
-const jwt = require("jsonwebtoken");
+const { USER_A: USER, makeCall, check, fail, summary } = require("./lib/harness");
 const mongoose = require("mongoose");
 const Folder = require("../models/folder.model");
 const Note = require("../models/note.model");
-
-const BASE = `http://localhost:${process.env.PORT || 8100}/v1`;
-const USER = "000000000000000000000001";
 const MISSING_ID = "0000000000000000000000ff";
-const token = jwt.sign({ _id: USER, email: "note-actions@example.invalid", fullName: "Note Actions Test", tokenType: "access" },
-    process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
 
-const call = async (method, p, body) => {
-    const r = await fetch(BASE + p, {
-        method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    let data = null;
-    try { data = await r.json(); } catch { /* empty */ }
-    return { status: r.status, data };
-};
-
-const results = [];
-const check = (name, ok, detail = "") => {
-    results.push(Boolean(ok));
-    console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
-};
+const callAs = makeCall("note-actions");
+const call = (method, p, body) => callAs(USER, method, p, body);
 
 (async () => {
     const created = { notes: [], folders: [] };
@@ -122,8 +102,7 @@ const check = (name, ok, detail = "") => {
         check("note trashed with its folder can't be restored alone → 409",
             Boolean(batch.deletedBatchId) && r3.status === 409 && r3.data?.message === "Restore the containing folder instead", String(r3.status));
     } catch (error) {
-        console.log("ERROR:", error.stack || error.message);
-        results.push(false);
+        fail(error);
     } finally {
         // Bring back folders killed directly, so the normal routes can clean up.
         await Folder.updateMany({ _id: { $in: created.folders }, userId: USER, deletedBatchId: null }, { $set: { isDeleted: false } });
@@ -139,8 +118,6 @@ const check = (name, ok, detail = "") => {
         const leftNotes = await Note.deleteMany({ _id: { $in: created.notes }, userId: USER });
         const leftFolders = await Folder.deleteMany({ _id: { $in: created.folders }, userId: USER });
         await mongoose.connection.close();
-        console.log(`\n${results.filter(Boolean).length}/${results.length} passed; cleanup done`
-            + ` (removed directly: ${leftNotes.deletedCount} notes, ${leftFolders.deletedCount} folders)`);
-        process.exitCode = results.every(Boolean) ? 0 : 1;
+        summary(` (removed directly: ${leftNotes.deletedCount} notes, ${leftFolders.deletedCount} folders)`);
     }
 })();

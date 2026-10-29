@@ -99,6 +99,12 @@ const agentProposalSchema = new Schema(
 );
 
 agentProposalSchema.index({ createdAt: 1 }, { expireAfterSeconds: PROPOSAL_TTL_DAYS * 24 * 60 * 60 });
+// One pending list per account, enforced by the database: two requests creating one at the same
+// moment can't both succeed (the loser retries and merges into the winner, see agent-bulk)
+agentProposalSchema.index(
+    { userId: 1, status: 1 },
+    { unique: true, partialFilterExpression: { status: "open" }, name: "one_open_list_per_user" }
+);
 
 module.exports = mongoose.model("AgentProposal", agentProposalSchema);
 module.exports.PROPOSAL_TTL_DAYS = PROPOSAL_TTL_DAYS;

@@ -1,14 +1,9 @@
 const mongoose = require("mongoose");
-require("dotenv").config();
+const { MONGO_URI } = require("./env");
 
 const connectDB = async () => {
-    const connectionString = process.env.MONGO_URI;
-    if (!connectionString) {
-        throw new Error("MONGO_URI is not configured");
-    }
-
     try {
-        await mongoose.connect(connectionString);
+        await mongoose.connect(MONGO_URI);
         console.log("MongoDB Connected");
     } catch (error) {
         console.error("Database connection error:", error);

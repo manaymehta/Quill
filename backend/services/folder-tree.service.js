@@ -1,11 +1,9 @@
 const Folder = require("../models/folder.model");
 
-const getUserFolders = (userId, session = null) => {
-    const query = Folder.find({ userId })
-        .select("_id parentId isDeleted deletedBatchId isDeletedRoot");
-    if (session) query.session(session);
-    return query.lean();
-};
+const getUserFolders = (userId, session = null) => Folder.find({ userId })
+    .select("_id parentId isDeleted deletedBatchId isDeletedRoot")
+    .session(session)
+    .lean();
 
 const collectSubtreeFolderIds = (folders, rootId) => {
     const root = String(rootId);

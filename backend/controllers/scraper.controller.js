@@ -1,4 +1,3 @@
-/* global URL */
 const ogs = require("open-graph-scraper");
 const { safeFetchHtml, SecurityValidationError } = require("../services/url-safety.service");
 
@@ -108,9 +107,11 @@ const extractLinkPreview = async (req, res) => {
             }
         });
     } catch (err) {
+        // The parser's own message stays in the log; it means nothing to the user
+        console.error(`[${req.id}] Link preview parsing failed:`, err.message);
         return res.status(500).json({
             error: true,
-            message: err.message || "Failed to extract link preview"
+            message: "Failed to extract link preview"
         });
     }
 };
