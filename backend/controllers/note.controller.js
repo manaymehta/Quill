@@ -23,7 +23,7 @@ const getNoteIndexStatus = async (req, res) => {
 };
 
 const addNote = async (req, res) => {
-    const { title, content, tags, isChecklist, checklist, folderId, showInHome, linkPreviews } = req.body;
+    const { _id, title, content, tags, isChecklist, checklist, folderId, showInHome, linkPreviews } = req.body;
     const userId = req.user._id;
 
     if (!title && !content && (!checklist || checklist.length === 0)) {
@@ -34,7 +34,7 @@ const addNote = async (req, res) => {
     if (targetFolderId) {
         await requireLivingFolder(targetFolderId, userId);
     }
-    const note = new Note({
+    const noteData = {
         title: title || " ",
         content: content || " ",
         tags: tags || [],
@@ -44,7 +44,11 @@ const addNote = async (req, res) => {
         folderId: targetFolderId,
         showInHome: typeof showInHome !== "undefined" ? showInHome : false,
         linkPreviews: linkPreviews || []
-    });
+    };
+    if (_id && isObjectId(_id)) {
+        noteData._id = _id;
+    }
+    const note = new Note(noteData);
 
     await placeArrivals(note, null, userId);
     await note.save();

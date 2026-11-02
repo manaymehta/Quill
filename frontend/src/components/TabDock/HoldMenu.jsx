@@ -184,7 +184,8 @@ const HoldSheet = ({ className, onClick, children }) => {
 // child when the parent exits, which ran each row's removal collapse as the sheet closed.
 const HoldMenu = ({ openTabs, activeTabId, onSelect, onClose }) => (
   <HoldSheet
-    className="z-50 pointer-events-auto shrink-0 flex flex-col w-[min(200px,calc(100vw-2.5rem))] text-stone-100 select-none no-card-click mb-2"
+    data-hold-sheet=""
+    className="z-50 pointer-events-auto shrink-0 flex flex-col w-[min(200px,calc(100vw-2.5rem))] text-stone-100 select-none mb-2"
     onClick={(e) => e.stopPropagation()}
   >
     <HoldList activeTabId={activeTabId} rowCount={openTabs.length}>

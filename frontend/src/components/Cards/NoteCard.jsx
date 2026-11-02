@@ -249,6 +249,7 @@ const InnerNoteCard = memo(({
                   variants={shutterMenuVariants}
                   style={{ position: 'fixed', left: menuPlace.left, top: menuPlace.top, zIndex: 9999, originY: menuPlace.up ? 1 : 0 }}
                   className="no-card-click select-none"
+                  data-note-menu=""
                   onClick={(e) => e.stopPropagation()}
                 >
                   {renderMenuBody(menuPlace.up)}
@@ -405,19 +406,19 @@ const NoteCard = ({
     if (!isMenuOpen) return;
 
     const handleOutsideClick = (e) => {
-      if (e.target.closest?.('.no-card-click')) return;
+      if (e.target.closest?.('[data-note-menu]')) return;
       setActiveDropdownNoteId(null);
     };
     const handleScroll = () => {
       setActiveDropdownNoteId(null);
     };
 
-    document.addEventListener('click', handleOutsideClick);
-    document.addEventListener('contextmenu', handleOutsideClick);
+    document.addEventListener('click', handleOutsideClick, true);
+    document.addEventListener('contextmenu', handleOutsideClick, true);
     document.addEventListener('scroll', handleScroll, { passive: true, capture: true });
     return () => {
-      document.removeEventListener('click', handleOutsideClick);
-      document.removeEventListener('contextmenu', handleOutsideClick);
+      document.removeEventListener('click', handleOutsideClick, true);
+      document.removeEventListener('contextmenu', handleOutsideClick, true);
       document.removeEventListener('scroll', handleScroll, { capture: true });
     };
   }, [isMenuOpen, setActiveDropdownNoteId]);

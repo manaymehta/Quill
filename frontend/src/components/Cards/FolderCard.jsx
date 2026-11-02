@@ -66,19 +66,19 @@ const FolderCard = ({
     useEffect(() => {
         if (!showDropdown) return;
         const handleOutsideClick = (e) => {
-            if (e.target.closest?.('.no-card-click')) return;
+            if (e.target.closest?.('[data-folder-menu]')) return;
             setActiveDropdownFolderId(null);
         };
         const handleScroll = () => {
             setActiveDropdownFolderId(null);
         };
 
-        document.addEventListener('click', handleOutsideClick);
-        document.addEventListener('contextmenu', handleOutsideClick);
+        document.addEventListener('click', handleOutsideClick, true);
+        document.addEventListener('contextmenu', handleOutsideClick, true);
         document.addEventListener('scroll', handleScroll, { passive: true, capture: true });
         return () => {
-            document.removeEventListener('click', handleOutsideClick);
-            document.removeEventListener('contextmenu', handleOutsideClick);
+            document.removeEventListener('click', handleOutsideClick, true);
+            document.removeEventListener('contextmenu', handleOutsideClick, true);
             document.removeEventListener('scroll', handleScroll, { capture: true });
         };
     }, [showDropdown, setActiveDropdownFolderId]);
@@ -356,7 +356,7 @@ const FolderCard = ({
             {/* Viewport-Aware Portal Context Menu */}
             {(showDropdown || coords) && createPortal(
                 <>
-                    {/* Rendered hidden first, only to measure it, so it opens already placed and
+            {/* Rendered hidden first, only to measure it, so it opens already placed and
                         knows which way it unfolds (menuPlacement) */}
                     {showDropdown && coords && !menuPlace && (
                         <div ref={measureMenu} aria-hidden="true" style={{ position: 'fixed', left: 0, top: 0, visibility: 'hidden', pointerEvents: 'none' }}>
@@ -374,6 +374,7 @@ const FolderCard = ({
                                 variants={shutterMenuVariants}
                                 style={{ position: 'fixed', left: menuPlace.left, top: menuPlace.top, zIndex: 9999, originY: menuPlace.up ? 1 : 0 }}
                                 className="no-card-click"
+                                data-folder-menu=""
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 {renderMenuBody(menuPlace.up)}

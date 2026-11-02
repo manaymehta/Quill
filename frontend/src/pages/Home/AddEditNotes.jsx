@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
-import { MdAdd, MdClose, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen } from 'react-icons/md'
+import { MdAdd, MdClose, MdRefresh, MdKeyboardArrowDown, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen, MdOutlineLink } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import { RiSparkling2Fill } from 'react-icons/ri'
 import { LuUndo2 } from 'react-icons/lu'
@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useFoldersQuery, QUERY_KEYS } from '../../hooks/useNotesQuery';
 import { useToastStore } from '../../store/useToastStore';
 import { editorRegistry } from '../../utils/editorRegistry';
+import { generateObjectId } from '../../utils/objectId';
 import { noteIndexingFailed } from '../../utils/noteIndexing';
 import { useKeyboardTop } from '../../utils/virtualKeyboard';
 import { useTabsStore } from '../../store/useTabsStore';
@@ -190,6 +191,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   };
 
   const [linkPreviews, setLinkPreviews] = useState(noteData?.linkPreviews || []);
+  const [isLinkPreviewsOpen, setIsLinkPreviewsOpen] = useState(true);
+  const userExpandedLinkPreviewsRef = useRef(false);
   const fetchingUrls = useRef(new Set());
   const fetchingPromises = useRef(new Map());
   const dismissedUrlsRef = useRef(new Set());
@@ -202,6 +205,27 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const fetchPreview = useCallback(async (url) => {
     dismissedUrlsRef.current.delete(url);
     fetchingUrls.current.add(url);
+
+    // Initial fallback for instantaneous 0ms display on paste
+    let host = url;
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      // ignore
+    }
+    const siteName = host.startsWith("www.") ? host.substring(4) : host;
+    const initialFallback = {
+      url,
+      title: url,
+      description: "",
+      image: "",
+      siteName: siteName
+    };
+    setLinkPreviews(prev => {
+      if (prev.some(p => p.url === url)) return prev;
+      return [...prev, initialFallback];
+    });
+
     const p = (async () => {
       try {
         const response = await axiosInstance.post("/notes/extract-preview", { url });
@@ -210,38 +234,15 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             // Double check if the URL still exists in the latest content before adding it
             const currentUrls = contentRef.current.match(/(https?:\/\/[^\s]+)/g) || [];
             const currentCleanUrls = currentUrls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
-            if (!currentCleanUrls.includes(url)) return prev;
-            if (prev.some(p => p.url === url)) return prev;
-            return [...prev, response.data.preview];
+            if (!currentCleanUrls.includes(url)) return prev.filter(p => p.url !== url);
+            return prev.map(p => (p.url === url ? response.data.preview : p));
           });
           return response.data.preview;
         }
-        return null;
+        return initialFallback;
       } catch (err) {
         console.error("Failed to fetch link preview for", url, err);
-        // Tier 3 Fallback: Scrape failed completely. Construct a local fallback.
-        let host = url;
-        try {
-          host = new URL(url).hostname;
-        } catch {
-          // ignore
-        }
-        const siteName = host.startsWith("www.") ? host.substring(4) : host;
-        const fallback = {
-          url,
-          title: url,
-          description: "",
-          image: "",
-          siteName: siteName
-        };
-        setLinkPreviews(prev => {
-          const currentUrls = contentRef.current.match(/(https?:\/\/[^\s]+)/g) || [];
-          const currentCleanUrls = currentUrls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
-          if (!currentCleanUrls.includes(url)) return prev;
-          if (prev.some(p => p.url === url)) return prev;
-          return [...prev, fallback];
-        });
-        return fallback;
+        return initialFallback;
       } finally {
         fetchingUrls.current.delete(url);
         fetchingPromises.current.delete(url);
@@ -251,62 +252,30 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     return p;
   }, []);
 
-  const getFinalPreviewsBeforeSave = useCallback(async (currentContent, currentPreviews) => {
+  const getImmediatePreviewsForSave = useCallback((currentContent, currentPreviews) => {
     if (isChecklist) return [];
     const urls = currentContent.match(/(https?:\/\/[^\s]+)/g) || [];
     const cleanUrls = urls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
     const uniqueUrls = [...new Set(cleanUrls)];
 
-    // Await any in-flight extractions for URLs present in the content
-    const inFlight = uniqueUrls
-      .map(url => fetchingPromises.current.get(url))
-      .filter(Boolean);
-    if (inFlight.length > 0) {
-      await Promise.all(inFlight);
-    }
-
-    const missingUrls = uniqueUrls.filter(url => 
-      !currentPreviews.some(p => p.url === url) &&
-      !fetchingUrls.current.has(url) &&
-      !dismissedUrlsRef.current.has(url)
-    );
-
-    if (missingUrls.length === 0) return currentPreviews;
-
-    const fetched = await Promise.all(
-      missingUrls.map(async (url) => {
-        try {
-          const response = await axiosInstance.post("/notes/extract-preview", { url });
-          return response.data?.preview || null;
-        } catch {
-          // Tier 3 Fallback on save: generate fallback object
-          try {
-            const host = new URL(url).hostname;
-            const siteName = host.startsWith("www.") ? host.substring(4) : host;
-            return {
-              url,
-              title: url,
-              description: "",
-              image: "",
-              siteName: siteName
-            };
-          } catch {
-            return {
-              url,
-              title: url,
-              description: "",
-              image: "",
-              siteName: url
-            };
-          }
-        }
-      })
-    );
-
-    const validFetched = fetched.filter(Boolean);
-    const updated = [...currentPreviews, ...validFetched];
-    setLinkPreviews(updated); // Sync local state too
-    return updated;
+    return uniqueUrls.map(url => {
+      const existing = currentPreviews.find(p => p.url === url);
+      if (existing) return existing;
+      let host = url;
+      try {
+        host = new URL(url).hostname;
+      } catch {
+        // ignore
+      }
+      const siteName = host.startsWith("www.") ? host.substring(4) : host;
+      return {
+        url,
+        title: url,
+        description: "",
+        image: "",
+        siteName
+      };
+    });
   }, [isChecklist]);
 
   useEffect(() => {
@@ -330,9 +299,86 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     });
   }, [content, isChecklist]);
 
+  const [refreshingUrls, setRefreshingUrls] = useState(new Set());
+
+  const isSimplePreview = useCallback((preview) => (
+    !preview.image && (!preview.description || preview.title === preview.url)
+  ), []);
+
+  const handleRefreshPreview = useCallback(async (url) => {
+    if (refreshingUrls.has(url)) return;
+    setRefreshingUrls((prev) => new Set(prev).add(url));
+
+    try {
+      const response = await axiosInstance.post("/notes/extract-preview", { url });
+      if (response.data && response.data.preview) {
+        const enriched = response.data.preview;
+        const currentUrls = contentRef.current.match(/(https?:\/\/[^\s]+)/g) || [];
+        const currentCleanUrls = currentUrls.map((u) => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
+        if (!currentCleanUrls.includes(url)) return;
+
+        let updatedPreviews = [];
+        setLinkPreviews((prev) => {
+          const updated = prev.map((p) => (p.url === url ? enriched : p));
+          updatedPreviews = updated;
+          return updated;
+        });
+
+        // Sync active draft in editorRegistry
+        if (currentNoteId) {
+          const draft = editorRegistry.getDraft(currentNoteId);
+          if (draft) {
+            editorRegistry.setDraft(currentNoteId, { ...draft, linkPreviews: updatedPreviews });
+          }
+        }
+
+        // If note is an existing saved note, update draft & baseline and sync query cache
+        if (currentNoteId && !noteData?.isDraft) {
+          axiosInstance.put(`/edit-note/${currentNoteId}`, { linkPreviews: updatedPreviews }).catch((err) => {
+            console.error("Failed to background-save refreshed preview:", err);
+          });
+          const baseline = editorRegistry.getBaseline(currentNoteId);
+          if (baseline) {
+            editorRegistry.setBaseline(currentNoteId, { ...baseline, linkPreviews: updatedPreviews });
+          }
+          const patchList = (list) =>
+            list.map((n) => (n._id === currentNoteId ? { ...n, linkPreviews: updatedPreviews } : n));
+          const previous = queryClient.getQueriesData({ queryKey: QUERY_KEYS.NOTES });
+          for (const [key, list] of previous) {
+            if (!Array.isArray(list)) continue;
+            if (list.some((n) => n._id === currentNoteId)) {
+              queryClient.setQueryData(key, patchList(list));
+            }
+          }
+        }
+        useToastStore.getState().showToast("Preview updated", "success");
+      } else {
+        useToastStore.getState().showToast("No rich preview available for this link", "info");
+      }
+    } catch (err) {
+      console.error("Failed to refresh link preview for", url, err);
+      useToastStore.getState().showToast("Failed to refresh preview", "warning");
+    } finally {
+      setRefreshingUrls((prev) => {
+        const next = new Set(prev);
+        next.delete(url);
+        return next;
+      });
+    }
+  }, [refreshingUrls, currentNoteId, noteData, queryClient]);
+
   const handleRemoveLinkPreview = useCallback((urlToRemove) => {
     dismissedUrlsRef.current.add(urlToRemove);
     setLinkPreviews(prev => prev.filter(p => p.url !== urlToRemove));
+  }, []);
+
+  const toggleLinkPreviews = useCallback(() => {
+    setIsLinkPreviewsOpen((prev) => {
+      if (!prev) {
+        userExpandedLinkPreviewsRef.current = true;
+      }
+      return !prev;
+    });
   }, []);
 
   // Stable on purpose: a new onChange makes the text area reconfigure CodeMirror (see MarkdownEditor)
@@ -466,54 +512,125 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   };
 
 
-  const handleSaveNote = useCallback(async () => {
+  const handleSaveNote = useCallback(() => {
     try {
-      const finalPreviews = await getFinalPreviewsBeforeSave(content, linkPreviews);
+      const immediatePreviews = getImmediatePreviewsForSave(content, linkPreviews);
       // eslint-disable-next-line no-unused-vars
       const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
 
-      const payload = {
-        title,
+      const isDraft = Boolean(noteData?.isDraft || type === 'add');
+      const targetNoteId = isDraft ? generateObjectId() : currentNoteId;
+
+      const showInHome = Boolean(noteData?.showInHome);
+      const noteObject = {
+        _id: targetNoteId,
+        title: title || " ",
         content: isChecklist ? "" : content,
         tags,
         isChecklist,
         checklist: cleanedChecklist,
         folderId: folderId || null,
-        linkPreviews: finalPreviews,
+        showInHome,
+        linkPreviews: immediatePreviews,
+        createdAt: noteData?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
 
-      if (folderId) {
-        payload.showInHome = true;
-      }
-
-      const isDraft = Boolean(noteData?.isDraft || type === 'add');
-      const response = isDraft
-        ? await axiosInstance.post("/add-note", payload)
-        : await axiosInstance.put(`/edit-note/${currentNoteId}`, payload);
-
-      if (response.data && response.data.note) {
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
-        if (currentNoteId) {
-          editorRegistry.setBaseline(currentNoteId, response.data.note);
-          editorRegistry.setDraft(currentNoteId, response.data.note);
+      // 1. Optimistic TanStack Query cache update
+      if (isDraft) {
+        if (!noteObject.folderId || noteObject.showInHome) {
+          queryClient.setQueryData(QUERY_KEYS.HOME_NOTES, (prev = []) => (Array.isArray(prev) ? [...prev, noteObject] : [noteObject]));
         }
-        onSaveSuccess();
-        const notify = showToastMessage || useToastStore.getState().showToast;
-        notify(isDraft ? "Note added successfully" : "Note updated successfully", "success");
-        // Indexing for the agent's search runs after the save replies; a failure still shows,
-        // a moment later (from the toast store: this tab has usually closed by then)
-        if (response.data.indexing) {
-          noteIndexingFailed(response.data.note._id).then((failed) => {
-            if (failed) useToastStore.getState().showToast("Note saved. Embedding failed.", "warning");
-          });
+        if (noteObject.folderId) {
+          queryClient.setQueryData(QUERY_KEYS.FOLDER_NOTES(noteObject.folderId), (prev = []) => (Array.isArray(prev) ? [...prev, noteObject] : [noteObject]));
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDER_NOTE_COUNTS });
+        }
+      } else {
+        const patchNoteInList = (list) => list.map((n) => (n._id === targetNoteId ? { ...n, ...noteObject } : n));
+        const previous = queryClient.getQueriesData({ queryKey: QUERY_KEYS.NOTES });
+        for (const [key, list] of previous) {
+          if (!Array.isArray(list)) continue;
+          if (list.some((n) => n._id === targetNoteId)) {
+            queryClient.setQueryData(key, patchNoteInList(list));
+          }
         }
       }
+
+      // 2. Register baseline & draft in editorRegistry
+      editorRegistry.setBaseline(targetNoteId, noteObject);
+      editorRegistry.setDraft(targetNoteId, noteObject);
+
+      // 3. Tab closes immediately on frame 0
+      onSaveSuccess();
+
+      const notify = showToastMessage || useToastStore.getState().showToast;
+      notify(isDraft ? "Note added successfully" : "Note updated successfully", "success");
+
+      // 4. Background persistence with 1-retry transient policy
+      const savePayload = {
+        title: noteObject.title,
+        content: noteObject.content,
+        tags: noteObject.tags,
+        isChecklist: noteObject.isChecklist,
+        checklist: noteObject.checklist,
+        folderId: noteObject.folderId,
+        showInHome: noteObject.showInHome,
+        linkPreviews: noteObject.linkPreviews,
+      };
+      if (isDraft) savePayload._id = targetNoteId;
+
+      const performSave = async (retryCount = 0) => {
+        try {
+          const response = isDraft
+            ? await axiosInstance.post("/add-note", savePayload)
+            : await axiosInstance.put(`/edit-note/${targetNoteId}`, savePayload);
+
+          if (response.data && response.data.note) {
+            editorRegistry.setBaseline(targetNoteId, response.data.note);
+            editorRegistry.setDraft(targetNoteId, response.data.note);
+            if (response.data.indexing) {
+              noteIndexingFailed(targetNoteId).then((failed) => {
+                if (failed) useToastStore.getState().showToast("Note saved. Embedding failed.", "warning");
+              });
+            }
+          }
+        } catch (error) {
+          const status = error.response?.status;
+          const isTransient = !status || status >= 500 || error.code === 'ECONNABORTED';
+          if (isTransient && retryCount < 1) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            return performSave(retryCount + 1);
+          }
+
+          // Permanent failure or retry exhausted:
+          // Rollback optimistic cache update
+          if (isDraft) {
+            if (!noteObject.folderId || noteObject.showInHome) {
+              queryClient.setQueryData(QUERY_KEYS.HOME_NOTES, (prev = []) => (Array.isArray(prev) ? prev.filter((n) => n._id !== targetNoteId) : []));
+            }
+            if (noteObject.folderId) {
+              queryClient.setQueryData(QUERY_KEYS.FOLDER_NOTES(noteObject.folderId), (prev = []) => (Array.isArray(prev) ? prev.filter((n) => n._id !== targetNoteId) : []));
+              queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDER_NOTE_COUNTS });
+            }
+          } else {
+            queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
+          }
+
+          // Auto-reopen as active tab so draft is preserved in front of the user
+          useTabsStore.getState().openTab(noteObject);
+
+          const errorMessage = error.response?.data?.message || "Failed to save note. Changes restored.";
+          useToastStore.getState().showToast(errorMessage, "error");
+        }
+      };
+
+      performSave();
     } catch (error) {
       if (error.response && error.response.data && error.response.data.message) {
         setError(error.response.data.message);
       }
     }
-  }, [noteData, currentNoteId, type, title, content, isChecklist, tags, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getFinalPreviewsBeforeSave, queryClient]);
+  }, [noteData, currentNoteId, type, title, content, isChecklist, tags, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getImmediatePreviewsForSave, queryClient]);
 
   const handleAddNote = useCallback(() => {
     if (!isChecklist && !content && !title) {
@@ -673,10 +790,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       )}
 
       {/* editor content area */}
-      <div ref={scrollAreaRef} className='editor-column [--column-pad:1.25rem] md:[--column-pad:1.75rem] flex-grow flex flex-col pt-5 md:pt-6 pb-2 overflow-y-auto overflow-x-hidden editor-scrollbar'>
+      <div ref={scrollAreaRef} className='editor-column [--column-pad:1.25rem] md:[--column-pad:1.75rem] flex-grow flex flex-col pt-4 md:pt-5 pb-2 overflow-y-auto overflow-x-hidden editor-scrollbar'>
 
         {/* metadata area */}
-        <div className="text-[11px] md:text-[13px] font-medium tracking-wider md:tracking-[0.15em] text-stone-500 mb-1 md:mb-1.5 uppercase flex items-center justify-between gap-1.5 md:gap-2 shrink-0">
+        <div className="text-[11px] md:text-[13px] font-medium tracking-wider md:tracking-[0.15em] text-stone-500 mb-0.5 md:mb-1 uppercase flex items-center justify-between gap-1.5 md:gap-2 shrink-0">
           {/* Date · status. The part of the row that gives way on a narrow phone (fading out at its
               end), so the folder pill and the full-screen toggle keep their full size. */}
           <div className="flex min-w-0 pl-8 md:pl-0">
@@ -733,7 +850,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         {/* title area (Before: the title you had, read-only) */}
         {isShowingBefore && (
           <p
-            className='w-full font-medium text-[32px] md:text-[40px] text-stone-500 mb-2 md:mb-3 shrink-0 leading-tight tracking-tight truncate'
+            className='w-full font-medium text-[32px] md:text-[40px] text-stone-500 -mt-1 md:-mt-1.5 mb-2 md:mb-3 shrink-0 leading-tight tracking-tight truncate'
             style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
           >
             {noteData.agentOriginalTitle ?? title}
@@ -741,7 +858,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         )}
         <input
           type='text'
-          className={`w-full bg-transparent outline-none font-medium text-[32px] md:text-[40px] text-[#333] placeholder-stone-400 mb-2 md:mb-3 caret-[#333] cursor-text shrink-0 h-[1.5em] leading-normal overflow-x-auto overflow-y-hidden tracking-tight ${isShowingBefore ? 'hidden' : ''}`}
+          className={`w-full bg-transparent outline-none font-medium text-[32px] md:text-[40px] text-[#333] placeholder-stone-400 -mt-1 md:-mt-1.5 mb-2 md:mb-3 caret-[#333] cursor-text shrink-0 h-[1.35em] leading-tight overflow-x-auto overflow-y-hidden tracking-tight ${isShowingBefore ? 'hidden' : ''}`}
           style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
           placeholder='Untitled Note'
           value={title}
@@ -994,38 +1111,89 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
           {/* Link Previews list */}
           {linkPreviews.length > 0 && (
-            <div className="flex flex-col gap-2 mt-4 border-t border-black/5 pt-4 shrink-0 font-sans">
-              <span className="text-[10px] md:text-xs font-semibold text-stone-400 tracking-wider uppercase">Link Previews ({linkPreviews.length})</span>
-              <div className="flex gap-2.5 overflow-x-auto pb-2 previews-scrollbar py-0.5">
-                {linkPreviews.map((preview, idx) => (
-                  <div 
-                    key={idx} 
-                    className="group/preview relative bg-[#ebe0d3]/60 hover:bg-[#e4d7c8]/80 border border-[#e0d2bf] rounded-xl p-3 flex gap-3 items-center w-[250px] sm:w-[280px] shrink-0 min-w-0"
-                  >
-                    {preview.image && (
-                      <img 
-                        src={preview.image} 
-                        alt={preview.title} 
-                        className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
-                      />
-                    )}
-                    <div className="flex-grow min-w-0 pr-4">
-                      <h5 className="text-xs md:text-sm font-semibold text-[#333] truncate leading-snug">{preview.title || preview.url}</h5>
-                      <span className="text-[10px] md:text-xs text-stone-500 font-medium truncate block mt-0.5 uppercase tracking-wide">{preview.siteName}</span>
-                    </div>
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveLinkPreview(preview.url);
-                      }}
-                      className="absolute top-2 right-2 p-0.5 rounded-full text-stone-400 hover:text-[#e85d56] transition-colors cursor-pointer"
-                      title="Remove preview"
+            <div className={`flex flex-col gap-3 mt-3 border-t border-black/5 pt-2.5 shrink-0 font-sans ${isLinkPreviewsOpen ? 'pb-3' : 'pb-1'}`}>
+              <button
+                type="button"
+                onClick={toggleLinkPreviews}
+                aria-expanded={isLinkPreviewsOpen}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#ebe0d3] hover:bg-[#e4d7c8] border border-[#e0d2bf] shadow-xs text-stone-600 hover:text-stone-800 text-xs font-medium rounded-full cursor-pointer select-none self-start transition-colors"
+                title={isLinkPreviewsOpen ? "Collapse link previews" : "Expand link previews"}
+              >
+                <MdOutlineLink size={15} className="text-stone-500 shrink-0" />
+                <span>Link Previews</span>
+                <MdKeyboardArrowDown
+                  size={14}
+                  className={`text-stone-500 shrink-0 ${isLinkPreviewsOpen ? 'rotate-0' : '-rotate-90'}`}
+                />
+              </button>
+              {isLinkPreviewsOpen && (
+                <div
+                  ref={(node) => {
+                    if (node && userExpandedLinkPreviewsRef.current) {
+                      userExpandedLinkPreviewsRef.current = false;
+                      const container = scrollAreaRef.current;
+                      if (container) {
+                        const containerRect = container.getBoundingClientRect();
+                        const nodeRect = node.getBoundingClientRect();
+                        const distanceBelow = nodeRect.bottom - containerRect.bottom;
+                        if (distanceBelow > 0) {
+                          container.scrollTop += distanceBelow + 4;
+                        }
+                      }
+                    }
+                  }}
+                  className="flex gap-2.5 overflow-x-auto pb-1.5 previews-scrollbar py-0.5"
+                >
+                  {linkPreviews.map((preview, idx) => (
+                    <a 
+                      key={idx} 
+                      href={preview.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group/preview relative bg-[#ebe0d3]/60 hover:bg-[#e4d7c8]/80 border border-[#e0d2bf] rounded-xl p-3 flex gap-3 items-center w-[250px] sm:w-[280px] shrink-0 min-w-0 cursor-pointer transition-colors"
                     >
-                      <MdClose size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+                      {preview.image && (
+                        <img 
+                          src={preview.image} 
+                          alt={preview.title} 
+                          className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                        />
+                      )}
+                      <div className="flex-grow min-w-0 pr-7">
+                        <h5 className="text-xs md:text-sm font-semibold text-[#333] truncate leading-snug">{preview.title || preview.url}</h5>
+                        <span className="text-[10px] md:text-xs text-stone-500 font-medium truncate block mt-0.5 uppercase tracking-wide">{preview.siteName}</span>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRemoveLinkPreview(preview.url);
+                        }}
+                        className="absolute top-2 right-2 p-1 rounded-full text-stone-400 hover:text-[#e85d56] hover:bg-black/5 transition-colors cursor-pointer"
+                        title="Remove preview"
+                      >
+                        <MdClose size={13} />
+                      </button>
+                      {isSimplePreview(preview) && (
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleRefreshPreview(preview.url);
+                          }}
+                          disabled={refreshingUrls.has(preview.url)}
+                          className="absolute bottom-2 right-2 p-1 rounded-full text-stone-400 hover:text-stone-700 hover:bg-black/5 transition-colors cursor-pointer disabled:opacity-50"
+                          title="Refresh preview"
+                        >
+                          <MdRefresh size={13} className={refreshingUrls.has(preview.url) ? "animate-spin text-stone-600" : ""} />
+                        </button>
+                      )}
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

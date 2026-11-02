@@ -20,7 +20,7 @@ const Trash = () => {
   const deleteFolderPermanentMutation = useDeleteFolderPermanentMutation();
 
   const handleRestoreNote = (note) => {
-    restoreNoteMutation.mutate(note._id);
+    restoreNoteMutation.mutate(note);
   };
 
   const handleDeleteNotePermanentClick = (note) => {

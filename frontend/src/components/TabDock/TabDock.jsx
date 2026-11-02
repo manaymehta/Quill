@@ -483,7 +483,7 @@ const TabDock = () => {
   // the editor's text to close the list doesn't also focus it and open the keyboard (see
   // useOutsidePress). The finger still down from the long press that opened it doesn't count.
   useOutsidePress(showHoldMenu, {
-    isInside: (target) => Boolean(target.closest?.('.no-card-click, [data-confirm-modal]')),
+    isInside: (target) => Boolean(target.closest?.('[data-hold-sheet], [data-confirm-modal]')),
     onPress: () => setIsHoldMenuOpen(false),
     ignore: () => isHoldingAfterLongPressRef.current,
   });
@@ -502,7 +502,7 @@ const TabDock = () => {
         e.preventDefault();
         return;
       }
-      if (e.target.closest?.('.no-card-click, [data-confirm-modal]')) return;
+      if (e.target.closest?.('[data-hold-sheet], [data-confirm-modal]')) return;
       e.stopPropagation();
       e.preventDefault();
       setIsHoldMenuOpen(false);
@@ -514,7 +514,7 @@ const TabDock = () => {
     // finger still down from the long press that opened it doesn't count (handleTouchMove).
     const handleUserScroll = (e) => {
       if (isHoldingAfterLongPressRef.current) return;
-      if (e.target?.closest?.('.no-card-click')) return;
+      if (e.target?.closest?.('[data-hold-sheet]')) return;
       setIsHoldMenuOpen(false);
     };
 
