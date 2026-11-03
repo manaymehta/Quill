@@ -383,6 +383,12 @@ const NoteCard = ({
   hideFolderBadge = false,
   linkPreviews = [],
 }) => {
+  // Only "is MY menu open": a card subscribed to which menu is open re-rendered (every card) whenever
+  // any menu opened or closed
+  const isMenuOpen = useFoldersStore((s) => s.activeDropdownNoteId === id);
+  const setActiveDropdownNoteId = useFoldersStore((s) => s.setActiveDropdownNoteId);
+  const [coords, setCoords] = useState(null);
+
   const {
     attributes, listeners, setNodeRef, transform, transition, isDragging,
   } = useSortable({
@@ -390,24 +396,20 @@ const NoteCard = ({
     animateLayoutChanges,
   });
 
-  // Only "is MY menu open": a card subscribed to which menu is open re-rendered (every card) whenever
-  // any menu opened or closed
-  const isMenuOpen = useFoldersStore((s) => s.activeDropdownNoteId === id);
-  const setActiveDropdownNoteId = useFoldersStore((s) => s.setActiveDropdownNoteId);
-  const [coords, setCoords] = useState(null);
-
   const longPressTimerRef = useRef(null);
   const touchStartPosRef = useRef({ x: 0, y: 0 });
-  // Set when a long-press opens the menu: the tap some browsers send as the finger lifts must not
-  // close it again. Only that one tap: cleared when the next touch starts (most browsers send none).
-  const skipReleaseTapRef = useRef(false);
+  // Long-press hold state & release guard:
+  // Timer runs at 500ms matching dnd-kit. Guards both the in-hold contextmenu on mobile and the release
+  // click tap so the popup stays open, without interfering with card dragging.
+  const isHoldingAfterLongPressRef = useRef(false);
+  const ignoreClicksUntilRef = useRef(0);
 
   useEffect(() => {
     if (!isMenuOpen) return;
 
     const handleOutsideClick = (e) => {
-      if (skipReleaseTapRef.current) {
-        skipReleaseTapRef.current = false;
+      // Still holding after long-press, or release tap just after lifting: keep menu open
+      if (isHoldingAfterLongPressRef.current || performance.now() < ignoreClicksUntilRef.current) {
         e.stopPropagation();
         e.preventDefault();
         return;
@@ -421,12 +423,14 @@ const NoteCard = ({
       setActiveDropdownNoteId(null);
     };
 
+    // 'click' uses capture (true) to swallow outside clicks without clicking cards underneath.
+    // 'contextmenu' stays bubble (false) so mobile touch-and-hold is not intercepted on document.
     document.addEventListener('click', handleOutsideClick, true);
-    document.addEventListener('contextmenu', handleOutsideClick, true);
+    document.addEventListener('contextmenu', handleOutsideClick);
     document.addEventListener('scroll', handleScroll, { passive: true, capture: true });
     return () => {
       document.removeEventListener('click', handleOutsideClick, true);
-      document.removeEventListener('contextmenu', handleOutsideClick, true);
+      document.removeEventListener('contextmenu', handleOutsideClick);
       document.removeEventListener('scroll', handleScroll, { capture: true });
     };
   }, [isMenuOpen, setActiveDropdownNoteId]);
@@ -451,7 +455,7 @@ const NoteCard = ({
   }, [isMenuOpen, id, setActiveDropdownNoteId]);
 
   const handleTouchStart = (e) => {
-    skipReleaseTapRef.current = false;
+    isHoldingAfterLongPressRef.current = false;
     if (isDragging || isOverlay) return;
     const { activeDropdownNoteId, activeDropdownFolderId } = useFoldersStore.getState();
     if (activeDropdownNoteId !== null || activeDropdownFolderId !== null) return;
@@ -461,7 +465,8 @@ const NoteCard = ({
     touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
 
     longPressTimerRef.current = setTimeout(() => {
-      skipReleaseTapRef.current = true;
+      longPressTimerRef.current = null;
+      isHoldingAfterLongPressRef.current = true;
       flushSync(() => {
         setCoords({ kind: 'touch', x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
         setActiveDropdownNoteId(id);
@@ -495,10 +500,15 @@ const NoteCard = ({
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e) => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
+    }
+    if (isHoldingAfterLongPressRef.current) {
+      isHoldingAfterLongPressRef.current = false;
+      if (e?.cancelable) e.preventDefault();
+      ignoreClicksUntilRef.current = performance.now() + 400;
     }
   };
 
@@ -552,8 +562,7 @@ const NoteCard = ({
         if (activeDropdownNoteId !== null || activeDropdownFolderId !== null) {
           e.stopPropagation();
           e.preventDefault();
-          if (skipReleaseTapRef.current && activeDropdownNoteId === id) {
-            skipReleaseTapRef.current = false;
+          if ((isHoldingAfterLongPressRef.current || performance.now() < ignoreClicksUntilRef.current) && activeDropdownNoteId === id) {
             return;
           }
           setActiveDropdownNoteId(null);

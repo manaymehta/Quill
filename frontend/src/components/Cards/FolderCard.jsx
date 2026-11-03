@@ -47,12 +47,12 @@ const FolderCard = ({
         wasEditorActiveRef.current = isEditorActive;
     }, [isEditorActive]);
 
+    // only "is MY menu open", so opening one folder's menu doesn't re-render every folder card
+    const showDropdown = useFoldersStore((state) => state.activeDropdownFolderId === folder._id);
+
     const {
         attributes, listeners, setNodeRef, transform, transition, isDragging,
     } = useSortable({ id: folder._id, disabled: isTrash || isOverlay });
-
-    // only "is MY menu open", so opening one folder's menu doesn't re-render every folder card
-    const showDropdown = useFoldersStore((state) => state.activeDropdownFolderId === folder._id);
 
     const style = {
         transform: CSS.Translate.toString(transform),
@@ -64,16 +64,18 @@ const FolderCard = ({
 
     const longPressTimerRef = useRef(null);
     const touchStartPosRef = useRef({ x: 0, y: 0 });
-    // Set when a long-press opens the menu: the tap some browsers send as the finger lifts must not
-    // close it again. Only that one tap: cleared when the next touch starts (most browsers send none).
-    const skipReleaseTapRef = useRef(false);
+    // Long-press hold state & release guard:
+    // Timer runs at 500ms matching dnd-kit. Guards both the in-hold contextmenu on mobile and the release
+    // click tap so the popup stays open, without interfering with card dragging.
+    const isHoldingAfterLongPressRef = useRef(false);
+    const ignoreClicksUntilRef = useRef(0);
 
     // Auto-close dropdown when clicking outside anywhere or on scroll
     useEffect(() => {
         if (!showDropdown) return;
         const handleOutsideClick = (e) => {
-            if (skipReleaseTapRef.current) {
-                skipReleaseTapRef.current = false;
+            // Still holding after long-press, or release tap just after lifting: keep menu open
+            if (isHoldingAfterLongPressRef.current || performance.now() < ignoreClicksUntilRef.current) {
                 e.stopPropagation();
                 e.preventDefault();
                 return;
@@ -87,12 +89,14 @@ const FolderCard = ({
             setActiveDropdownFolderId(null);
         };
 
+        // 'click' uses capture (true) to swallow outside clicks without clicking cards underneath.
+        // 'contextmenu' stays bubble (false) so mobile touch-and-hold is not intercepted on document.
         document.addEventListener('click', handleOutsideClick, true);
-        document.addEventListener('contextmenu', handleOutsideClick, true);
+        document.addEventListener('contextmenu', handleOutsideClick);
         document.addEventListener('scroll', handleScroll, { passive: true, capture: true });
         return () => {
             document.removeEventListener('click', handleOutsideClick, true);
-            document.removeEventListener('contextmenu', handleOutsideClick, true);
+            document.removeEventListener('contextmenu', handleOutsideClick);
             document.removeEventListener('scroll', handleScroll, { capture: true });
         };
     }, [showDropdown, setActiveDropdownFolderId]);
@@ -106,7 +110,7 @@ const FolderCard = ({
     }, [isDragging]);
 
     const handleTouchStart = (e) => {
-        skipReleaseTapRef.current = false;
+        isHoldingAfterLongPressRef.current = false;
         if (isDragging || isOverlay) return;
         const { activeDropdownNoteId, activeDropdownFolderId } = useFoldersStore.getState();
         if (activeDropdownNoteId !== null || activeDropdownFolderId !== null || showColorPicker) return;
@@ -116,7 +120,8 @@ const FolderCard = ({
         touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
 
         longPressTimerRef.current = setTimeout(() => {
-            skipReleaseTapRef.current = true;
+            longPressTimerRef.current = null;
+            isHoldingAfterLongPressRef.current = true;
             flushSync(() => {
                 setCoords({ kind: 'touch', x: touchStartPosRef.current.x, y: touchStartPosRef.current.y });
                 setActiveDropdownFolderId(folder._id);
@@ -148,10 +153,15 @@ const FolderCard = ({
         }
     };
 
-    const handleTouchEnd = () => {
+    const handleTouchEnd = (e) => {
         if (longPressTimerRef.current) {
             clearTimeout(longPressTimerRef.current);
             longPressTimerRef.current = null;
+        }
+        if (isHoldingAfterLongPressRef.current) {
+            isHoldingAfterLongPressRef.current = false;
+            if (e?.cancelable) e.preventDefault();
+            ignoreClicksUntilRef.current = performance.now() + 400;
         }
     };
 
@@ -256,8 +266,7 @@ const FolderCard = ({
                 if (activeDropdownNoteId !== null || activeDropdownFolderId !== null || showColorPicker) {
                     e.stopPropagation();
                     e.preventDefault();
-                    if (skipReleaseTapRef.current && activeDropdownFolderId === folder._id) {
-                        skipReleaseTapRef.current = false;
+                    if ((isHoldingAfterLongPressRef.current || performance.now() < ignoreClicksUntilRef.current) && activeDropdownFolderId === folder._id) {
                         return;
                     }
                     setActiveDropdownNoteId(null);
