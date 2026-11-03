@@ -81,7 +81,7 @@ const HOLD_SHUTTER_SPRING = { type: 'spring', visualDuration: 0.18, bounce: 0.22
 const HOLD_ROLL_DOWN_S = 0.12;   // closing collapse; narrowing and fading overlap it (see the close effect)
 const HOLD_SHUTTER_DELAY_S = 0.05;
 
-const HoldSheet = ({ className, onClick, children }) => {
+const HoldSheet = ({ className, onClick, children, ...rest }) => {
   const [isPresent, safeToRemove] = usePresence();
   const containerRef = useRef(null);
   const glassRef = useRef(null);
@@ -166,7 +166,7 @@ const HoldSheet = ({ className, onClick, children }) => {
   }, [isPresent, safeToRemove]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div ref={containerRef} className={`relative ${className}`} onClick={onClick}>
+    <div ref={containerRef} data-hold-sheet="" className={`relative ${className}`} onClick={onClick} {...rest}>
       {/* The morphing glass: anchored bottom-centre, so it grows up out of the dock */}
       <div
         ref={glassRef}

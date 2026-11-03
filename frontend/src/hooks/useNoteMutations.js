@@ -37,7 +37,7 @@ const noteIdOf = (variables) => (typeof variables === 'string' ? variables : var
 // Cached list keys: ['notes', 'home' | 'archived' | 'trash'], ['notes', 'folder', id], ['notes', 'graph', { includeArchived }]
 const listName = (key) => key[1];
 
-const findCachedNote = (queryClient, noteId) => {
+export const findCachedNote = (queryClient, noteId) => {
   for (const [, list] of queryClient.getQueriesData({ queryKey: QUERY_KEYS.NOTES })) {
     const note = Array.isArray(list) && list.find((n) => n._id === noteId);
     if (note) return note;
@@ -424,7 +424,10 @@ export const useToggleShowInHomeMutation = () => {
       if (!current) return {};
       const showInHome = !current.showInHome;
       const updated = { ...current, showInHome };
-      return patchNoteLists(queryClient, (key, list) => {
+      if (useTabsStore.getState().isTabOpen(noteId)) {
+        useTabsStore.getState().updateTabState(noteId, { showInHome });
+      }
+      const patchResult = patchNoteLists(queryClient, (key, list) => {
         const name = listName(key);
         if (name === 'home') {
           if (showInHome) {
@@ -439,11 +442,20 @@ export const useToggleShowInHomeMutation = () => {
           ? list.map((n) => (n._id === noteId ? updated : n))
           : list;
       });
+      return { ...patchResult, previousNote: current };
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
+      const noteId = noteIdOf(variables);
+      if (data?.note?.showInHome !== undefined && noteId && useTabsStore.getState().isTabOpen(noteId)) {
+        useTabsStore.getState().updateTabState(noteId, { showInHome: data.note.showInHome });
+      }
       useToastStore.getState().showToast(data?.note?.showInHome ? TOAST.NOTE_ADDED_TO_HOME : TOAST.NOTE_REMOVED_FROM_HOME);
     },
-    onError: (error, _variables, context) => {
+    onError: (error, variables, context) => {
+      const noteId = noteIdOf(variables);
+      if (noteId && context?.previousNote && useTabsStore.getState().isTabOpen(noteId)) {
+        useTabsStore.getState().updateTabState(noteId, { showInHome: context.previousNote.showInHome });
+      }
       restoreNoteLists(queryClient, context);
       useToastStore.getState().showToast(error.response?.data?.message || "Failed to update Home", "error");
     },
@@ -463,8 +475,18 @@ export const useMoveNoteMutation = () => {
     // The card leaves the old folder page and arrives at the bottom of the target folder at once
     onMutate: ({ noteId, targetFolderId }) => {
       const noteSnapshot = findCachedNote(queryClient, noteId);
-      const updated = noteSnapshot ? { ...noteSnapshot, folderId: targetFolderId } : null;
-      return patchNoteLists(queryClient, (key, list) => {
+      const wasOnHome = !noteSnapshot?.folderId || noteSnapshot?.showInHome === true;
+      const nextShowInHome = !targetFolderId ? false : wasOnHome;
+      const updated = noteSnapshot
+        ? { ...noteSnapshot, folderId: targetFolderId, showInHome: nextShowInHome }
+        : null;
+      if (useTabsStore.getState().isTabOpen(noteId)) {
+        useTabsStore.getState().updateTabState(noteId, {
+          folderId: targetFolderId,
+          showInHome: nextShowInHome,
+        });
+      }
+      const patchResult = patchNoteLists(queryClient, (key, list) => {
         const name = listName(key);
         if (name === 'folder') {
           if (String(key[2]) === String(targetFolderId ?? '')) {
@@ -473,9 +495,9 @@ export const useMoveNoteMutation = () => {
           return without(list, noteId);
         }
         if (name === 'home') {
-          if (!targetFolderId) {
+          if (!targetFolderId || nextShowInHome) {
             return updated && !list.some((n) => n._id === noteId) ? [...list, updated] : list;
-          } else if (!updated?.showInHome) {
+          } else {
             return without(list, noteId);
           }
         }
@@ -483,18 +505,33 @@ export const useMoveNoteMutation = () => {
           ? list.map((n) => (n._id === noteId ? updated : n))
           : list;
       });
+      return { ...patchResult, previousNote: noteSnapshot };
     },
     onSuccess: (data, variables) => {
       useToastStore.getState().showToast("Note moved successfully", "success");
       if (variables?.noteId && variables?.targetFolderId !== undefined) {
-        useTabsStore.getState().updateTabState(variables.noteId, { folderId: variables.targetFolderId });
+        const nextShowInHome = data?.note?.showInHome;
+        useTabsStore.getState().updateTabState(variables.noteId, {
+          folderId: variables.targetFolderId,
+          ...(nextShowInHome !== undefined ? { showInHome: nextShowInHome } : {}),
+        });
         const baseline = editorRegistry.getBaseline(variables.noteId);
         if (baseline) {
-          editorRegistry.setBaseline(variables.noteId, { ...baseline, folderId: variables.targetFolderId });
+          editorRegistry.setBaseline(variables.noteId, {
+            ...baseline,
+            folderId: variables.targetFolderId,
+          });
         }
       }
     },
-    onError: (error, _variables, context) => {
+    onError: (error, variables, context) => {
+      const noteId = noteIdOf(variables);
+      if (noteId && context?.previousNote && useTabsStore.getState().isTabOpen(noteId)) {
+        useTabsStore.getState().updateTabState(noteId, {
+          folderId: context.previousNote.folderId,
+          showInHome: context.previousNote.showInHome,
+        });
+      }
       restoreNoteLists(queryClient, context);
       useToastStore.getState().showToast(error.response?.data?.message || "Failed to move note", "error");
     },

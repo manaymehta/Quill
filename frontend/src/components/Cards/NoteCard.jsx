@@ -406,7 +406,15 @@ const NoteCard = ({
     if (!isMenuOpen) return;
 
     const handleOutsideClick = (e) => {
+      if (skipReleaseTapRef.current) {
+        skipReleaseTapRef.current = false;
+        e.stopPropagation();
+        e.preventDefault();
+        return;
+      }
       if (e.target.closest?.('[data-note-menu]')) return;
+      e.stopPropagation();
+      e.preventDefault();
       setActiveDropdownNoteId(null);
     };
     const handleScroll = () => {

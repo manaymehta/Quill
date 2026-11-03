@@ -10,6 +10,7 @@ import { CSS } from '@dnd-kit/utilities';
 import MoveToPicker from '../../components/Cards/MoveToPicker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFoldersQuery, QUERY_KEYS } from '../../hooks/useNotesQuery';
+import { findCachedNote } from '../../hooks/useNoteMutations';
 import { useToastStore } from '../../store/useToastStore';
 import { editorRegistry } from '../../utils/editorRegistry';
 import { generateObjectId } from '../../utils/objectId';
@@ -521,7 +522,24 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       const isDraft = Boolean(noteData?.isDraft || type === 'add');
       const targetNoteId = isDraft ? generateObjectId() : currentNoteId;
 
-      const showInHome = Boolean(noteData?.showInHome);
+      const originalFolderId = noteData?.folderId || null;
+      const currentEffectiveFolderId = folderId || null;
+      const folderChanged = originalFolderId !== currentEffectiveFolderId;
+
+      const cachedNote = !isDraft && targetNoteId ? findCachedNote(queryClient, targetNoteId) : null;
+      const baseShowInHome = cachedNote?.showInHome !== undefined
+        ? Boolean(cachedNote.showInHome)
+        : Boolean(noteData?.showInHome);
+
+      let effectiveShowInHome = baseShowInHome;
+      if (folderChanged) {
+        if (!currentEffectiveFolderId) {
+          effectiveShowInHome = false;
+        } else if (!originalFolderId) {
+          effectiveShowInHome = true;
+        }
+      }
+
       const noteObject = {
         _id: targetNoteId,
         title: title || " ",
@@ -529,8 +547,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         tags,
         isChecklist,
         checklist: cleanedChecklist,
-        folderId: folderId || null,
-        showInHome,
+        folderId: currentEffectiveFolderId,
+        showInHome: effectiveShowInHome,
         linkPreviews: immediatePreviews,
         createdAt: noteData?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -546,13 +564,44 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDER_NOTE_COUNTS });
         }
       } else {
-        const patchNoteInList = (list) => list.map((n) => (n._id === targetNoteId ? { ...n, ...noteObject } : n));
         const previous = queryClient.getQueriesData({ queryKey: QUERY_KEYS.NOTES });
         for (const [key, list] of previous) {
           if (!Array.isArray(list)) continue;
-          if (list.some((n) => n._id === targetNoteId)) {
-            queryClient.setQueryData(key, patchNoteInList(list));
+          const name = key[1];
+          if (name === 'home') {
+            const belongsInHome = !noteObject.folderId || noteObject.showInHome === true;
+            if (belongsInHome) {
+              if (list.some((n) => n._id === targetNoteId)) {
+                queryClient.setQueryData(key, list.map((n) => (n._id === targetNoteId ? { ...n, ...noteObject } : n)));
+              }
+            } else {
+              if (list.some((n) => n._id === targetNoteId)) {
+                queryClient.setQueryData(key, list.filter((n) => n._id !== targetNoteId));
+              }
+            }
+          } else if (name === 'folder') {
+            const folderIdParam = key[2];
+            const belongsInThisFolder = Boolean(noteObject.folderId) && String(noteObject.folderId) === String(folderIdParam);
+            if (belongsInThisFolder) {
+              if (list.some((n) => n._id === targetNoteId)) {
+                queryClient.setQueryData(key, list.map((n) => (n._id === targetNoteId ? { ...n, ...noteObject } : n)));
+              } else {
+                queryClient.setQueryData(key, [...list, noteObject]);
+              }
+            } else {
+              if (list.some((n) => n._id === targetNoteId)) {
+                queryClient.setQueryData(key, list.filter((n) => n._id !== targetNoteId));
+              }
+            }
+          } else {
+            if (list.some((n) => n._id === targetNoteId)) {
+              queryClient.setQueryData(key, list.map((n) => (n._id === targetNoteId ? { ...n, ...noteObject } : n)));
+            }
           }
+        }
+        if (folderChanged) {
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.FOLDER_NOTE_COUNTS });
         }
       }
 
@@ -574,10 +623,14 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         isChecklist: noteObject.isChecklist,
         checklist: noteObject.checklist,
         folderId: noteObject.folderId,
-        showInHome: noteObject.showInHome,
         linkPreviews: noteObject.linkPreviews,
       };
-      if (isDraft) savePayload._id = targetNoteId;
+      if (isDraft) {
+        savePayload._id = targetNoteId;
+        savePayload.showInHome = noteObject.showInHome;
+      } else if (folderChanged) {
+        savePayload.showInHome = noteObject.showInHome;
+      }
 
       const performSave = async (retryCount = 0) => {
         try {
@@ -1082,6 +1135,11 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                   autoFocus={isActive && !isChecklist && !isMobileOrTouchScreen}
                   keepOnClose={canWriteBackOnClose}
                   keyboardOverlap={keyboardOverlap}
+                  onPasteText={(pastedText) => {
+                    const urls = pastedText.match(/(https?:\/\/[^\s]+)/g) || [];
+                    const cleanUrls = urls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
+                    cleanUrls.forEach(url => fetchPreview(url));
+                  }}
                 />
               </Suspense>
             </div>
@@ -1111,7 +1169,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
           {/* Link Previews list */}
           {linkPreviews.length > 0 && (
-            <div className={`flex flex-col gap-3 mt-3 border-t border-black/5 pt-2.5 shrink-0 font-sans ${isLinkPreviewsOpen ? 'pb-3' : 'pb-1'}`}>
+            <div className={`flex flex-col gap-2 mt-2.5 border-t border-black/5 pt-2 shrink-0 font-sans ${isLinkPreviewsOpen ? 'pb-1' : 'pb-0.5'}`}>
               <button
                 type="button"
                 onClick={toggleLinkPreviews}
@@ -1142,7 +1200,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                       }
                     }
                   }}
-                  className="flex gap-2.5 overflow-x-auto pb-1.5 previews-scrollbar py-0.5"
+                  className="flex gap-2 overflow-x-auto pb-1 previews-scrollbar py-0.5"
                 >
                   {linkPreviews.map((preview, idx) => (
                     <a 
@@ -1150,18 +1208,18 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                       href={preview.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="group/preview relative bg-[#ebe0d3]/60 hover:bg-[#e4d7c8]/80 border border-[#e0d2bf] rounded-xl p-3 flex gap-3 items-center w-[250px] sm:w-[280px] shrink-0 min-w-0 cursor-pointer transition-colors"
+                      className="group/preview relative bg-[#ebe0d3]/60 hover:bg-[#e4d7c8]/80 border border-[#e0d2bf] rounded-lg px-2.5 py-2 flex gap-2.5 items-center w-[210px] sm:w-[235px] shrink-0 min-w-0 cursor-pointer transition-colors"
                     >
                       {preview.image && (
                         <img 
                           src={preview.image} 
                           alt={preview.title} 
-                          className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                          className="w-9 h-9 sm:w-10 sm:h-10 rounded-md object-cover flex-shrink-0"
                         />
                       )}
-                      <div className="flex-grow min-w-0 pr-7">
-                        <h5 className="text-xs md:text-sm font-semibold text-[#333] truncate leading-snug">{preview.title || preview.url}</h5>
-                        <span className="text-[10px] md:text-xs text-stone-500 font-medium truncate block mt-0.5 uppercase tracking-wide">{preview.siteName}</span>
+                      <div className="flex-grow min-w-0 pr-5">
+                        <h5 className="text-xs font-semibold text-[#333] truncate leading-tight">{preview.title || preview.url}</h5>
+                        <span className="text-[10px] text-stone-500 font-medium truncate block mt-0.5 uppercase tracking-wider">{preview.siteName}</span>
                       </div>
                       <button 
                         type="button"
@@ -1170,10 +1228,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                           e.stopPropagation();
                           handleRemoveLinkPreview(preview.url);
                         }}
-                        className="absolute top-2 right-2 p-1 rounded-full text-stone-400 hover:text-[#e85d56] hover:bg-black/5 transition-colors cursor-pointer"
+                        className="absolute top-1.5 right-1.5 p-0.5 rounded-full text-stone-400 hover:text-[#e85d56] hover:bg-black/5 transition-colors cursor-pointer"
                         title="Remove preview"
                       >
-                        <MdClose size={13} />
+                        <MdClose size={12} />
                       </button>
                       {isSimplePreview(preview) && (
                         <button 
@@ -1184,10 +1242,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                             handleRefreshPreview(preview.url);
                           }}
                           disabled={refreshingUrls.has(preview.url)}
-                          className="absolute bottom-2 right-2 p-1 rounded-full text-stone-400 hover:text-stone-700 hover:bg-black/5 transition-colors cursor-pointer disabled:opacity-50"
+                          className="absolute bottom-1.5 right-1.5 p-0.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-black/5 transition-colors cursor-pointer disabled:opacity-50"
                           title="Refresh preview"
                         >
-                          <MdRefresh size={13} className={refreshingUrls.has(preview.url) ? "animate-spin text-stone-600" : ""} />
+                          <MdRefresh size={12} className={refreshingUrls.has(preview.url) ? "animate-spin text-stone-600" : ""} />
                         </button>
                       )}
                     </a>

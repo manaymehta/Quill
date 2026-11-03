@@ -464,11 +464,10 @@ const TabDock = () => {
     };
   }, []);
 
-  // Opening the list takes two or more notes (handleTouchStart), but once open it stays open as you
-  // close notes from it, down to the last one; it used to close at one note left (so with two open,
-  // its ✕ always closed it). With none left it's closed, so a note opened later can't bring it back.
-  const showHoldMenu = isHoldMenuOpen && isMobile && openTabs.length > 0;
-  if (isHoldMenuOpen && openTabs.length === 0) setIsHoldMenuOpen(false);
+  // Opening the list takes two or more notes (handleTouchStart); closing notes down to one
+  // dismisses it, since a single remaining note is already visible and docked in the strip.
+  const showHoldMenu = isHoldMenuOpen && isMobile && openTabs.length > 1;
+  if (isHoldMenuOpen && openTabs.length <= 1) setIsHoldMenuOpen(false);
 
   // Expanded from the dot: a tap outside the dock shrinks it back, and only does that (see
   // useOutsidePress: it can't focus the editor, open the keyboard or press anything under it).

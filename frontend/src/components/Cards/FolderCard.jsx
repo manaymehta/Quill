@@ -62,11 +62,25 @@ const FolderCard = ({
         touchAction: isDragging ? 'none' : 'pan-y',
     };
 
+    const longPressTimerRef = useRef(null);
+    const touchStartPosRef = useRef({ x: 0, y: 0 });
+    // Set when a long-press opens the menu: the tap some browsers send as the finger lifts must not
+    // close it again. Only that one tap: cleared when the next touch starts (most browsers send none).
+    const skipReleaseTapRef = useRef(false);
+
     // Auto-close dropdown when clicking outside anywhere or on scroll
     useEffect(() => {
         if (!showDropdown) return;
         const handleOutsideClick = (e) => {
+            if (skipReleaseTapRef.current) {
+                skipReleaseTapRef.current = false;
+                e.stopPropagation();
+                e.preventDefault();
+                return;
+            }
             if (e.target.closest?.('[data-folder-menu]')) return;
+            e.stopPropagation();
+            e.preventDefault();
             setActiveDropdownFolderId(null);
         };
         const handleScroll = () => {
@@ -82,12 +96,6 @@ const FolderCard = ({
             document.removeEventListener('scroll', handleScroll, { capture: true });
         };
     }, [showDropdown, setActiveDropdownFolderId]);
-
-    const longPressTimerRef = useRef(null);
-    const touchStartPosRef = useRef({ x: 0, y: 0 });
-    // Set when a long-press opens the menu: the tap some browsers send as the finger lifts must not
-    // close it again. Only that one tap: cleared when the next touch starts (most browsers send none).
-    const skipReleaseTapRef = useRef(false);
 
     useEffect(() => {
         return () => {

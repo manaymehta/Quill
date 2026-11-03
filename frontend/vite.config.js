@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
     ],
     server: {
+      host: true,
       proxy: {
         "/api/v1": {
           target: env.API_PROXY_TARGET || "http://localhost:8080",

@@ -16,17 +16,64 @@ const KEYBOARD_GAP_PX = 24;
 let keyboardMarginPx = 0;
 const keyboardScrollMargin = EditorView.scrollMargins.of(() => ({ bottom: keyboardMarginPx }));
 
+// Mobile keyboard integration:
+// 1. Enable rich prose attributes on the contenteditable DOM so Gboard / mobile keyboards enable
+//    autocorrect, sentence capitalization, spellcheck, swipe-typing, and spacebar cursor sliding
+//    (CodeMirror defaults to autocorrect="off", spellcheck="false" intended for code editors).
+const proseContentAttributes = EditorView.contentAttributes.of({
+  autocorrect: 'on',
+  autocapitalize: 'sentences',
+  spellcheck: 'true',
+  autocomplete: 'on',
+  writingsuggestions: 'true',
+  inputmode: 'text',
+});
+
 // Phones (Chrome on Android): the keyboard opens only on a tap that places the cursor, not when you
 // long-press or drag to select text (it used to open on any focus, shifting the text you were
 // selecting up above it). The text area asks for the keyboard itself (virtualkeyboardpolicy=manual);
 // a long-press is taken over by the browser's selection (pointercancel) or lasts too long to count
 // as a tap. Other browsers keep their own behaviour.
+// In addition, we listen for beforeinput replacement/paste events so Gboard clipboard strip chips
+// and predictive commits are inserted cleanly without browser DOM desync.
 const TAP_MAX_MS = 400;
 const TAP_MAX_MOVE_PX = 10;
 const showKeyboard = () => navigator.virtualKeyboard?.show();
-const keyboardOnTapOnly = (view) => {
-  if (!navigator.virtualKeyboard) return;
+const setupMobileHandlers = (view, onPasteTextRef) => {
   const dom = view.contentDOM;
+  if (!dom) return;
+
+  // Handle Gboard / Android clipboard suggestion chips and text replacements
+  dom.addEventListener('beforeinput', (e) => {
+    if (e.inputType === 'insertReplacementText' || e.inputType === 'insertFromPaste') {
+      const text = e.dataTransfer?.getData('text/plain') || e.data;
+      if (text) {
+        e.preventDefault();
+        const { state } = view;
+        const targetRanges = typeof e.getTargetRanges === 'function' ? e.getTargetRanges() : [];
+        let from = state.selection.main.from;
+        let to = state.selection.main.to;
+        if (targetRanges.length > 0) {
+          try {
+            const r = targetRanges[0];
+            from = view.posAtDOM(r.startContainer, r.startOffset);
+            to = view.posAtDOM(r.endContainer, r.endOffset);
+          } catch {
+            // fallback to current selection
+          }
+        }
+        view.dispatch({
+          changes: { from, to, insert: text },
+          selection: { anchor: from + text.length },
+          userEvent: 'input.paste',
+          scrollIntoView: true,
+        });
+        onPasteTextRef?.current?.(text);
+      }
+    }
+  });
+
+  if (!navigator.virtualKeyboard) return;
   dom.setAttribute('virtualkeyboardpolicy', 'manual');
   let down = null;
   dom.addEventListener('pointerdown', (e) => {
@@ -55,6 +102,7 @@ const EDITOR_EXTENSIONS = [
   hideMarkdownSyntax,
   lineWrap,
   keyboardScrollMargin,
+  proseContentAttributes,
   keymap.of([
     { key: 'Mod-Shift-z', run: redo, preventDefault: true },
   ]),
@@ -78,7 +126,12 @@ const EDITOR_BASIC_SETUP = {
 // history) from the in-memory registry; when it closes, saves that snapshot if keepOnClose() says
 // the tab is still open and unchanged from outside (a closed tab or an outside change drops it).
 // keyboardOverlap: how much of the scroll area the on-screen keyboard covers (px, 0 when closed).
-const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepOnClose, keyboardOverlap = 0 }) => {
+const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepOnClose, keyboardOverlap = 0, onPasteText }) => {
+  const onPasteTextRef = useRef(onPasteText);
+  useEffect(() => {
+    onPasteTextRef.current = onPasteText;
+  }, [onPasteText]);
+
   const initialState = useMemo(() => {
     const snapshot = editorRegistry.getEditorSnapshot(noteId);
     return snapshot ? { json: snapshot, fields: SNAPSHOT_FIELDS } : undefined;
@@ -116,7 +169,7 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
       onChange={onChange}
       onCreateEditor={(view) => {
         viewRef.current = view;
-        keyboardOnTapOnly(view);
+        setupMobileHandlers(view, onPasteTextRef);
         if (autoFocus) view.focus();
       }}
       extensions={EDITOR_EXTENSIONS}

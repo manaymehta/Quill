@@ -23,7 +23,19 @@ export const useTabsStore = create((set, get) => ({
 
     const existing = get().openTabs.find((t) => t._id === note._id);
     if (existing) {
-      set({ activeTabId: note._id });
+      set({
+        activeTabId: note._id,
+        openTabs: get().openTabs.map((t) =>
+          t._id === note._id
+            ? {
+                ...t,
+                folderId: note.folderId !== undefined ? note.folderId : t.folderId,
+                showInHome: note.showInHome !== undefined ? note.showInHome : t.showInHome,
+                isArchived: note.isArchived !== undefined ? note.isArchived : t.isArchived,
+              }
+            : t
+        ),
+      });
       return true;
     }
 
