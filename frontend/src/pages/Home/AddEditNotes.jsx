@@ -1110,13 +1110,16 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                onClick={(e) => {
                  if (e.target === e.currentTarget && cmViewRef.current) {
                    const view = cmViewRef.current;
-                   view.focus();
                    view.dispatch({
                      selection: { anchor: view.state.doc.length },
                    });
-                   // On phones the text area only asks for the keyboard on a tap that places the
-                   // cursor (MarkdownEditor); a tap below the text does that too
-                   if (e.nativeEvent.pointerType === 'touch') navigator.virtualKeyboard?.show();
+                   // Tap below text moves cursor to end and opens keyboard on mobile
+                   const isTouch = e.nativeEvent?.pointerType === 'touch' || isMobileOrTouch();
+                   if (isTouch && typeof view.focusForTyping === 'function') {
+                     view.focusForTyping();
+                   } else {
+                     view.focus();
+                   }
                  }
                }}
                onPaste={(event) => {

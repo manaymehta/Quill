@@ -17,14 +17,8 @@ export const fullscreenToolbarHeight = (dockMetrics) => dockMetrics.height[1] + 
 export const EDITOR_TOOLBAR_DOT_SLOT_MARGIN_PX = 8;
 
 export const EDITOR_CARD_STYLE = {
-  borderWidth: 1,
-  // The bottom border goes to 0 width in full screen (its sides keep 1px, so the text column never
-  // shifts): a 1px invisible bottom border lifted the toolbar 1px off the screen's bottom edge, so the
-  // dock's dot — measured from that edge — sat that much below the toolbar's centre.
-  borderBottomWidth: 'calc(1px * var(--editor-chrome, 1))',
-  borderStyle: 'solid',
+  border: 'none',
   borderRadius: `var(--editor-radius, ${EDITOR_RADIUS_PX}px)`,
-  borderColor: 'rgb(232 220 200 / var(--editor-chrome, 1))',
   // Tailwind's shadow-sm, faded with the chrome
   boxShadow: '0 1px 3px 0 rgb(0 0 0 / calc(0.1 * var(--editor-chrome, 1))), 0 1px 2px -1px rgb(0 0 0 / calc(0.1 * var(--editor-chrome, 1)))',
 };

@@ -3,18 +3,19 @@ import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { historyField, redo } from '@codemirror/commands';
 import { keymap, EditorView } from '@codemirror/view';
+import { Compartment } from '@codemirror/state';
 import { quillTheme, quillMarkdownHighlight, hideMarkdownSyntax, lineWrap } from '../../utils/markdownEditor';
 import { editorRegistry } from '../../utils/editorRegistry';
 
 // Everything in the editor that needs CodeMirror (~600 kB), kept in its own chunk so the rest of the
 // editor (toolbar, title, tags, checklist, buttons) shows at once: see markdownEditorLoader.
 
-// With the on-screen keyboard over the editor (utils/virtualKeyboard), the cursor is kept this far
-// above it: CodeMirror treats the covered part of the scroll area as out of view. Set from the open
-// editor's keyboardOverlap (one text area is live at a time).
+// Scoped scroll margin keeps cursor above virtual keyboard without leaking across editor instances
 const KEYBOARD_GAP_PX = 24;
-let keyboardMarginPx = 0;
-const keyboardScrollMargin = EditorView.scrollMargins.of(() => ({ bottom: keyboardMarginPx }));
+const keyboardMarginCompartment = new Compartment();
+const keyboardScrollMargin = keyboardMarginCompartment.of(
+  EditorView.scrollMargins.of(() => null)
+);
 
 // Mobile keyboard integration:
 // 1. Enable rich prose attributes on the contenteditable DOM so Gboard / mobile keyboards enable
@@ -26,25 +27,35 @@ const proseContentAttributes = EditorView.contentAttributes.of({
   spellcheck: 'true',
   autocomplete: 'on',
   writingsuggestions: 'true',
-  inputmode: 'text',
 });
 
-// Phones (Chrome on Android): the keyboard opens only on a tap that places the cursor, not when you
-// long-press or drag to select text (it used to open on any focus, shifting the text you were
-// selecting up above it). The text area asks for the keyboard itself (virtualkeyboardpolicy=manual);
-// a long-press is taken over by the browser's selection (pointercancel) or lasts too long to count
-// as a tap. Other browsers keep their own behaviour.
-// In addition, we listen for beforeinput replacement/paste events so Gboard clipboard strip chips
-// and predictive commits are inserted cleanly without browser DOM desync.
-const TAP_MAX_MS = 400;
-const TAP_MAX_MOVE_PX = 10;
+// Phones: dual-layer keyboard management.
+// - Layer 1 (virtualkeyboardpolicy): 'manual' on selection avoids popups/scrolling; 'auto' on tap binds Gboard.
+// - Layer 2 (inputmode): 'none' suppresses keyboard on selection; 'text' enables typing.
+// Thresholds (500ms / 25px) accommodate natural thumb contact squish without dropping taps.
+const TAP_MAX_MS = 500;
+const TAP_MAX_MOVE_PX = 25;
 const showKeyboard = () => navigator.virtualKeyboard?.show();
+
+// Detect open keyboard via VirtualKeyboard API (HTTPS) or visualViewport shrinkage (HTTP fallback)
+const isKeyboardOpen = () => {
+  const vk = navigator.virtualKeyboard;
+  if (vk && typeof vk.boundingRect?.height === 'number') {
+    return vk.boundingRect.height > 0;
+  }
+  const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+  if (vv && window.innerHeight > 0) {
+    return (window.innerHeight - vv.height) > 100;
+  }
+  return false;
+};
+
 const setupMobileHandlers = (view, onPasteTextRef) => {
   const dom = view.contentDOM;
-  if (!dom) return;
+  if (!dom) return undefined;
 
   // Handle Gboard / Android clipboard suggestion chips and text replacements
-  dom.addEventListener('beforeinput', (e) => {
+  const handleBeforeInput = (e) => {
     if (e.inputType === 'insertReplacementText' || e.inputType === 'insertFromPaste') {
       const text = e.dataTransfer?.getData('text/plain') || e.data;
       if (text) {
@@ -71,25 +82,116 @@ const setupMobileHandlers = (view, onPasteTextRef) => {
         onPasteTextRef?.current?.(text);
       }
     }
-  });
+  };
+  dom.addEventListener('beforeinput', handleBeforeInput);
 
-  if (!navigator.virtualKeyboard) return;
-  dom.setAttribute('virtualkeyboardpolicy', 'manual');
+  // Toggle typing ('text'/'auto') vs selection-suppression ('none'/'manual').
+  // Attribute equality guards prevent redundant DOM writes and recalculations on touch.
+  const setArmedState = (typing) => {
+    if (typing) {
+      if (dom.getAttribute('inputmode') !== 'text') {
+        dom.setAttribute('inputmode', 'text');
+      }
+      if (navigator.virtualKeyboard && dom.getAttribute('virtualkeyboardpolicy') !== 'auto') {
+        dom.setAttribute('virtualkeyboardpolicy', 'auto');
+      }
+    } else {
+      if (dom.getAttribute('inputmode') !== 'none') {
+        dom.setAttribute('inputmode', 'none');
+      }
+      if (navigator.virtualKeyboard && dom.getAttribute('virtualkeyboardpolicy') !== 'manual') {
+        dom.setAttribute('virtualkeyboardpolicy', 'manual');
+      }
+    }
+  };
+
+  // Initial state while the keyboard is closed: suppress keyboard on touch-and-hold selection
+  setArmedState(false);
+
+  // On HTTP, Android ignores view.focus() if already focused; the momentary blur/focus cycle
+  // forces Android to recognize inputmode='text' and open the soft keyboard.
+  let isInternalRefocus = false;
+  const focusEditorForTyping = () => {
+    setArmedState(true);
+    if (navigator.virtualKeyboard) {
+      view.focus();
+      showKeyboard();
+    } else {
+      if (document.activeElement === dom) {
+        isInternalRefocus = true;
+        dom.blur();
+        view.focus();
+        isInternalRefocus = false;
+      } else {
+        view.focus();
+      }
+    }
+  };
+  // Expose focus pipeline on view so parent containers (e.g. AddEditNotes empty-space click) reuse it
+  view.focusForTyping = focusEditorForTyping;
+
   let down = null;
-  dom.addEventListener('pointerdown', (e) => {
-    down = e.pointerType === 'touch' ? { at: e.timeStamp, x: e.clientX, y: e.clientY } : null;
-  });
-  dom.addEventListener('pointercancel', () => { down = null; });
-  dom.addEventListener('pointerup', (e) => {
+  const onPointerDown = (e) => {
+    if (e.pointerType !== 'touch') {
+      down = null;
+      return;
+    }
+    down = { at: e.timeStamp, x: e.clientX, y: e.clientY };
+
+    // Disarm on touch down if keyboard is closed so hold-to-select doesn't pop keyboard
+    if (!isKeyboardOpen() && dom.getAttribute('inputmode') !== 'none') {
+      setArmedState(false);
+    }
+  };
+  const onPointerCancel = () => { down = null; };
+  const onPointerUp = (e) => {
     if (!down || e.pointerType !== 'touch') return;
     const isTap = e.timeStamp - down.at < TAP_MAX_MS && Math.hypot(e.clientX - down.x, e.clientY - down.y) < TAP_MAX_MOVE_PX;
     down = null;
     if (!isTap) return;
-    // After the tap has placed the cursor; a tap that left text selected doesn't open it
+    // Next tick lets browser place the cursor; keep closed if tap resulted in text selection
     setTimeout(() => {
-      if (view.hasFocus && view.state.selection.main.empty) showKeyboard();
+      if (view.state.selection.main.empty) {
+        focusEditorForTyping();
+      }
     }, 0);
-  });
+  };
+
+  const onBlur = () => {
+    if (isInternalRefocus) return;
+    setArmedState(false);
+  };
+
+  // Android back button dismisses keyboard without firing blur; catch dismissal to disarm
+  const onGeometryChange = () => {
+    if (!isKeyboardOpen()) {
+      setArmedState(false);
+    }
+  };
+
+  const onVisualViewportResize = () => {
+    if (!isKeyboardOpen()) {
+      setArmedState(false);
+    }
+  };
+
+  dom.addEventListener('pointerdown', onPointerDown);
+  dom.addEventListener('pointercancel', onPointerCancel);
+  dom.addEventListener('pointerup', onPointerUp);
+  dom.addEventListener('blur', onBlur);
+  navigator.virtualKeyboard?.addEventListener('geometrychange', onGeometryChange);
+  window.visualViewport?.addEventListener('resize', onVisualViewportResize);
+
+  return () => {
+    delete view.focusForTyping;
+    dom.removeEventListener('beforeinput', handleBeforeInput);
+    dom.removeEventListener('pointerdown', onPointerDown);
+    dom.removeEventListener('pointercancel', onPointerCancel);
+    dom.removeEventListener('pointerup', onPointerUp);
+    dom.removeEventListener('blur', onBlur);
+    navigator.virtualKeyboard?.removeEventListener('geometrychange', onGeometryChange);
+    window.visualViewport?.removeEventListener('resize', onVisualViewportResize);
+  };
 };
 
 // State fields persisted in editor snapshots (used for both toJSON and fromJSON)
@@ -141,6 +243,12 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
   useEffect(() => {
     keepOnCloseRef.current = keepOnClose;
   }, [keepOnClose]);
+
+  const cleanupMobileHandlersRef = useRef(null);
+  useEffect(() => () => {
+    cleanupMobileHandlersRef.current?.();
+  }, []);
+
   useEffect(() => () => {
     const view = viewRef.current;
     if (view && keepOnCloseRef.current?.()) {
@@ -148,16 +256,21 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
     }
   }, [noteId, viewRef]);
 
-  // The keyboard opening (or resizing): keep the cursor above it, scrolling only the editor's own
-  // area, and only if the keyboard covers it
+  // Update instance scroll margin when keyboard resizes and scroll cursor into view
   useEffect(() => {
-    keyboardMarginPx = keyboardOverlap > 0 ? keyboardOverlap + KEYBOARD_GAP_PX : 0;
     const view = viewRef.current;
-    if (keyboardOverlap > 0 && view?.hasFocus) {
-      view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head, { y: 'nearest' }) });
+    if (!view) return;
+    const margin = keyboardOverlap > 0 ? keyboardOverlap + KEYBOARD_GAP_PX : 0;
+    const effects = [
+      keyboardMarginCompartment.reconfigure(
+        EditorView.scrollMargins.of(() => (margin > 0 ? { bottom: margin } : null))
+      ),
+    ];
+    if (keyboardOverlap > 0 && view.hasFocus) {
+      effects.push(EditorView.scrollIntoView(view.state.selection.main.head, { y: 'nearest' }));
     }
+    view.dispatch({ effects });
   }, [keyboardOverlap, viewRef]);
-  useEffect(() => () => { keyboardMarginPx = 0; }, []);
 
   // (No snapshot on every keystroke or cursor move: the save above, when the text area closes, is the one
   // that's read back. onChange must stay a stable function: @uiw/react-codemirror reconfigures the whole
@@ -169,7 +282,20 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
       onChange={onChange}
       onCreateEditor={(view) => {
         viewRef.current = view;
-        setupMobileHandlers(view, onPasteTextRef);
+        cleanupMobileHandlersRef.current?.();
+        cleanupMobileHandlersRef.current = setupMobileHandlers(view, onPasteTextRef);
+        if (keyboardOverlap > 0) {
+          const margin = keyboardOverlap + KEYBOARD_GAP_PX;
+          const effects = [
+            keyboardMarginCompartment.reconfigure(
+              EditorView.scrollMargins.of(() => ({ bottom: margin }))
+            ),
+          ];
+          if (view.hasFocus) {
+            effects.push(EditorView.scrollIntoView(view.state.selection.main.head, { y: 'nearest' }));
+          }
+          view.dispatch({ effects });
+        }
         if (autoFocus) view.focus();
       }}
       extensions={EDITOR_EXTENSIONS}
