@@ -291,7 +291,7 @@ const Graph = () => {
     for (const [, data] of noteQueries) {
       if (Array.isArray(data)) {
         const found = data.find((n) => n._id === node.id);
-        if (found && (found.content !== undefined || found.checklist !== undefined)) {
+        if (found && found.content !== undefined) {
           fullNote = found;
           break;
         }

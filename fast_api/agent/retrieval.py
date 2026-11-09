@@ -85,7 +85,7 @@ def fuse(meaning: dict[str, Candidate], keyword_hits: list[dict[str, Any]]) -> l
         cand = merged.setdefault(hit["noteId"], Candidate(note_id=hit["noteId"]))
         cand.rrf += 1 / (RRF_K + rank)
         for how in hit.get("matchedBy", []):
-            cand.matched_by.add({"content": "word", "checklist": "word"}.get(how, how))
+            cand.matched_by.add(how)
         window = (hit.get("window") or "").strip()
         if window and not any(window[:80] in e.text for e in cand.excerpts):
             # Ranked just under the note's best meaning piece (or as its only text).

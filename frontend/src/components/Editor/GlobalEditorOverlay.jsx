@@ -271,29 +271,12 @@ const GlobalEditorOverlay = () => {
                 </div>
               )}
 
-              {tab.isChecklist && tab.checklist?.length > 0 ? (
-                <div className="flex flex-col gap-3">
-                  {tab.checklist.slice(0, 6).map((item, i) => (
-                    <div key={i} className="flex items-center gap-3 text-lg text-[#555]">
-                      <div
-                        className={`w-4 h-4 rounded-sm border-2 border-[#aaa] flex-shrink-0 ${
-                          item.completed ? 'bg-[#aaa]' : ''
-                        }`}
-                      />
-                      <span className={`truncate ${item.completed ? 'line-through opacity-50' : ''}`}>
-                        {item.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p
-                  className="text-lg text-[#666] leading-relaxed line-clamp-[10]"
-                  style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-                >
-                  {(tab.content || '').slice(0, 400)}
-                </p>
-              )}
+              <p
+                className="text-lg text-[#666] leading-relaxed line-clamp-[10]"
+                style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+              >
+                {(tab.content || '').slice(0, 400)}
+              </p>
             </div>
           </div>
         );

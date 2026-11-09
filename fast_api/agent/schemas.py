@@ -31,12 +31,6 @@ class Citation(BaseModel):
 MAX_UNSAVED_NOTES = 12
 MAX_UNSAVED_CONTENT_CHARS = 20_000
 MAX_UNSAVED_TAGS = 50
-MAX_UNSAVED_CHECKLIST_ITEMS = 100
-
-
-class UnsavedChecklistItem(BaseModel):
-    text: str = Field(default="", max_length=2000)
-    completed: bool = False
 
 
 class UnsavedNote(BaseModel):
@@ -49,10 +43,6 @@ class UnsavedNote(BaseModel):
     title: str = Field(default="", max_length=MAX_WORKING_SET_TITLE_CHARS)
     content: str = Field(default="", max_length=MAX_UNSAVED_CONTENT_CHARS)
     tags: list[str] = Field(default_factory=list, max_length=MAX_UNSAVED_TAGS)
-    isChecklist: bool = False
-    checklist: list[UnsavedChecklistItem] = Field(
-        default_factory=list, max_length=MAX_UNSAVED_CHECKLIST_ITEMS
-    )
 
 
 class AgentScopes(BaseModel):
@@ -108,8 +98,6 @@ class AgentDraft(BaseModel):
     title: str | None = None
     content: str | None = None
     tags: list[str] | None = None
-    isChecklist: bool | None = None
-    checklist: list[dict[str, Any]] | None = None
     folderId: str | None = None     # for create; None = unfiled/home
     # Edit made on the user's unsaved tab text, not the saved note: the
     # browser asks before applying it (Apply / Apply & save / Skip).

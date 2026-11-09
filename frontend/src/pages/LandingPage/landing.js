@@ -341,7 +341,7 @@ export function startLanding(root) {
     render();
   })();
 
-  // Notes wall: checklists tick, as on a card in the app
+  // Notes wall: checkboxes tick, as on a card in the app
   root.querySelectorAll('.ck').forEach((c) => c.addEventListener('click', () => c.setAttribute('aria-checked', String(c.getAttribute('aria-checked') !== 'true')), sig));
   // Notes wall arrival: the cards are set down one after another, then someone ticks off an item
   (() => {

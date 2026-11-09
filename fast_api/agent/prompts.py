@@ -33,7 +33,7 @@ What I can't do:
 - Search the web or anything outside your notes."""
 
 _APP_BRIEFING = """About Quill, the app you live in — rely on these facts, do not invent others:
-- Notes have a title, text content, tags, and can be checklists (items that can be ticked off). Links in a note get preview cards automatically.
+- Notes have a title, text content, tags, and can contain checkboxes written as GFM task lines (`- [ ]` open, `- [x]` done). Links in a note get preview cards automatically.
 - FOLDERS can be nested inside each other. Notes not in a folder live on the home dashboard. A note inside a folder can also be shown on the home dashboard ("show in home").
 - ARCHIVED notes are hidden from the main feed and kept on the Archive page.
 - TRASH holds deleted notes and folders; the user can restore them or delete them permanently from the Trash page. You cannot see the trash.

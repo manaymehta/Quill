@@ -1,6 +1,6 @@
 """Offline check of the two fixes from the Phase 1 browser test (no network):
 
-1. Read before rewrite: stage_note_edit refuses a content/checklist change to
+1. Read before rewrite: stage_note_edit refuses a content change to
    a note not read with get_note in this turn (the agent once rewrote a note
    from memory and dropped the user's unsaved line). Title/tag-only edits
    don't need a read. The loop recovers: refused → get_note → edit.
@@ -20,8 +20,8 @@ from agent.schemas import Citation
 from agent.tools import ToolContext
 
 NOTE_ID = "0123456789abcdef01234567"
-SAVED = {"_id": NOTE_ID, "title": "Trip", "content": "Passport\nCharger", "tags": [], "isChecklist": False, "checklist": []}
-UNSAVED = {"title": "Trip", "content": "Passport\nCharger\nMy unsaved line", "tags": [], "isChecklist": False, "checklist": []}
+SAVED = {"_id": NOTE_ID, "title": "Trip", "content": "Passport\nCharger", "tags": []}
+UNSAVED = {"title": "Trip", "content": "Passport\nCharger\nMy unsaved line", "tags": []}
 
 
 async def fake_call(ctx, method, path, summary, **kwargs):

@@ -70,19 +70,19 @@ async def main():
         return {
             "notes": {
                 A: {"status": "ok", "title": "Alpha", "folder": "Work", "tags": ["ops"], "isArchived": False,
-                    "isChecklist": False, "lastEdited": "2026-10-01T10:00:00Z"},
+                    "lastEdited": "2026-10-01T10:00:00Z"},
                 B: {"status": "stale", "title": "Beta", "folder": None, "tags": [], "isArchived": True,
-                    "isChecklist": False, "lastEdited": "2026-10-02T10:00:00Z", "currentText": "Beta current text"},
+                    "lastEdited": "2026-10-02T10:00:00Z", "currentText": "Beta current text"},
                 C: {"status": "gone"},
                 D: {"status": "ok", "title": "Delta", "folder": None, "tags": ["deploy"], "isArchived": False,
-                    "isChecklist": False, "lastEdited": "2026-09-01T10:00:00Z"},
+                    "lastEdited": "2026-09-01T10:00:00Z"},
             },
             "keywordHits": [{"noteId": D, "matchedBy": ["tag"], "window": "Delta opening"}],
         }, None
 
     tools._call_express = fake_express
     ctx = ToolContext(user_id="u", auth_header="Bearer x", express_base_url="http://x", meaning_search=fake_meaning,
-                      unsaved_notes={A: {"title": "Alpha (edited)", "content": "...", "tags": ["ops"], "isChecklist": False, "checklist": []}})
+                      unsaved_notes={A: {"title": "Alpha (edited)", "content": "...", "tags": ["ops"]}})
     res = await tools.run_search_notes(ctx, {"query": "deploy", "keywords": ["deploy"]})
     notes = {n["noteId"]: n for n in res.data["notes"]}
     check("tool: gone note dropped, keyword-only note added", set(notes) == {A, B, D}, str([n[0] for n in notes]))

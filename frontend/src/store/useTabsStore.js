@@ -70,8 +70,6 @@ export const useTabsStore = create((set, get) => ({
       title: '',
       content: '',
       tags: [],
-      isChecklist: false,
-      checklist: [],
       isDraft: true,
       folderId: folderId,
       linkPreviews: [],

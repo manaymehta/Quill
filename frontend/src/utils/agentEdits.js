@@ -17,10 +17,8 @@ const CONTENT_MAX = 20_000;
 const TITLE_MAX = 500;
 const TAGS_MAX = 50;
 const TAG_CHARS_MAX = 100;
-const CHECKLIST_MAX = 100;
-const CHECKLIST_TEXT_MAX = 2000;
 
-const NOTE_FIELDS = ['title', 'content', 'tags', 'isChecklist', 'checklist'];
+const NOTE_FIELDS = ['title', 'content', 'tags'];
 
 // Line diff for the red/green views. Without ignoreNewlineAtEof, appending a
 // line marks the user's (newline-less) last line as removed and re-added.
@@ -28,15 +26,11 @@ const lineDiff = (before, after) => diffLines(before, after, { ignoreNewlineAtEo
 
 const isSavedNoteTab = (tab) => Boolean(tab) && !tab.isDraft && !String(tab._id).startsWith('draft-');
 
-// The five editable fields of a note, normalized for comparing and sending.
+// The editable fields of a note, normalized for comparing and sending.
 export const noteFields = (note) => ({
   title: String(note?.title || ''),
   content: String(note?.content || ''),
   tags: Array.isArray(note?.tags) ? note.tags.map(String) : [],
-  isChecklist: Boolean(note?.isChecklist),
-  checklist: Array.isArray(note?.checklist)
-    ? note.checklist.filter(Boolean).map((item) => ({ text: String(item.text || ''), completed: Boolean(item.completed) }))
-    : [],
 });
 
 // What the user sees in a tab right now: the editor's latest values win over
@@ -46,9 +40,7 @@ const currentTabFields = (tab) => noteFields({ ...tab, ...(editorRegistry.getDra
 const sameFields = (a, b) => (
   a.title.trim() === b.title.trim()
   && a.content.trim() === b.content.trim()
-  && a.isChecklist === b.isChecklist
   && JSON.stringify(a.tags) === JSON.stringify(b.tags)
-  && JSON.stringify(a.checklist) === JSON.stringify(b.checklist)
 );
 
 const findTab = (noteId) => useTabsStore.getState().openTabs.find((t) => t._id === noteId);
@@ -68,9 +60,7 @@ export const collectUnsavedNotes = () => {
     const tooBig = fields.content.length > CONTENT_MAX
       || fields.title.length > TITLE_MAX
       || fields.tags.length > TAGS_MAX
-      || fields.tags.some((t) => t.length > TAG_CHARS_MAX)
-      || fields.checklist.length > CHECKLIST_MAX
-      || fields.checklist.some((item) => item.text.length > CHECKLIST_TEXT_MAX);
+      || fields.tags.some((t) => t.length > TAG_CHARS_MAX);
     if (!tooBig) out.push({ noteId: tab._id, ...fields });
   }
   return out;
@@ -150,8 +140,6 @@ export const stageAgentDrafts = async (drafts, sentSnapshots = {}) => {
         title: draft.title || '',
         content: draft.content || '',
         tags: draft.tags || [],
-        isChecklist: draft.isChecklist ?? false,
-        checklist: draft.checklist || [],
         agentStaged: true,
       });
       if (id) staged.push({ kind: 'create', tabId: id, title: draft.title });
@@ -196,7 +184,7 @@ export const stageAgentDrafts = async (drafts, sentSnapshots = {}) => {
       basedOnUnsaved: Boolean(draft.basedOnUnsaved),
       diff: patch.content !== undefined ? lineDiff(base.content, proposed.content) : null,
       titleChange: patch.title !== undefined && patch.title !== base.title ? { from: base.title, to: patch.title } : null,
-      otherChanges: ['tags', 'isChecklist', 'checklist'].filter((key) => patch[key] !== undefined),
+      otherChanges: ['tags'].filter((key) => patch[key] !== undefined),
       status: 'pending',
     });
   }

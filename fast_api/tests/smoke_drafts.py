@@ -37,10 +37,10 @@ async def fake_call_express(ctx, method, path, summary, **kwargs):
     if path == f"/v1/get-note/{NOTE_ID}":
         return {"note": {
             "_id": NOTE_ID, "title": "Docker deploy", "content": "compose up -d",
-            "tags": ["docker"], "isChecklist": False, "checklist": [],
+            "tags": ["docker"],
         }}, None
     if path == "/v1/agent/search-support":
-        return {"notes": {NOTE_ID: {"status": "ok", "title": "Docker deploy", "tags": ["docker"], "folder": None, "isArchived": False, "isChecklist": False, "lastEdited": "2026-10-01"}},
+        return {"notes": {NOTE_ID: {"status": "ok", "title": "Docker deploy", "tags": ["docker"], "folder": None, "isArchived": False, "lastEdited": "2026-10-01"}},
                 "keywordHits": []}, None
     return None, tools_mod.error_result("not_found", f"unexpected path {path}", recoverable=False, summary=summary)
 
@@ -90,7 +90,7 @@ async def main():
         tool_context=ctx,
     )
     print(f"TOOLS USED: {[t.summary for t in result.toolsUsed]}")
-    print(f"DRAFTS: {[(d.action, d.title, d.isChecklist, d.folderId) for d in result.drafts]}")
+    print(f"DRAFTS: {[(d.action, d.title, d.folderId) for d in result.drafts]}")
     print(f"MESSAGE: {result.message[:250]}")
     ok = (any(d.action == 'create' for d in result.drafts)
           and bool(result.message.strip()))

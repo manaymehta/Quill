@@ -56,8 +56,7 @@ def leaks_instructions(text: str) -> bool:
 
 
 def _draft_text(draft: AgentDraft) -> str:
-    items = " ".join(str(item.get("text", "")) for item in draft.checklist or [])
-    return " ".join(filter(None, [draft.title, draft.content, items]))
+    return " ".join(filter(None, [draft.title, draft.content]))
 
 
 def check_for_leaks(

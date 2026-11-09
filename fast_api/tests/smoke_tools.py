@@ -37,14 +37,14 @@ async def fake_meaning(query, user_id, limit):
 async def fake_call_express(ctx, method, path, summary, **kwargs):
     if path == "/v1/agent/search-support":
         return {"notes": {
-            NOTE_A: {"status": "ok", "title": "Docker deploy notes", "tags": ["docker"], "folder": None, "isArchived": False, "isChecklist": False, "lastEdited": "2026-10-01"},
-            NOTE_B: {"status": "ok", "title": "Home server", "tags": ["infra"], "folder": None, "isArchived": False, "isChecklist": False, "lastEdited": "2026-10-01"},
+            NOTE_A: {"status": "ok", "title": "Docker deploy notes", "tags": ["docker"], "folder": None, "isArchived": False, "lastEdited": "2026-10-01"},
+            NOTE_B: {"status": "ok", "title": "Home server", "tags": ["infra"], "folder": None, "isArchived": False, "lastEdited": "2026-10-01"},
         }, "keywordHits": []}, None
     if path.startswith("/v1/get-note/"):
         nid = path.rsplit("/", 1)[-1]
         if nid == NOTE_A:
-            return {"note": {"_id": NOTE_A, "title": "Docker deploy notes", "content": LONG_TEXT, "tags": ["docker"], "isChecklist": False, "checklist": []}}, None
-        return {"note": {"_id": nid, "title": "Other note", "content": "Short.", "tags": [], "isChecklist": False, "checklist": []}}, None
+            return {"note": {"_id": NOTE_A, "title": "Docker deploy notes", "content": LONG_TEXT, "tags": ["docker"]}}, None
+        return {"note": {"_id": nid, "title": "Other note", "content": "Short.", "tags": []}}, None
     if path == "/v1/get-folders":
         return {"folders": [
             {"_id": "f00000000000000000000001", "name": "Dev", "parentId": None, "icon": "📁"},

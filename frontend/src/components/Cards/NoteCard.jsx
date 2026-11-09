@@ -40,20 +40,20 @@ const CARD_MD_COMPONENTS = {
   pre: ({ children }) => <span className="block font-mono text-xs bg-black/5 px-2 py-1 rounded my-0.5">{children}</span>,
   ul: ({ children }) => <ul className="list-disc pl-4 marker:text-[#9c9892]">{children}</ul>,
   ol: ({ children }) => <ol className="list-decimal pl-4 marker:text-[#9c9892]">{children}</ol>,
-  li: ({ children, className }) => {
+  li: ({ children, className, node }) => {
     const isTask = className && className.includes('task-list-item');
     if (isTask) {
-      return <li className="list-none -ml-4 pl-0">{children}</li>;
+      const line = node?.position?.start?.line;
+      return <li data-task-item="" data-task-line={line} className="list-none -ml-4 pl-0">{children}</li>;
     }
     return <li className="pl-1">{children}</li>;
   },
   input: ({ type, checked }) => {
     if (type === 'checkbox') {
-      return checked ? (
-        <MdCheckBox className="inline text-[#e85d56] mr-1.5 align-text-bottom text-lg" />
-      ) : (
-        <MdCheckBoxOutlineBlank className="inline text-[#9c9892] mr-1.5 align-text-bottom text-lg" />
-      );
+      const icon = checked
+        ? <MdCheckBox className="inline text-[#e85d56] mr-1.5 align-text-bottom text-lg" />
+        : <MdCheckBoxOutlineBlank className="inline text-[#9c9892] mr-1.5 align-text-bottom text-lg" />;
+      return <span data-task-check="" className="inline cursor-pointer">{icon}</span>;
     }
     return <input type={type} checked={checked} readOnly />;
   },
@@ -72,9 +72,9 @@ const PREVIEW_CHARS = 150;
 
 // ── Inner static rendering component ─────────────────────────────────────────
 const InnerNoteCard = memo(({
-  title, content, tags, folder, folderId, isChecklist, checklist,
+  title, content, tags, folder, folderId,
   isTrash, isArchived, showInHome, isDragging, isOverlay, hideFolderBadge,
-  linkPreviews, onDelete, onArchive, onToggleHome, onMove, onChecklistToggle, onRestore,
+  linkPreviews, onDelete, onArchive, onToggleHome, onMove, onTaskToggle, onRestore,
   isMenuOpen, toggleMenu, index, coords, setCoords
 }) => {
   const [shouldAnimate, setShouldAnimate] = useState(true);
@@ -268,43 +268,31 @@ const InnerNoteCard = memo(({
           document.body
         )}
 
-        {isChecklist ? (
-          <div
-            className="flex flex-col gap-1.5 mt-1.5 md:mt-2 overflow-hidden"
-            style={{
-              maxHeight: '9rem',
-              WebkitMaskImage: checklist.length > 4 ? 'linear-gradient(to bottom, black 0, black 7.5rem, transparent 9rem)' : 'none',
-              maskImage: checklist.length > 4 ? 'linear-gradient(to bottom, black 0, black 7.5rem, transparent 9rem)' : 'none',
-            }}
-          >
-            {checklist.slice(0, 5).map((item, index) => (
-              <div key={index} className="flex items-start gap-2 min-w-0">
-                <div className="no-card-click mt-0.5 flex-shrink-0 cursor-pointer text-base" onClick={(e) => { e.stopPropagation(); onChecklistToggle?.(index); }}>
-                  {item.completed ? <MdCheckBox className="text-[#e85d56]" /> : <MdCheckBoxOutlineBlank className="text-stone-400" />}
-                </div>
-                <span className={`font-medium text-[13px] md:text-sm break-words overflow-wrap-anywhere min-w-0 line-clamp-2 leading-snug ${item.completed ? 'line-through text-slate-500' : 'text-[#494949]'}`}>
-                  {item.text}
-                </span>
-              </div>
-            ))}
-            {checklist.length > 5 && (
-              <span className="text-xs text-slate-500 font-medium pt-0.5">...and {checklist.length - 5} more items.</span>
-            )}
-          </div>
-        ) : (
-          <div
-            className="font-medium mt-1.5 md:mt-2 text-[#494949] text-[13px] md:text-sm overflow-hidden break-words"
-            style={{
-              maxHeight: '9rem',
-              WebkitMaskImage: 'linear-gradient(to bottom, black 0, black 8rem, transparent 9rem)',
-              maskImage: 'linear-gradient(to bottom, black 0, black 8rem, transparent 9rem)',
-            }}
-          >
-            {hasBeenVisible ? markdownPreview : (
-              <span className="whitespace-pre-wrap">{(content || '').slice(0, PREVIEW_CHARS)}{(content || '').length > PREVIEW_CHARS ? '…' : ''}</span>
-            )}
-          </div>
-        )}
+        <div
+          className="font-medium mt-1.5 md:mt-2 text-[#494949] text-[13px] md:text-sm overflow-hidden break-words"
+          style={{
+            maxHeight: '9rem',
+            WebkitMaskImage: 'linear-gradient(to bottom, black 0, black 8rem, transparent 9rem)',
+            maskImage: 'linear-gradient(to bottom, black 0, black 8rem, transparent 9rem)',
+          }}
+          onClick={(event) => {
+            if (!onTaskToggle) return;
+            const check = event.target.closest?.('[data-task-check]');
+            if (!check) return;
+            const item = check.closest('li[data-task-item]');
+            if (!item) return;
+            // Ticking a box on a card must not also open the note
+            event.stopPropagation();
+            const items = [...event.currentTarget.querySelectorAll('li[data-task-item]')];
+            const index = items.indexOf(item);
+            const line = Number(item.dataset.taskLine);
+            if (index >= 0) onTaskToggle(index, Number.isInteger(line) && line > 0 ? line : undefined);
+          }}
+        >
+          {hasBeenVisible ? markdownPreview : (
+            <span className="whitespace-pre-wrap">{(content || '').slice(0, PREVIEW_CHARS)}{(content || '').length > PREVIEW_CHARS ? '…' : ''}</span>
+          )}
+        </div>
 
         {/* Tags & Folder Row */}
         <div className="flex items-center justify-between gap-2 mt-1">
@@ -383,7 +371,7 @@ InnerNoteCard.displayName = 'InnerNoteCard';
 const NoteCard = ({
   id, title, content, tags,
   onEdit, onDelete,
-  isChecklist, checklist, onChecklistToggle,
+  onTaskToggle,
   isTrash, onRestore, isArchived, onArchive,
   showInHome, onToggleHome, onMove,
   isOverlay, index = 0,
@@ -588,8 +576,6 @@ const NoteCard = ({
         tags={tags}
         folder={folder}
         folderId={folderId}
-        isChecklist={isChecklist}
-        checklist={checklist}
         isTrash={isTrash}
         isArchived={isArchived}
         showInHome={showInHome}
@@ -602,7 +588,7 @@ const NoteCard = ({
         onArchive={onArchive}
         onToggleHome={onToggleHome}
         onMove={onMove}
-        onChecklistToggle={onChecklistToggle}
+        onTaskToggle={onTaskToggle}
         onRestore={onRestore}
         isMenuOpen={isMenuOpen}
         toggleMenu={toggleMenu}
@@ -624,8 +610,6 @@ export default memo(NoteCard, (prev, next) => (
   prev.folderId === next.folderId &&
   prev.isOverlay === next.isOverlay &&
   prev.hideFolderBadge === next.hideFolderBadge &&
-  prev.isChecklist === next.isChecklist &&
   JSON.stringify(prev.tags) === JSON.stringify(next.tags) &&
-  JSON.stringify(prev.checklist) === JSON.stringify(next.checklist) &&
   JSON.stringify(prev.linkPreviews) === JSON.stringify(next.linkPreviews)
 ));

@@ -24,20 +24,18 @@ const createInitialNotes = async (userId) => {
     const initialNotes = [
         {
             title: "Welcome to Quill! 🪶",
-            content: "This is your first note. Feel free to edit or delete it. You can create new notes, add tags, and even make checklists. Enjoy organizing your thoughts!",
+            content: "This is your first note. Feel free to edit or delete it. You can create new notes, add tags, and even add checkboxes to your text. Enjoy organizing your thoughts!",
             tags: ["welcome", "getting-started"],
             userId,
         },
         {
-            title: "How to Use Checklists",
-            isChecklist: true,
-            checklist: [
-                // Field names must match the note schema (text / completed);
-                // other names are silently dropped, leaving empty items.
-                { text: "Create a new note.", completed: true },
-                { text: "Click the checklist icon.", completed: false },
-                { text: "Add your to-do items!", completed: false },
-            ],
+            title: "How to Use Checkboxes",
+            content: [
+                "- [x] Create a new note.",
+                "- [ ] Type `- [ ]` at the start of a line.",
+                "- [ ] Or press the Checkbox button in the toolbar.",
+                "- [ ] Drag the grip to reorder a task.",
+            ].join("\n"),
             tags: ["welcome"],
             userId,
         },

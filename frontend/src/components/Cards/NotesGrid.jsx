@@ -95,7 +95,7 @@ const NotesGrid = ({
     onEdit,
     onDelete,
     onArchive,
-    onChecklistToggle,
+    onTaskToggle,
     onRestore,
     onToggleHome,
     onMove,
@@ -324,8 +324,6 @@ const NotesGrid = ({
                                         content={note.content}
                                         tags={note.tags}
                                         folderId={note.folderId}
-                                        isChecklist={note.isChecklist}
-                                        checklist={note.checklist}
                                         isArchived={note.isArchived}
                                         showInHome={note.showInHome}
                                         isTrash={isTrash}
@@ -334,7 +332,7 @@ const NotesGrid = ({
                                         onArchive={() => onArchive?.(note)}
                                         onToggleHome={() => onToggleHome?.(note)}
                                         onMove={(targetFolderId) => onMove?.(note._id, targetFolderId)}
-                                        onChecklistToggle={(i) => onChecklistToggle?.(note, i)}
+                                        onTaskToggle={(i, line) => onTaskToggle?.(note, i, line)}
                                         onRestore={() => onRestore?.(note)}
                                         hideFolderBadge={hideFolderBadge}
                                         linkPreviews={note.linkPreviews}
@@ -354,8 +352,6 @@ const NotesGrid = ({
                         content={activeNote.content}
                         tags={activeNote.tags}
                         folderId={activeNote.folderId}
-                        isChecklist={activeNote.isChecklist}
-                        checklist={activeNote.checklist}
                         isArchived={activeNote.isArchived}
                         isTrash={isTrash}
                         isOverlay={true}

@@ -9,7 +9,7 @@ import { markdownTaskList, insertTask } from '../../utils/markdownTaskList';
 import { editorRegistry } from '../../utils/editorRegistry';
 
 // Everything in the editor that needs CodeMirror (~600 kB), kept in its own chunk so the rest of the
-// editor (toolbar, title, tags, checklist, buttons) shows at once: see markdownEditorLoader.
+// editor (toolbar, title, tags, checkboxes, buttons) shows at once: see markdownEditorLoader.
 
 // Scoped scroll margin keeps cursor above virtual keyboard without leaking across editor instances
 const KEYBOARD_GAP_PX = 24;

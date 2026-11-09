@@ -39,8 +39,8 @@ class ToolContext:
     user_id: str
     auth_header: str
     express_base_url: str
-    # noteId → the user's unsaved tab version ({title, content, tags,
-    # isChecklist, checklist}). Tools reading these notes return this version.
+    # noteId → the user's unsaved tab version ({title, content, tags}). Tools
+    # reading these notes return this version.
     unsaved_notes: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Notes read in full (get_note) during this turn. Rewriting a note's text
     # requires reading it first, so edits are never made from memory.
@@ -68,7 +68,7 @@ class ToolContext:
     bulk_draft: dict[str, Any] = field(default_factory=dict)
 
 
-_UNSAVED_FIELDS = ("title", "content", "tags", "isChecklist", "checklist")
+_UNSAVED_FIELDS = ("title", "content", "tags")
 
 
 def with_unsaved(ctx: ToolContext, note: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -96,15 +96,8 @@ def cite(note_id: str, title: str, text: Any = "", tags: Any = None) -> Citation
 
 
 def card_text(note: dict[str, Any]) -> str:
-    """A note's body for its card; checklist notes show their items."""
-    content = str(note.get("content", "") or "").strip()
-    if content:
-        return content
-    return "; ".join(
-        str(item.get("text") or "").strip()
-        for item in note.get("checklist") or []
-        if isinstance(item, dict) and str(item.get("text") or "").strip()
-    )
+    """A note's body for its card: its content, with checkboxes already in the text."""
+    return str(note.get("content", "") or "").strip()
 
 
 def error_result(
@@ -213,7 +206,7 @@ SEARCH_NOTES_SCHEMA: dict[str, Any] = {
             "description": (
                 "Optional exact words to also look for (1-5): names, codes, "
                 "error messages, tags, rare terms. Matched case-insensitively in "
-                "titles, text, tags and checklist items."
+                "titles, text and tags."
             ),
         },
         "limit": {
@@ -297,7 +290,6 @@ async def run_search_notes(ctx: ToolContext, args: dict[str, Any]) -> ToolResult
             "folder": info.get("folder"),
             "tags": (unsaved or info).get("tags", []),
             "archived": bool(info.get("isArchived")),
-            "isChecklist": bool(info.get("isChecklist")),
             "lastEdited": str(info.get("lastEdited", ""))[:10],
             "match": retrieval.strength(cand, top_piece),
             "matchedBy": sorted(cand.matched_by),
@@ -377,8 +369,6 @@ async def run_get_note(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 "content": content[:MAX_FULL_NOTE_CHARS],
                 "contentTruncated": truncated,
                 "tags": note.get("tags", []),
-                "isChecklist": bool(note.get("isChecklist", False)),
-                "checklist": note.get("checklist", []),
                 **({"unsavedChanges": True} if unsaved else {}),
             }
         },
@@ -644,7 +634,6 @@ DRAFT_TITLE_MAX = 500
 DRAFT_CONTENT_MAX = 20_000
 DRAFT_TAGS_MAX = 10
 DRAFT_TAG_MAX_LEN = 50
-DRAFT_CHECKLIST_ITEMS_MAX = 100
 
 
 def _clean_text_fields(args: dict[str, Any], name: str) -> tuple[dict[str, Any] | None, ToolResult | None, str | None]:
@@ -663,38 +652,19 @@ def _clean_text_fields(args: dict[str, Any], name: str) -> tuple[dict[str, Any] 
             if tag and tag not in tags:
                 tags.append(tag)
         cleaned["tags"] = tags[:DRAFT_TAGS_MAX]
-    if "isChecklist" in args and args["isChecklist"] is not None:
-        cleaned["isChecklist"] = bool(args["isChecklist"])
-    if "checklist" in args and args["checklist"] is not None:
-        items = []
-        for raw in args["checklist"][:DRAFT_CHECKLIST_ITEMS_MAX]:
-            if not isinstance(raw, dict):
-                return None, None, f"{name}: checklist items must be objects"
-            text = str(raw.get("text", "")).strip()
-            if not text:
-                continue
-            items.append({"text": text, "completed": bool(raw.get("completed", False))})
-        cleaned["checklist"] = items
     return cleaned, None, None
 
 
 NOTE_DRAFT_PROPERTIES: dict[str, Any] = {
     "title": {"type": "string", "description": "Note title (max 500 chars)."},
-    "content": {"type": "string", "description": "Full note body (max 20000 chars)."},
-    "tags": {"type": "array", "items": {"type": "string"}, "description": "Max 10 tags."},
-    "isChecklist": {"type": "boolean", "description": "true to make the note a checklist."},
-    "checklist": {
-        "type": "array",
-        "items": {
-            "type": "object",
-            "properties": {
-                "text": {"type": "string"},
-                "completed": {"type": "boolean"},
-            },
-            "required": ["text"],
-        },
-        "description": "Checklist items; only meaningful when isChecklist is true.",
+    "content": {
+        "type": "string",
+        "description": (
+            "Full note body (max 20000 chars). Checkboxes are GFM task lines: "
+            "`- [ ] item` for open, `- [x] item` for done."
+        ),
     },
+    "tags": {"type": "array", "items": {"type": "string"}, "description": "Max 10 tags."},
 }
 
 DRAFT_NOTE_SCHEMA: dict[str, Any] = {
@@ -744,8 +714,6 @@ async def run_draft_note(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         title=title,
         content=cleaned.get("content", ""),
         tags=cleaned.get("tags", []),
-        isChecklist=bool(cleaned.get("isChecklist", False)),
-        checklist=cleaned.get("checklist", []),
         folderId=folder_id,
     )
     return ToolResult(
@@ -782,10 +750,10 @@ async def run_stage_note_edit(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
             "invalid_args", "No changes proposed — provide at least one field to change.",
             recoverable=True, summary=f"{summary} -> no changes",
         )
-    # A text or checklist rewrite replaces the whole body, so it must be built
-    # on the note as it is now (unsaved changes included), not from memory of
-    # an earlier turn — that silently dropped a user's unsaved line in testing.
-    if ("content" in changes or "checklist" in changes) and note_id not in ctx.read_note_ids:
+    # A text rewrite replaces the whole body, so it must be built on the note as
+    # it is now (unsaved changes included), not from memory of an earlier turn —
+    # that silently dropped a user's unsaved line in testing.
+    if "content" in changes and note_id not in ctx.read_note_ids:
         return error_result(
             "read_first",
             "Read this note with get_note first (in this turn) and build the new "
@@ -990,10 +958,11 @@ TOOLS: dict[str, ToolSpec] = {
             "Propose edits to an EXISTING note (by ID from an earlier tool "
             "result), staged in the user's dock as an unsaved draft with the "
             "changes highlighted. Never saves on its own. To change the "
-            "content or checklist, first read the note with get_note in the "
+            "content, first read the note with get_note in the "
             "same turn, build on its current text and keep everything the user "
             "didn't ask to change — never rewrite it from memory of earlier "
-            "turns. Moving, tagging or archiving notes is propose_bulk_change, "
+            "turns. Checkboxes are GFM task lines (`- [ ]` / `- [x]`). "
+            "Moving, tagging or archiving notes is propose_bulk_change, "
             "not an edit."
         ),
         parameters=STAGE_NOTE_EDIT_SCHEMA,

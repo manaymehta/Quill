@@ -10,23 +10,13 @@
 // Map<tabId, CodeMirrorJSONSnapshot>
 const snapshots = new Map();
 
-// Map<tabId, { title, content, tags, isChecklist, checklist, folderId }>
+// Map<tabId, { title, content, tags, folderId, linkPreviews }>
 const baselines = new Map();
 
-// Map<tabId, { title, content, tags, isChecklist, checklist, folderId }>
+// Map<tabId, { title, content, tags, folderId, linkPreviews }>
 const drafts = new Map();
 
 const normalizeTags = (tags) => (Array.isArray(tags) ? [...tags].map(t => String(t).trim()).filter(Boolean) : []);
-
-const normalizeChecklist = (checklist) =>
-  Array.isArray(checklist)
-    ? checklist
-        .filter(Boolean)
-        .map(item => ({
-          text: String(item?.text || '').trim(),
-          completed: Boolean(item?.completed),
-        }))
-    : [];
 
 const normalizeLinkPreviews = (previews) =>
   Array.isArray(previews)
@@ -76,8 +66,6 @@ export const editorRegistry = {
       title: String(note?.title || '').trim(),
       content: String(note?.content || '').trim(),
       tags: normalizeTags(note?.tags),
-      isChecklist: Boolean(note?.isChecklist),
-      checklist: normalizeChecklist(note?.checklist),
       folderId: note?.folderId || null,
       linkPreviews: normalizeLinkPreviews(note?.linkPreviews),
       isDraft: Boolean(note?.isDraft),
@@ -152,11 +140,9 @@ export const editorRegistry = {
       const hasTitle = Boolean(String(draft.title || '').trim());
       const hasContent = Boolean(String(draft.content || '').trim());
       const hasTags = Array.isArray(draft.tags) && draft.tags.length > 0;
-      const hasChecklist = Array.isArray(draft.checklist) && draft.checklist.length > 0;
       const hasPreviews = Array.isArray(draft.linkPreviews) && draft.linkPreviews.length > 0;
       const hasFolder = Boolean(draft.folderId);
-      const hasChecklistMode = Boolean(draft.isChecklist);
-      return hasTitle || hasContent || hasTags || hasChecklist || hasPreviews || hasFolder || hasChecklistMode;
+      return hasTitle || hasContent || hasTags || hasPreviews || hasFolder;
     }
 
     if (!draft) return false;
@@ -164,9 +150,6 @@ export const editorRegistry = {
     // Compare title & content (trimmed)
     if (String(draft.title || '').trim() !== baseline.title) return true;
     if (String(draft.content || '').trim() !== baseline.content) return true;
-
-    // Compare checklist mode toggle
-    if (Boolean(draft.isChecklist) !== baseline.isChecklist) return true;
 
     // Compare folder assignment
     if ((draft.folderId || null) !== baseline.folderId) return true;
@@ -176,14 +159,6 @@ export const editorRegistry = {
     if (currentTags.length !== baseline.tags.length) return true;
     for (let i = 0; i < currentTags.length; i++) {
       if (currentTags[i] !== baseline.tags[i]) return true;
-    }
-
-    // Compare checklist items
-    const currentChecklist = normalizeChecklist(draft.checklist);
-    if (currentChecklist.length !== baseline.checklist.length) return true;
-    for (let i = 0; i < currentChecklist.length; i++) {
-      if (currentChecklist[i].text !== baseline.checklist[i].text) return true;
-      if (currentChecklist[i].completed !== baseline.checklist[i].completed) return true;
     }
 
     // Compare link previews

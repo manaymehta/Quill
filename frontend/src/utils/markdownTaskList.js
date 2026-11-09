@@ -121,7 +121,9 @@ class TaskCheckbox extends WidgetType {
       if (from !== null) toggleTask(view, from);
     });
 
-    wrapper.append(grip, box);
+    // A read-only view (the agent's "Before" note) gets the box, not a draggable-looking grip
+    if (!view.state.readOnly) wrapper.append(grip);
+    wrapper.append(box);
     return wrapper;
   }
 
@@ -135,6 +137,16 @@ class TaskCheckbox extends WidgetType {
 const doneLine = Decoration.line({ class: 'cm-task-done' });
 const dragSourceLine = Decoration.line({ class: 'cm-task-drag-source' });
 
+// A line inside fenced/indented code is not a checkbox, even when its text looks like `- [ ]`.
+// The syntax tree distinguishes it from a nested list item, which a line regex cannot.
+const isCodeLine = (state, pos) => {
+  let node = syntaxTree(state).resolveInner(pos, 1);
+  for (; node; node = node.parent) {
+    if (node.name === 'FencedCode' || node.name === 'CodeBlock') return true;
+  }
+  return false;
+};
+
 const buildTaskDecorations = (view) => {
   const { state } = view;
   const builder = new RangeSetBuilder();
@@ -144,7 +156,7 @@ const buildTaskDecorations = (view) => {
   for (let number = first; number <= last; number++) {
     const line = state.doc.line(number);
     const info = taskLineInfo(line.text);
-    if (!info) continue;
+    if (!info || isCodeLine(state, line.from)) continue;
 
     const markerFrom = line.from + info.indent.length;
     const markerTo = line.from + info.prefixEnd;
@@ -192,7 +204,8 @@ const taskListPlugin = ViewPlugin.fromClass(class {
   }
 
   update(update) {
-    if (update.docChanged || update.viewportChanged) {
+    if (update.docChanged || update.viewportChanged
+        || syntaxTree(update.startState) !== syntaxTree(update.state)) {
       this.decorations = buildTaskDecorations(update.view);
     }
     // An outside change (undo, agent edit) invalidates the block being dragged. The drag's own
@@ -237,6 +250,7 @@ const taskListPlugin = ViewPlugin.fromClass(class {
       gapsDoc: this.view.state.doc,
       gapNow: null,
       originText: mode === 'line' ? null : this.view.state.doc.toString(),
+      originState: mode === 'line' ? null : this.view.state,
       marker,
       ghost: null,
       grab: null,
@@ -386,15 +400,21 @@ const taskListPlugin = ViewPlugin.fromClass(class {
     const drag = this.drag;
     if (!drag) return;
     const origin = drag.mode === 'line' ? null : drag.originText;
+    const originState = drag.originState;
     const current = this.view.state.doc.toString();
     this.finishDrag();
-    if (origin === null || current === origin || this.view.destroyed) return;
-    const change = minimalChange(current, origin);
-    if (!change) return;
-    this.view.dispatch({
-      changes: change,
-      annotations: [taskDragInternal.of(true), Transaction.addToHistory.of(false)],
-    });
+    if (origin === null || this.view.destroyed) return;
+    // Notify the React value with the rewind, then restore the pre-drag history/selection.
+    if (current !== origin) {
+      const change = minimalChange(current, origin);
+      if (change) {
+        this.view.dispatch({
+          changes: change,
+          annotations: [taskDragInternal.of(true), Transaction.addToHistory.of(false)],
+        });
+      }
+    }
+    if (originState) this.view.setState(originState);
   }
 
   finishDrag() {
@@ -446,8 +466,11 @@ const taskListPlugin = ViewPlugin.fromClass(class {
     const { doc } = view.state;
     const scroller = this.scrollerOf();
     const scroll = scroller ? scroller.scrollTop : 0;
+    const width = view.contentDOM.clientWidth;
+    const height = view.contentDOM.clientHeight;
     const cached = this.gapGeom;
-    if (cached && cached.doc === doc && cached.scroll === scroll) return cached.items;
+    if (cached && cached.doc === doc && cached.scroll === scroll
+      && cached.width === width && cached.height === height) return cached.items;
 
     const items = [];
     for (const gap of this.gapList()) {
@@ -456,7 +479,7 @@ const taskListPlugin = ViewPlugin.fromClass(class {
       const y = gapScreenY(view, gap);
       if (y !== null) items.push({ gap, y });
     }
-    this.gapGeom = { doc, scroll, items };
+    this.gapGeom = { doc, scroll, width, height, items };
     return items;
   }
 
@@ -646,7 +669,9 @@ const taskListPlugin = ViewPlugin.fromClass(class {
   // list. No blank-line separators during the preview: a pure reorder means hovering can never
   // pile up empty lines; the separators are added once, when the item is dropped.
   applyLiveMove(drag, gap) {
-    const plan = buildMove(this.view.state.doc, drag.block, gap, false);
+    const plan = buildMove(this.view.state.doc, drag.block, gap, false, {
+      stripLeadingBlank: !drag.originText.startsWith('\n'),
+    });
     if (!plan) return false;
     const lifted = drag.block;
     const height = drag.mode === 'row' ? blockPixelHeight(this.view, lifted) : 0;
@@ -744,26 +769,27 @@ const taskListPlugin = ViewPlugin.fromClass(class {
     }
   }
 
-  // One undo step for the whole drag: rewind without history, then replay the net move with it
+  // One undo step for the whole drag. The preview never enters history; restore the pre-drag state
+  // so older history is untouched, then apply the final move as the one isolated event.
   commitReorder(drag) {
     const view = this.view;
     if (view.destroyed) return;
+    const originState = drag.originState;
+    if (!originState) return;
     const originText = drag.originText;
     const finalText = view.state.doc.toString();
-    if (finalText === originText) return;
 
     // The preview was a pure reorder; add the blank lines the final position needs, once
     const withSeparators = addBlockSeparators(view.state.doc, drag.block);
 
-    view.dispatch({
-      changes: minimalChange(finalText, originText),
-      annotations: [taskDragInternal.of(true), Transaction.addToHistory.of(false)],
-    });
-    const change = minimalChange(originText, withSeparators);
+    view.setState(originState);
+    if (finalText === originText) return;
+
+    const change = minimalChange(originText, withSeparators.text);
     if (!change) return;
     view.dispatch({
       changes: change,
-      selection: { anchor: Math.min(drag.block?.from ?? 0, view.state.doc.length) },
+      selection: { anchor: Math.min(withSeparators.anchor, withSeparators.text.length) },
       annotations: [taskDragInternal.of(true), isolateHistory.of('full')],
       userEvent: 'move.drop',
       scrollIntoView: true,
@@ -882,8 +908,11 @@ const gapScreenY = (view, gap) => {
 // Pixel height of the rows being lifted, taken from the rendered rows before the change. A
 // whole-line move shifts every row in between by exactly this much.
 const blockPixelHeight = (view, block) => {
+  const { doc } = view.state;
   let height = 0;
-  for (const el of blockLineElements(view, block)) height += el.getBoundingClientRect().height;
+  for (let number = block.startLine; number <= block.endLine; number++) {
+    height += view.lineBlockAt(doc.line(number).from).height;
+  }
   return height;
 };
 
@@ -893,7 +922,7 @@ const blockPixelHeight = (view, block) => {
 const getTaskBlock = (state, lineFrom) => {
   const { doc } = state;
   const line = doc.lineAt(lineFrom);
-  if (!isTaskLine(line.text)) return null;
+  if (!isTaskLine(line.text) || isCodeLine(state, line.from)) return null;
 
   let endNumber = line.number;
   for (let number = line.number + 1; number <= doc.lines; number++) {
@@ -904,9 +933,36 @@ const getTaskBlock = (state, lineFrom) => {
   return { from: line.from, to: doc.line(endNumber).to, startLine: line.number, endLine: endNumber };
 };
 
+// End of the Markdown list item that owns this line, including nested lists and continuations.
+const listItemEnd = (state, lineFrom) => {
+  let node = syntaxTree(state).resolveInner(lineFrom, 1);
+  for (; node; node = node.parent) {
+    if (node.name === 'ListItem') return node.to;
+  }
+  return null;
+};
+
+// End of the fenced/indented code block that owns this line.
+const codeBlockEnd = (state, lineFrom) => {
+  let node = syntaxTree(state).resolveInner(lineFrom, 1);
+  for (; node; node = node.parent) {
+    if (node.name === 'FencedCode' || node.name === 'CodeBlock') return node.to;
+  }
+  return null;
+};
+
 // A line that starts a list item, so a task can sit beside it without a blank line in between
 const LIST_LINE_RE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]/;
 const isListLine = (text) => LIST_LINE_RE.test(text);
+
+// The marker a new sibling task should use: the same indent and bullet as the current item.
+const LIST_PREFIX_RE = /^([ \t]*)([-*+]|\d+[.)])([ \t]+)/;
+const taskPrefixFor = (text) => {
+  const task = taskLineInfo(text);
+  if (task) return `${task.indent}${task.bullet} [ ] `;
+  const list = LIST_PREFIX_RE.exec(text);
+  return list ? `${list[1]}${list[2]} [ ] ` : TASK_PREFIX;
+};
 
 // Indent (in columns) of the line starting at `pos`
 const lineIndent = (doc, pos) => {
@@ -948,11 +1004,11 @@ const collectGaps = (state) => {
   };
 
   // Every rendered task line can be a drop target at its own indentation, even when the markdown
-  // parser does not call it a list item (extra indentation, a list continuation, a code block).
-  // Without this, such a task shows a grip but has no gap it is allowed to move into.
+  // parser does not call it a list item (extra indentation or a list continuation). Code lines are
+  // skipped: they do not render a checkbox.
   for (let number = 1; number <= doc.lines; number++) {
     const line = doc.line(number);
-    if (isTaskLine(line.text)) add(line.from, lineIndent(doc, line.from));
+    if (isTaskLine(line.text) && !isCodeLine(state, line.from)) add(line.from, lineIndent(doc, line.from));
   }
 
   const collectList = (list) => {
@@ -1009,7 +1065,8 @@ const minimalChange = (prev, next) => {
 
 // Where a task block lands when moved into a gap: the text, the change to apply and the block's new
 // range. Returned (not applied) so the live-reorder drag can preview it and the drop commit it.
-const buildMove = (doc, block, gap, separators = true) => {
+const buildMove = (doc, block, gap, separators = true, options = {}) => {
+  const { stripLeadingBlank = false } = options;
   const lines = [];
   for (let number = 1; number <= doc.lines; number++) lines.push(doc.line(number).text);
 
@@ -1056,20 +1113,28 @@ const buildMove = (doc, block, gap, separators = true) => {
   // Joining the list above replaces the blank separator with the task (the gap is still one line)
   lines.splice(at, insertAt - at, ...piece);
 
+  // A task that was at the very top can leave its separator blank behind as a leading blank.
+  // Remove it unless the note originally started with one.
+  let blockIdx = at;
+  if (stripLeadingBlank && lines.length > 1 && lines[0].trim() === '') {
+    lines.shift();
+    blockIdx = Math.max(0, blockIdx - 1);
+  }
+
   const nextText = lines.join('\n');
   const change = minimalChange(doc.toString(), nextText);
   if (!change) return null;
 
   let from = 0;
-  for (let i = 0; i < at; i++) from += lines[i].length + 1;
+  for (let i = 0; i < blockIdx; i++) from += lines[i].length + 1;
   let to = from;
-  for (let i = at; i < at + count; i++) {
-    to += lines[i].length + (i < at + count - 1 ? 1 : 0);
+  for (let i = blockIdx; i < blockIdx + count; i++) {
+    to += lines[i].length + (i < blockIdx + count - 1 ? 1 : 0);
   }
-  const info = taskLineInfo(lines[at]) || taskLineInfo(moving[0]);
-  const anchor = from + Math.min(info.prefixEnd, lines[at].length);
+  const info = taskLineInfo(lines[blockIdx]) || taskLineInfo(moving[0]);
+  const anchor = from + Math.min(info.prefixEnd, lines[blockIdx].length);
 
-  return { change, nextText, anchor, from, to, startLine: at + 1, endLine: at + count };
+  return { change, nextText, anchor, from, to, startLine: blockIdx + 1, endLine: blockIdx + count };
 };
 
 // The blank line a task block needs when prose follows it. Used once, on drop, by the live
@@ -1080,23 +1145,34 @@ const addBlockSeparators = (doc, block) => {
   for (let number = 1; number <= doc.lines; number++) lines.push(doc.line(number).text);
   const startIdx = block.startLine - 1;
   const count = block.endLine - block.startLine + 1;
-  if (startIdx < 0 || startIdx + count > lines.length) return doc.toString();
+  if (startIdx < 0 || startIdx + count > lines.length) return { text: doc.toString(), anchor: block.from };
+
+  const anchorAt = (index, firstText) => {
+    const text = lines[index] ?? firstText ?? "";
+    const info = taskLineInfo(text);
+    let from = 0;
+    for (let i = 0; i < index; i++) from += lines[i].length + 1;
+    return from + (info ? Math.min(info.prefixEnd, text.length) : 0);
+  };
 
   const at = joinListAbove(lines, startIdx);
   const next = startIdx + count < lines.length ? lines[startIdx + count] : null;
   const piece = lines.slice(startIdx, startIdx + count);
   if (needsBlank(next)) piece.push('');
-  if (piece.length === count && at === startIdx) return doc.toString();
+  if (piece.length === count && at === startIdx) {
+    return { text: doc.toString(), anchor: anchorAt(startIdx, lines[startIdx]) };
+  }
 
   // Appending to the list above swallows the blank separator the preview left in front of the task
   lines.splice(at, startIdx - at + count, ...piece);
-  return lines.join('\n');
+  return { text: lines.join('\n'), anchor: anchorAt(at, piece[0]) };
 };
 
 // Move a whole task block into a gap, as one transaction: undo puts it back in one step, and the
 // card/search/agent see a normal task list afterwards.
 const moveTaskBlock = (view, block, gap) => {
-  const plan = buildMove(view.state.doc, block, gap);
+  const doc = view.state.doc;
+  const plan = buildMove(doc, block, gap, true, { stripLeadingBlank: !doc.toString().startsWith('\n') });
   if (!plan) return;
   view.dispatch({
     changes: plan.change,
@@ -1146,38 +1222,54 @@ const taskCursorTracking = EditorView.domEventHandlers({
 export const insertTask = (view) => {
   if (view.state.readOnly) return false;
   const { doc } = view.state;
-  const pos = cursorPlaced.has(view) ? Math.min(view.state.selection.main.head, doc.length) : doc.length;
+  const hasCursor = cursorPlaced.has(view);
+  const pos = hasCursor ? Math.min(view.state.selection.main.head, doc.length) : doc.length;
 
   let change;
+  let prefix = TASK_PREFIX;
   if (!doc.length) {
-    change = { from: 0, insert: TASK_PREFIX };
+    change = { from: 0, insert: prefix };
   } else {
     const line = doc.lineAt(pos);
-    if (!line.text.trim()) {
-      // A blank line already is a block gap: use it as the task's line. If prose follows, put the
-      // separating blank back: the line we are replacing was the only one between them.
+    if (isCodeLine(view.state, line.from)) {
+      // A code line is not a task: put the new task after the whole code block.
+      const end = codeBlockEnd(view.state, line.from);
+      if (end === null) return false;
+      const nextStart = end < doc.length ? Math.min(end + 1, doc.length) : null;
+      const next = nextStart === null ? null : doc.lineAt(nextStart);
+      const needsBlankAfter = Boolean(next && next.text.trim() && !BLOCK_START_RE.test(next.text));
+      change = { from: end, insert: `\n${prefix}${needsBlankAfter ? '\n' : ''}` };
+    } else if (!line.text.trim()) {
+      // A blank line already is a block gap: use it as the task's line. Keep any indentation it
+      // has, and put the separating blank back when prose follows (the line we are replacing was
+      // the only one between them).
       const next = line.number < doc.lines ? doc.line(line.number + 1) : null;
       const needsBlankAfter = Boolean(next && next.text.trim() && !BLOCK_START_RE.test(next.text));
-      change = { from: line.from, to: line.to, insert: `${TASK_PREFIX}${needsBlankAfter ? '\n' : ''}` };
+      const indent = /^[ \t]*/.exec(line.text)[0];
+      prefix = `${indent}${TASK_PREFIX}`;
+      change = { from: line.from, to: line.to, insert: `${prefix}${needsBlankAfter ? '\n' : ''}` };
     } else if (taskLineInfo(line.text) || isListLine(line.text)) {
-      // A task/list item: the new one is its sibling, no blank line in between
-      change = { from: line.to, insert: `\n${TASK_PREFIX}` };
+      // A task/list item: the new one is its sibling, at the same indent and with the same marker.
+      // Insert after the whole list item, so nested lists and continuation lines stay with it.
+      prefix = taskPrefixFor(line.text);
+      const end = listItemEnd(view.state, line.from);
+      change = { from: end ?? line.to, insert: `\n${prefix}` };
     } else {
-      // Prose: a task is a block of its own, so keep a blank line before it (and after it when
-      // the next line is prose too, or markdown would make that line part of the task item)
+      // Prose: a bullet list can interrupt a paragraph, so no blank is needed above the task.
+      // One is still needed after it when another prose line follows.
       const next = line.number < doc.lines ? doc.line(line.number + 1) : null;
       const needsBlankAfter = Boolean(next && next.text.trim() && !BLOCK_START_RE.test(next.text));
-      change = { from: line.to, insert: `\n\n${TASK_PREFIX}${needsBlankAfter ? '\n' : ''}` };
+      change = { from: line.to, insert: `\n${prefix}${needsBlankAfter ? '\n' : ''}` };
     }
   }
 
-  const prefixOffset = change.insert.indexOf(TASK_PREFIX);
+  const prefixOffset = change.insert.indexOf(prefix);
   view.dispatch({
     changes: change,
-    selection: { anchor: change.from + prefixOffset + TASK_PREFIX.length },
+    selection: { anchor: change.from + prefixOffset + prefix.length },
     annotations: isolateHistory.of('full'),
     userEvent: 'input.insert',
-    scrollIntoView: true,
+    scrollIntoView: hasCursor,
   });
   return true;
 };
@@ -1192,17 +1284,48 @@ const continueTask = (view) => {
 
   const line = view.state.doc.lineAt(selection.head);
   const info = taskLineInfo(line.text);
-  if (!info) return false;
-  if (selection.head !== line.to) return false;
+  if (!info || isCodeLine(view.state, line.from)) return false;
+  if (selection.head !== line.to) {
+    const block = getTaskBlock(view.state, line.from);
+    const next = line.number < view.state.doc.lines ? view.state.doc.line(line.number + 1) : null;
+    const hasChild = Boolean(next && next.text.trim()
+      && lineIndent(view.state.doc, next.from) > lineIndent(view.state.doc, line.from));
+    if (!block || block.endLine !== line.number || hasChild) return false;
+    if (selection.head <= line.from + info.prefixEnd) return false;
+
+    const insert = `\n${info.indent}${info.bullet} [ ] `;
+    view.dispatch({
+      changes: { from: selection.head, insert },
+      selection: { anchor: selection.head + insert.length },
+      userEvent: 'input',
+      scrollIntoView: true,
+    });
+    return true;
+  }
 
   const text = line.text.slice(info.prefixEnd);
   if (!text.trim()) {
-    view.dispatch({
-      changes: { from: line.from, to: line.to },
-      selection: { anchor: line.from },
-      annotations: isolateHistory.of('full'),
-      userEvent: 'delete',
-    });
+    const doc = view.state.doc;
+    let nextNumber = line.number + 1;
+    while (nextNumber <= doc.lines && doc.line(nextNumber).text.trim() === '') nextNumber++;
+    if (nextNumber <= doc.lines) {
+      // The list continues below: remove the empty task and put the caret on the next content,
+      // with the now-empty line left as the separator.
+      view.dispatch({
+        changes: { from: line.from, to: line.to },
+        selection: { anchor: doc.line(nextNumber).from },
+        annotations: isolateHistory.of('full'),
+        userEvent: 'delete',
+      });
+    } else {
+      // Leave the list: one blank line remains between the last task and the new line.
+      view.dispatch({
+        changes: { from: line.from, to: doc.length, insert: '\n' },
+        selection: { anchor: line.from + 1 },
+        annotations: isolateHistory.of('full'),
+        userEvent: 'delete',
+      });
+    }
     return true;
   }
 
@@ -1224,7 +1347,7 @@ const removeTaskPrefix = (view) => {
 
   const line = view.state.doc.lineAt(selection.head);
   const info = taskLineInfo(line.text);
-  if (!info) return false;
+  if (!info || isCodeLine(view.state, line.from)) return false;
   const prefixFrom = line.from + info.indent.length;
   const prefixTo = line.from + info.prefixEnd;
   if (selection.head !== prefixTo) return false;
@@ -1253,7 +1376,7 @@ const taskSelectionFilter = EditorState.transactionFilter.of((tr) => {
 
   const line = tr.state.doc.lineAt(tr.selection.main.head);
   const info = taskLineInfo(line.text);
-  if (!info) return tr;
+  if (!info || isCodeLine(tr.state, line.from)) return tr;
 
   const prefixTo = line.from + info.prefixEnd;
   if (tr.selection.main.head >= line.from && tr.selection.main.head < prefixTo) {
@@ -1296,10 +1419,12 @@ const taskTheme = EditorView.theme({
   },
   // Bigger hit area than the dots suggest, so a finger or a hurried mouse still grabs the row.
   // Kept clear of the checkbox: 4px reaches into the 5px gap without sitting on top of it.
+  // Vertical inset stays inside the line box: a taller hit area makes CodeMirror's scroller
+  // 4px taller than the line and shifts the text when the caret is revealed.
   '.cm-task-grip::before': {
     content: '""',
     position: 'absolute',
-    inset: '-7px -4px',
+    inset: '-3px -4px',
   },
   '.cm-line:hover .cm-task-grip': { opacity: '0.7' },
   // `&` is the editor element itself, which is where the plugin puts these classes

@@ -11,15 +11,6 @@ const { isFastApiConfigured, callFastApi } = require("./fastapi.service");
 
 const buildIndexText = (note) => {
     let text = note.content || "";
-    // Items without text are skipped (signup's welcome checklist once stored
-    // items with no text, which indexed as the word "undefined").
-    const items = note.isChecklist && Array.isArray(note.checklist)
-        ? note.checklist.filter((item) => item && typeof item.text === "string" && item.text.trim())
-        : [];
-    if (items.length > 0) {
-        const checklistStr = items.map(item => `- [${item.completed ? "x" : " "}] ${item.text}`).join("\n");
-        text = text ? `${text}\n\n${checklistStr}` : checklistStr;
-    }
 
     if (Array.isArray(note.linkPreviews) && note.linkPreviews.length > 0) {
         const previewsStr = note.linkPreviews.map(p => `[Link Preview] ${p.title || ""} - ${p.description || ""}`).join("\n");
@@ -48,7 +39,7 @@ const indexTextHash = ({ title, tags = [], text }) => crypto
 
 // Every note field indexing reads (buildIndexText, plus the embed call's archived flag and version):
 // a query that loads notes to re-index them selects these, so none comes back missing
-const INDEX_FIELDS = "_id title content tags isChecklist checklist linkPreviews isArchived updatedAt";
+const INDEX_FIELDS = "_id title content tags linkPreviews isArchived updatedAt";
 
 
 // ---- Keeping the search index in step with saved notes ----
@@ -125,7 +116,7 @@ const pendingIndexing = new Map();   // noteId -> promise of the embedding resul
 const recentIndexing = new Map();    // noteId -> { result, at }
 
 // Saves of one note this close together are indexed once, from the last of them: five quick ticks on
-// a checklist cost one embedding run, not five. The status question waits through the delay too.
+// a save with a changed body cost one embedding run, not five. The status question waits through the delay too.
 const INDEX_DEBOUNCE_MS = 2000;
 const scheduledIndexing = new Map();   // noteId -> { note, userId, timer, start }
 
@@ -197,7 +188,7 @@ const runEmbeddingBatch = async (operations, batchSize = 4) => {
 const triggerEmbed = (note, userId, { force = false } = {}) => runEmbeddingOperation(String(note._id), async () => {
     if (!isFastApiConfigured()) return { status: "skipped", reason: "not-configured" };
 
-    // Content + checklist + link previews (title alone for a body-less note);
+    // Content + link previews (title alone for a body-less note);
     // shared with the agent's search check so both compute the same hash.
     const indexText = buildIndexText(note);
     const embedText = indexText.text;

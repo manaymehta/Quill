@@ -1,12 +1,9 @@
-import { memo, useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
-import { MdAdd, MdClose, MdRefresh, MdKeyboardArrowDown, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen, MdOutlineLink, MdUndo, MdRedo } from 'react-icons/md'
+import { memo, useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
+import { MdAdd, MdClose, MdRefresh, MdKeyboardArrowDown, MdCheckBoxOutlineBlank, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen, MdOutlineLink, MdUndo, MdRedo } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import { RiSparkling2Fill } from 'react-icons/ri'
 import { LuUndo2, LuRedo2 } from 'react-icons/lu'
 import axiosInstance from '../../utils/axiosInstance';
-import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
-import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import MoveToPicker from '../../components/Cards/MoveToPicker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFoldersQuery, QUERY_KEYS } from '../../hooks/useNotesQuery';
@@ -51,41 +48,6 @@ const isMobileOrTouch = () =>
   typeof window !== 'undefined' &&
   (window.matchMedia('(pointer: coarse)').matches || window.matchMedia(BELOW_TABLET_QUERY).matches);
 
-const SortableChecklistItem = ({ id, item, index, toggleChecklistItem, handleChecklistItemChange, removeChecklistItem }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-
-  const style = {
-    // Translate instead of Transform preserves exact dimensions without squishing over lines of text
-    transform: CSS.Translate.toString(transform),
-    transition,
-    zIndex: isDragging ? 0 : 'auto',
-    opacity: isDragging ? 0.3 : 1, // Dim the original item during drag
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} className="flex flex-col gap-1 relative w-full group min-w-0">
-      <div className={`flex items-center gap-2.5 mb-2.5 transition-colors ${isDragging ? '' : ''}`}>
-        <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-stone-300 hover:text-stone-500 transition-colors flex-shrink-0">
-          <MdOutlineDragIndicator className="text-xl" />
-        </button>
-        <button className='cursor-pointer text-stone-500 hover:text-[#e85d56] transition-colors text-xl flex-shrink-0' onClick={() => toggleChecklistItem(index)}>
-          {item.completed ? <MdCheckBox className="text-[#e85d56]" /> : <MdCheckBoxOutlineBlank />}
-        </button>
-        <input
-          type="text"
-          value={item.text}
-          onChange={(e) => handleChecklistItemChange(index, e.target.value)}
-          className={`text-base bg-transparent outline-none w-full min-w-0 break-words border-b border-transparent focus:border-black/10 transition-colors py-1 caret-[#e85d56] cursor-text ${item.completed ? 'line-through text-stone-400' : 'text-[#333]'}`}
-          placeholder='Checklist item'
-        />
-        <button className='cursor-pointer text-stone-400 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:text-[#e85d56] flex-shrink-0 p-0.5' onClick={() => removeChecklistItem(index)} title="Remove item">
-          <MdClose className="text-xl" />
-        </button>
-      </div>
-    </div>
-  );
-};
-
 
 
 const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess, showToastMessage, isActive, onToggleMockPanel, onSummaryReceived }) => {
@@ -109,12 +71,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const dotSlotWidth = dockMetrics.height[1] + 2 * EDITOR_TOOLBAR_DOT_SLOT_MARGIN_PX;
   const [error, setError] = useState("")
   const [isSummarizing, setIsSummarizing] = useState(false);
-  const [isChecklist, setIsChecklist] = useState(noteData?.isChecklist || false);
-  const [checklist, setChecklist] = useState(() => (noteData?.checklist || []).map((item, i) => item.id ? item : { ...item, id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${i}` }));
   const [tagInputValue, setTagInputValue] = useState("");
   const [editingTagIndex, setEditingTagIndex] = useState(null);
   const [editingTagValue, setEditingTagValue] = useState("");
-  const [activeChecklistId, setActiveChecklistId] = useState(null);
 
   // Ref to the CodeMirror editor view for programmatic focus
   const cmViewRef = useRef(null);
@@ -174,7 +133,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const handleInsertCheckbox = useCallback(() => {
     const view = cmViewRef.current;
     if (!view?.quillInsertTask) return;
-    view.quillInsertTask();
+    const inserted = view.quillInsertTask();
+    if (!inserted) return;
     if (isMobileOrTouch()) view.focusForTyping?.();
     else view.focus();
   }, []);
@@ -197,7 +157,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   // The on-screen keyboard covers the page while the editor is open (utils/virtualKeyboard): the
   // editor keeps its size and the part of the scroll area under the keyboard is made reachable (a
   // spacer of that height at the end), so the line you're on can sit above it. CodeMirror keeps its
-  // cursor there (MarkdownEditor); other fields (checklist items, tags) are scrolled up on focus.
+  // cursor there (MarkdownEditor); other fields (tags) are scrolled up on focus.
   const keyboardTop = useKeyboardTop();
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   useLayoutEffect(() => {
@@ -314,7 +274,6 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   }, []);
 
   const getImmediatePreviewsForSave = useCallback((currentContent, currentPreviews) => {
-    if (isChecklist) return [];
     const urls = currentContent.match(/(https?:\/\/[^\s]+)/g) || [];
     const cleanUrls = urls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
     const uniqueUrls = [...new Set(cleanUrls)];
@@ -337,19 +296,15 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         siteName
       };
     });
-  }, [isChecklist]);
+  }, []);
 
   useEffect(() => {
-    if (isChecklist) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLinkPreviews(prev => (prev.length > 0 ? [] : prev));
-      return;
-    }
     const urls = content.match(/(https?:\/\/[^\s]+)/g) || [];
     const cleanUrls = urls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
     const uniqueUrls = [...new Set(cleanUrls)];
 
     // Sync linkPreviews state to only keep previews of URLs that actually still exist in content
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLinkPreviews(prev => {
       if (prev.length === 0) return prev;
       const filtered = prev.filter(p => uniqueUrls.includes(p.url));
@@ -358,7 +313,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       }
       return prev;
     });
-  }, [content, isChecklist]);
+  }, [content]);
 
   const [refreshingUrls, setRefreshingUrls] = useState(new Set());
 
@@ -450,12 +405,12 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
   // Auto-focus the CodeMirror editor when this tab becomes the active tab (desktop only)
   useEffect(() => {
-    if (isActive && !isChecklist && cmViewRef.current && !isMobileOrTouch()) {
+    if (isActive && cmViewRef.current && !isMobileOrTouch()) {
       // Small delay lets the display:none → display:block paint happen first
       const t = setTimeout(() => cmViewRef.current?.focus(), 50);
       return () => clearTimeout(t);
     }
-  }, [isActive, isChecklist]);
+  }, [isActive]);
 
   const charCount = content.length;
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
@@ -469,10 +424,10 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   useEffect(() => {
     if (!onUpdateTabState) return;
     const timer = setTimeout(() => {
-      onUpdateTabState({ content, tags, isChecklist, checklist, folderId, linkPreviews });
+      onUpdateTabState({ content, tags, folderId, linkPreviews });
     }, 250);
     return () => clearTimeout(timer);
-  }, [content, tags, isChecklist, checklist, folderId, linkPreviews]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [content, tags, folderId, linkPreviews]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const latestDraftRef = useRef();
   // The tab revision this editor was opened with; a different one at unmount
@@ -485,8 +440,6 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       title,
       content,
       tags,
-      isChecklist,
-      checklist,
       folderId,
       linkPreviews,
     };
@@ -494,7 +447,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     if (currentNoteId) {
       editorRegistry.setDraft(currentNoteId, currentDraft);
     }
-  }, [currentNoteId, title, content, tags, isChecklist, checklist, folderId, linkPreviews]);
+  }, [currentNoteId, title, content, tags, folderId, linkPreviews]);
 
   // Whether what this editor holds may be written back on closing: only while the tab is still
   // open (so a discarded tab isn't resurrected) and wasn't changed from outside (agent edit, revert:
@@ -550,34 +503,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   };
 
 
-  const handleChecklistItemChange = (index, newText) => {
-    const newChecklist = [...checklist];
-    newChecklist[index].text = newText;
-    setChecklist(newChecklist);
-  };
-
-  const toggleChecklistItem = (index) => {
-    const newChecklist = [...checklist];
-    newChecklist[index].completed = !newChecklist[index].completed;
-    setChecklist(newChecklist);
-  };
-
-  const addChecklistItem = () => {
-    setChecklist([...checklist, { id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, text: '', completed: false }]);
-  };
-
-  const removeChecklistItem = (index) => {
-    const newChecklist = [...checklist];
-    newChecklist.splice(index, 1);
-    setChecklist(newChecklist);
-  };
-
-
   const handleSaveNote = useCallback(() => {
     try {
       const immediatePreviews = getImmediatePreviewsForSave(content, linkPreviews);
-      // eslint-disable-next-line no-unused-vars
-      const cleanedChecklist = checklist.map(({ id, ...rest }) => rest);
 
       const isDraft = Boolean(noteData?.isDraft || type === 'add');
       const targetNoteId = isDraft ? generateObjectId() : currentNoteId;
@@ -603,10 +531,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       const noteObject = {
         _id: targetNoteId,
         title: title || " ",
-        content: isChecklist ? "" : content,
+        content,
         tags,
-        isChecklist,
-        checklist: cleanedChecklist,
         folderId: currentEffectiveFolderId,
         showInHome: effectiveShowInHome,
         linkPreviews: immediatePreviews,
@@ -680,8 +606,6 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         title: noteObject.title,
         content: noteObject.content,
         tags: noteObject.tags,
-        isChecklist: noteObject.isChecklist,
-        checklist: noteObject.checklist,
         folderId: noteObject.folderId,
         linkPreviews: noteObject.linkPreviews,
       };
@@ -743,20 +667,16 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         setError(error.response.data.message);
       }
     }
-  }, [noteData, currentNoteId, type, title, content, isChecklist, tags, checklist, folderId, onSaveSuccess, showToastMessage, linkPreviews, getImmediatePreviewsForSave, queryClient]);
+  }, [noteData, currentNoteId, type, title, content, tags, folderId, onSaveSuccess, showToastMessage, linkPreviews, getImmediatePreviewsForSave, queryClient]);
 
   const handleAddNote = useCallback(() => {
-    if (!isChecklist && !content && !title) {
+    if (!content && !title) {
       setError("Please enter content");
-      return;
-    }
-    if (isChecklist && checklist.length === 0 && !title) {
-      setError("Please add at least one checklist item");
       return;
     }
     setError("");
     handleSaveNote();
-  }, [isChecklist, content, title, checklist, handleSaveNote]);
+  }, [content, title, handleSaveNote]);
 
   // "Apply & save" from the agent chat: the same save the Save button does,
   // once the editor has mounted. The claim is taken inside the timer so a
@@ -803,32 +723,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     }
   };
 
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
-  );
-
-  const handleDragStart = (event) => {
-    setActiveChecklistId(event.active.id);
-  };
-
-  const handleDragEnd = (event) => {
-    setActiveChecklistId(null);
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const oldIndex = checklist.findIndex(item => item.id === active.id);
-      const newIndex = checklist.findIndex(item => item.id === over.id);
-      setChecklist(arrayMove(checklist, oldIndex, newIndex));
-    }
-  };
-
   // An agent edit: 'changes' (a diff of your original against the text now — what opening an edit to
   // review lands on), 'before' (your original, read-only) or 'after' (the note, editable)
   const [agentView, setAgentView] = useState('changes');
-
-  const activeChecklistItem = activeChecklistId ? checklist.find(i => i.id === activeChecklistId) : null;
-
-  const checklistItems = useMemo(() => checklist.map(item => item.id), [checklist]);
 
   // Cheap derived check; avoid useMemo (React Compiler rejects manual deps here).
   const agentDiffHasChanges = Array.isArray(noteData?.agentDiff) && noteData.agentDiff.some((part) => part.added || part.removed);
@@ -837,18 +734,17 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     ? noteData.agentDiff.filter((part) => !part.added).map((part) => part.value).join('')
     : content;
   const agentTitleChanged = noteData?.agentOriginalTitle !== undefined && noteData.agentOriginalTitle !== (noteData.title || '');
-  const hasAgentBefore = Boolean(noteData?.agentStaged) && !isChecklist && (agentDiffHasChanges || agentTitleChanged);
+  const hasAgentBefore = Boolean(noteData?.agentStaged) && (agentDiffHasChanges || agentTitleChanged);
   const isShowingBefore = hasAgentBefore && agentView === 'before';
   const isShowingChanges = hasAgentBefore && agentView === 'changes';
 
   // The trigger only belongs to the live editor. A pointer press already closes the pill, but a
-  // non-pointer switch (checklist on, agent Before/Changes) must not leave it open underneath.
-  const showLiveEditorTools = !isChecklist && !isShowingBefore && !isShowingChanges;
-  const showHistoryTrigger = showLiveEditorTools;
+  // non-pointer switch (agent Before/Changes) must not leave it open underneath.
+  const showLiveEditorTools = !isShowingBefore && !isShowingChanges;
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!showHistoryTrigger) setIsHistoryOpen(false);
-  }, [showHistoryTrigger]);
+    if (!showLiveEditorTools) setIsHistoryOpen(false);
+  }, [showLiveEditorTools]);
 
   return (
     <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] overflow-hidden relative' style={EDITOR_CARD_STYLE}>
@@ -1123,59 +1019,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         <div className='flex flex-col gap-2 flex-grow'>
           {error && (<p className='text-xs text-[#e85d56] mb-2 shrink-0'>{error}</p>)}
 
-          {isChecklist ? (
-            <div className="flex-grow">
-
-              {checklist.length === 0 && (
-                <button className='w-full text-sm bg-black/5 text-[#333] p-3 rounded-xl cursor-pointer hover:bg-black/10 transition-all ease-in-out text-left' onClick={addChecklistItem}>
-                  <MdAdd className="inline-block text-lg align-text-bottom mr-1" /> Add your first item...
-                </button>
-              )}
-
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-                <SortableContext items={checklistItems} strategy={verticalListSortingStrategy}>
-                  {checklist.map((item, index) => (
-                    <SortableChecklistItem
-                      key={item.id}
-                      id={item.id}
-                      item={item}
-                      index={index}
-                      toggleChecklistItem={toggleChecklistItem}
-                      handleChecklistItemChange={handleChecklistItemChange}
-                      removeChecklistItem={removeChecklistItem}
-                    />
-                  ))}
-                </SortableContext>
-                <DragOverlay>
-                  {activeChecklistItem ? (
-                    <div className="flex items-center gap-3 bg-[#f8f1e6] border border-[#e8dcc8] p-2 rounded-lg shadow-xl opacity-100 origin-center w-full">
-                      <button className="text-stone-300">
-                        <MdOutlineDragIndicator className="text-xl" />
-                      </button>
-                      <button className='text-stone-500 text-xl'>
-                        {activeChecklistItem.completed ? <MdCheckBox className="text-[#e85d56]" /> : <MdCheckBoxOutlineBlank />}
-                      </button>
-                      <input
-                        type="text"
-                        value={activeChecklistItem.text}
-                        readOnly
-                        className={`text-base bg-transparent outline-none w-full border-b border-transparent py-1 ${activeChecklistItem.completed ? 'line-through text-stone-400' : 'text-[#333]'}`}
-                      />
-                    </div>
-                  ) : null}
-                </DragOverlay>
-              </DndContext>
-
-              {checklist.length > 0 && (
-                <button className='text-sm text-stone-500 p-2 mt-2 cursor-pointer hover:text-[#333] transition-colors ease-in-out text-left' onClick={addChecklistItem}>
-                  <MdAdd className="inline-block text-lg align-text-bottom" /> Add another item
-                </button>
-              )}
-            </div>
-          ) : (
-            /* ── CodeMirror live-preview markdown editor ── */
-             <div 
-               className={`flex-grow min-w-0 overflow-x-hidden text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] cursor-text ${isShowingBefore || isShowingChanges ? 'hidden' : ''}`}
+          {/* ── CodeMirror live-preview markdown editor ── */}
+          <div 
+            className={`flex-grow min-w-0 overflow-x-hidden text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] cursor-text ${isShowingBefore || isShowingChanges ? 'hidden' : ''}`}
                onClick={(e) => {
                  if (e.target === e.currentTarget && cmViewRef.current) {
                    const view = cmViewRef.current;
@@ -1204,7 +1050,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                   value={content}
                   onChange={handleContentChange}
                   viewRef={cmViewRef}
-                  autoFocus={isActive && !isChecklist && !isMobileOrTouchScreen}
+                  autoFocus={isActive && !isMobileOrTouchScreen}
                   keepOnClose={canWriteBackOnClose}
                   keyboardOverlap={keyboardOverlap}
                   onHistoryChange={handleHistoryChange}
@@ -1217,7 +1063,6 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                 />
               </Suspense>
             </div>
-          )}
 
           {/* Before: your original, read-only, in the editor's own look (the live editor above is
               only hidden, so switching back keeps your place) */}
@@ -1365,18 +1210,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           )}
 
           <button
-            onClick={() => setIsChecklist(!isChecklist)}
-            className={`flex items-center justify-center gap-1.5 p-2 md:px-2.5 md:py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isChecklist ? 'bg-white shadow-sm text-[#333]' : 'text-stone-500 hover:text-[#333] hover:bg-black/5'}`}
-            title="Checklist"
-          >
-            <MdNotes className="text-xl md:text-base" />
-            <span className="hidden md:inline">Checklist</span>
-          </button>
-
-          <button
             onClick={handleSummarize}
-            disabled={isSummarizing || isChecklist || !content.trim()}
-            className={`flex items-center justify-center gap-1.5 p-2 md:px-2.5 md:py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isSummarizing ? 'opacity-50 animate-pulse text-[#e85d56]' : isChecklist || !content.trim() ? 'opacity-40 cursor-not-allowed text-stone-500' : 'text-stone-500 hover:text-[#e85d56] hover:bg-orange-50'}`}
+            disabled={isSummarizing || !content.trim()}
+            className={`flex items-center justify-center gap-1.5 p-2 md:px-2.5 md:py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isSummarizing ? 'opacity-50 animate-pulse text-[#e85d56]' : !content.trim() ? 'opacity-40 cursor-not-allowed text-stone-500' : 'text-stone-500 hover:text-[#e85d56] hover:bg-orange-50'}`}
             title="Summarize"
           >
             <FaWandMagicSparkles className="text-lg md:text-xs" />
@@ -1392,7 +1228,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             <span className="hidden md:inline">Panel</span>
           </button>
 
-          {showHistoryTrigger && (
+          {showLiveEditorTools && (
             <div
               ref={historyWrapRef}
               className="relative flex items-center"
@@ -1456,11 +1292,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         {/* actions */}
         <div className="flex items-center gap-1 md:gap-2 shrink-0 justify-self-end">
 
-          {!isChecklist && (
-            <span className="hidden md:inline text-[11px] text-stone-400 font-medium whitespace-nowrap">
-              {wordCount}w &middot; {charCount}ch
-            </span>
-          )}
+          <span className="hidden md:inline text-[11px] text-stone-400 font-medium whitespace-nowrap">
+            {wordCount}w &middot; {charCount}ch
+          </span>
 
           <button
             onClick={onClose}

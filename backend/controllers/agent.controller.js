@@ -82,7 +82,6 @@ const sanitizeWorkingSet = (raw) => {
 const DRAFT_TITLE_MAX = 500;
 const DRAFT_CONTENT_MAX = 20_000;
 const DRAFT_TAGS_MAX = 10;
-const DRAFT_CHECKLIST_ITEMS_MAX = 100;
 
 const isValidDraft = (draft) => {
     if (!draft || typeof draft !== "object") return false;
@@ -95,13 +94,6 @@ const isValidDraft = (draft) => {
         if (!Array.isArray(draft.tags) || draft.tags.length > DRAFT_TAGS_MAX
             || !draft.tags.every((t) => typeof t === "string")) return false;
     }
-    if (draft.isChecklist !== undefined && draft.isChecklist !== null && typeof draft.isChecklist !== "boolean") return false;
-    if (draft.checklist !== undefined && draft.checklist !== null) {
-        if (!Array.isArray(draft.checklist) || draft.checklist.length > DRAFT_CHECKLIST_ITEMS_MAX
-            || !draft.checklist.every((item) => item && typeof item === "object"
-                && typeof item.text === "string"
-                && (item.completed === undefined || typeof item.completed === "boolean"))) return false;
-    }
     if (draft.folderId !== undefined && draft.folderId !== null && !isObjectId(draft.folderId)) return false;
     if (draft.basedOnUnsaved !== undefined && typeof draft.basedOnUnsaved !== "boolean") return false;
     return true;
@@ -112,7 +104,6 @@ const isValidDraft = (draft) => {
 const MAX_UNSAVED_NOTES = 12;
 const UNSAVED_TAGS_MAX = 50;
 const UNSAVED_TAG_CHARS_MAX = 100;
-const UNSAVED_CHECKLIST_TEXT_MAX = 2000;
 
 const sanitizeUnsavedNotes = (raw) => {
     if (raw === undefined || raw === null) return [];
@@ -121,22 +112,13 @@ const sanitizeUnsavedNotes = (raw) => {
     const sanitized = [];
     for (const note of raw) {
         if (!note || typeof note !== "object") return null;
-        const { noteId, title = "", content = "", tags = [], isChecklist = false, checklist = [] } = note;
+        const { noteId, title = "", content = "", tags = [] } = note;
         if (!isObjectId(noteId)) return null;
         if (typeof title !== "string" || title.length > DRAFT_TITLE_MAX) return null;
         if (typeof content !== "string" || content.length > DRAFT_CONTENT_MAX) return null;
         if (!Array.isArray(tags) || tags.length > UNSAVED_TAGS_MAX
             || !tags.every((t) => typeof t === "string" && t.length <= UNSAVED_TAG_CHARS_MAX)) return null;
-        if (typeof isChecklist !== "boolean") return null;
-        if (!Array.isArray(checklist) || checklist.length > DRAFT_CHECKLIST_ITEMS_MAX) return null;
-        const items = [];
-        for (const item of checklist) {
-            if (!item || typeof item !== "object" || typeof item.text !== "string"
-                || item.text.length > UNSAVED_CHECKLIST_TEXT_MAX
-                || (item.completed !== undefined && typeof item.completed !== "boolean")) return null;
-            items.push({ text: item.text, completed: Boolean(item.completed) });
-        }
-        sanitized.push({ noteId, title, content, tags, isChecklist, checklist: items });
+        sanitized.push({ noteId, title, content, tags });
     }
     return sanitized;
 };

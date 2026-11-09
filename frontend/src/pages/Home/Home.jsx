@@ -7,7 +7,7 @@ import { useSearchStore } from '../../store/useSearchStore';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useHomeNotesQuery, useFoldersQuery } from '../../hooks/useNotesQuery';
 import { buildFolderHierarchy } from '../../utils/folderHierarchy';
-import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleShowInHomeMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useTaskToggleMutation, useToggleShowInHomeMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import { MdOutlineFolder } from 'react-icons/md';
 import './Modal.css';
@@ -48,7 +48,7 @@ const Home = () => {
   const { promptToggleArchive } = useArchiveNoteMutation();
   const toggleShowInHomeMutation = useToggleShowInHomeMutation();
   const moveNoteMutation = useMoveNoteMutation();
-  const checklistToggleMutation = useChecklistToggleMutation();
+  const taskToggleMutation = useTaskToggleMutation();
   const editFolderMutation = useEditFolderMutation();
 
   // Set search scope context
@@ -77,7 +77,7 @@ const Home = () => {
     moveNoteMutation.mutate({ noteId, targetFolderId });
   };
 
-  const handleChecklist = (note, index) => checklistToggleMutation.toggle(note, index);
+  const handleTaskToggle = (note, index, line) => taskToggleMutation.toggle(note, index, line);
 
   const handleEdit = useCallback((note) => openTab(note), [openTab]);
 
@@ -118,7 +118,7 @@ const Home = () => {
             onArchive={promptToggleArchive}
             onToggleHome={handleToggleHome}
             onMove={handleMoveNote}
-            onChecklistToggle={handleChecklist}
+            onTaskToggle={handleTaskToggle}
           />
         )}
       </div>

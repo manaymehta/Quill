@@ -34,14 +34,12 @@ const validateQueryParam = (paramName, { required = false, maxLength = 256 } = {
 };
 
 // Size caps for what a note or folder may hold, well above anything the app has stored (largest
-// note so far: 5,442 characters of content, 5 tags, 8 checklist items, 5 previews)
+// note so far: 5,442 characters of content, 5 tags, 5 previews)
 const NOTE_LIMITS = {
     title: 500,
     content: 200_000,
     tags: 50,
     tag: 100,
-    checklist: 500,
-    checklistText: 2_000,
     linkPreviews: 20,
 };
 // Previews come from the scraper, which already cuts its fields to these lengths
@@ -54,7 +52,7 @@ const isText = (value, max) => value === null || (typeof value === "string" && v
 
 // The first problem with a note body, or null. Only fields present are checked (an edit sends a few).
 const noteBodyProblem = (body) => {
-    const { title, content, tags, isChecklist, checklist, showInHome, linkPreviews } = body;
+    const { title, content, tags, showInHome, linkPreviews } = body;
     if (title !== undefined && !isText(title, NOTE_LIMITS.title)) {
         return `Title must be text of at most ${NOTE_LIMITS.title} characters`;
     }
@@ -65,16 +63,7 @@ const noteBodyProblem = (body) => {
         return `Tags must be text of at most ${NOTE_LIMITS.tag} characters each`;
     }
     if (tags !== undefined && tags.length > NOTE_LIMITS.tags) return `A note can have at most ${NOTE_LIMITS.tags} tags`;
-    if (isChecklist !== undefined && typeof isChecklist !== "boolean") return "isChecklist must be true or false";
     if (showInHome !== undefined && typeof showInHome !== "boolean") return "showInHome must be true or false";
-    if (checklist !== undefined) {
-        if (!Array.isArray(checklist)) return "Checklist must be a list";
-        if (checklist.length > NOTE_LIMITS.checklist) return `A checklist can have at most ${NOTE_LIMITS.checklist} items`;
-        const badItem = checklist.some((item) => !isPlainObject(item)
-            || (item.text !== undefined && !isText(item.text, NOTE_LIMITS.checklistText))
-            || (item.completed !== undefined && typeof item.completed !== "boolean"));
-        if (badItem) return `Checklist items must be text of at most ${NOTE_LIMITS.checklistText.toLocaleString("en-US")} characters`;
-    }
     if (linkPreviews !== undefined) {
         if (!Array.isArray(linkPreviews)) return "linkPreviews must be a list";
         const badPreview = linkPreviews.some((preview) => !isPlainObject(preview)
@@ -109,6 +98,7 @@ const validateFolderBody = (req, res, next) => {
 };
 
 module.exports = {
+    NOTE_LIMITS,
     validateObjectBody,
     validateObjectIdParam,
     validateQueryParam,

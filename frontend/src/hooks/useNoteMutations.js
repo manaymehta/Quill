@@ -7,6 +7,7 @@ import { useToastStore } from '../store/useToastStore';
 import { useModalStore } from '../components/Modals/useModalStore';
 import { editorRegistry } from '../utils/editorRegistry';
 import { noteIndexingFailed } from '../utils/noteIndexing';
+import { toggleTaskAt, toggleTaskAtLine } from '../utils/contentTasks';
 import { TOAST, MODAL_MESSAGES } from '../constants/toastMessages';
 
 const isCanceled = (err) => axios.isCancel(err) || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED';
@@ -375,35 +376,40 @@ export const useArchiveNoteMutation = () => {
   };
 };
 
-const CHECKLIST_MUTATION_KEY = ['checklist-toggle'];
+const TASK_MUTATION_KEY = ['task-toggle'];
 
-// Ticking an item on a card. Each tick starts from the newest cached checklist and shows at once
-// (patched into every cached list), so a quick second tick can't send the state from before the
-// first one and undo it. The lists are re-fetched once, after the last tick in flight settles.
-export const useChecklistToggleMutation = () => {
+// Ticking a checkbox on a card: rewrite that task line in the note's content. Each tick starts
+// from the newest cached content and shows at once (patched into every cached list), so a quick
+// second tick can't send the state from before the first one and undo it.
+export const useTaskToggleMutation = () => {
   const queryClient = useQueryClient();
   const mutation = useMutation({
-    mutationKey: CHECKLIST_MUTATION_KEY,
-    mutationFn: async ({ noteId, checklist }) => {
-      const response = await axiosInstance.put(`/edit-note/${noteId}`, { checklist });
+    mutationKey: TASK_MUTATION_KEY,
+    mutationFn: async ({ noteId, content }) => {
+      const response = await axiosInstance.put(`/edit-note/${noteId}`, { content });
       return response.data;
     },
-    onMutate: ({ noteId, checklist }) => patchNoteLists(queryClient, (_key, list) => (
-      list.some((n) => n._id === noteId) ? list.map((n) => (n._id === noteId ? { ...n, checklist } : n)) : list
+    onMutate: ({ noteId, content }) => patchNoteLists(queryClient, (_key, list) => (
+      list.some((n) => n._id === noteId) ? list.map((n) => (n._id === noteId ? { ...n, content } : n)) : list
     )),
     onError: (_error, _variables, context) => restoreNoteLists(queryClient, context),
     onSettled: () => {
-      if (queryClient.isMutating({ mutationKey: CHECKLIST_MUTATION_KEY }) === 1) {
+      if (queryClient.isMutating({ mutationKey: TASK_MUTATION_KEY }) === 1) {
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.NOTES });
       }
     },
   });
 
-  const toggle = (note, index) => {
-    const checklist = [...((findCachedNote(queryClient, note._id) || note).checklist || [])];
-    if (!checklist[index]) return;
-    checklist[index] = { ...checklist[index], completed: !checklist[index].completed };
-    mutation.mutate({ noteId: note._id, checklist });
+  const toggle = (note, taskIndex, taskLine) => {
+    // A card tick must not race the open editor: its tab would keep the old content and a later
+    // save would overwrite the tick. The note is open, so tick it there instead.
+    if (useTabsStore.getState().isTabOpen(note._id)) return;
+    const current = findCachedNote(queryClient, note._id) || note;
+    const content = Number.isInteger(taskLine)
+      ? toggleTaskAtLine(current?.content, taskLine - 1)
+      : toggleTaskAt(current?.content, taskIndex);
+    if (content === null) return;
+    mutation.mutate({ noteId: note._id, content });
   };
 
   return { ...mutation, toggle };

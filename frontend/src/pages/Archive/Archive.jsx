@@ -2,7 +2,7 @@ import React from 'react';
 import NotesGrid from '../../components/Cards/NotesGrid';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useArchivedNotesQuery } from '../../hooks/useNotesQuery';
-import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation } from '../../hooks/useNoteMutations';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useTaskToggleMutation } from '../../hooks/useNoteMutations';
 
 // A drag here changes Archive's own order
 const ARCHIVE_ORDER = { list: 'archive' };
@@ -14,7 +14,7 @@ const Archive = () => {
 
     const { promptDelete } = useDeleteNoteMutation();
     const { promptToggleArchive } = useArchiveNoteMutation();
-    const checklistToggleMutation = useChecklistToggleMutation();
+    const taskToggleMutation = useTaskToggleMutation();
 
     const handleEdit = (note) => {
         openTab(note);
@@ -24,7 +24,7 @@ const Archive = () => {
         promptToggleArchive(note, { confirmUnarchive: true });
     };
 
-    const handleChecklist = (note, index) => checklistToggleMutation.toggle(note, index);
+    const handleTaskToggle = (note, index, line) => taskToggleMutation.toggle(note, index, line);
 
     return (
         <div className="relative min-h-0">
@@ -35,7 +35,7 @@ const Archive = () => {
                     onEdit={handleEdit}
                     onDelete={promptDelete}
                     onArchive={handleArchiveToggle}
-                    onChecklistToggle={handleChecklist}
+                    onTaskToggle={handleTaskToggle}
                     orderList={ARCHIVE_ORDER}
                 />
             </div>

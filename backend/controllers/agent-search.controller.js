@@ -8,8 +8,7 @@ const { isObjectId } = require("../utils/object-id");
 // - note check: are the matched notes still there, this user's, and is each
 //   matched piece from the note's current text (fingerprint)? Leftover pieces
 //   of deleted notes and out-of-date pieces are healed in the background;
-// - exact search: notes containing the given keywords in the title, text,
-//   tags or checklist items.
+// - exact search: notes containing the given keywords in the title, text or tags.
 // Runs with the user's own token, so everything is scoped to req.user._id.
 
 const HASH_RE = /^[a-f0-9]{1,64}$/;
@@ -61,19 +60,18 @@ const sanitizeBody = (body) => {
     return { keywords: terms.map((k) => k.trim()), candidates: cleaned, keywordLimit: keywordLimit || MAX_KEYWORD_NOTES };
 };
 
-const NOTE_FIELDS = "_id title content tags folderId isArchived isChecklist checklist linkPreviews isDeleted updatedAt";
+const NOTE_FIELDS = "_id title content tags folderId isArchived linkPreviews isDeleted updatedAt";
 
 const noteMeta = (note, folderNames) => ({
     title: note.title || "",
     folder: note.folderId ? folderNames.get(String(note.folderId)) || null : null,
     tags: Array.isArray(note.tags) ? note.tags : [],
     isArchived: Boolean(note.isArchived),
-    isChecklist: Boolean(note.isChecklist),
     lastEdited: note.updatedAt,
 });
 
 // Where a note matched the keywords, plus a window of text around the first
-// match in its body (or its checklist items / opening text).
+// match in its body (or its opening text).
 const describeKeywordHit = (note, regexes) => {
     const matchedBy = new Set();
     let window = null;
@@ -82,11 +80,6 @@ const describeKeywordHit = (note, regexes) => {
     for (const re of regexes) {
         if (re.test(note.title || "")) matchedBy.add("title");
         if ((note.tags || []).some((t) => re.test(String(t)))) matchedBy.add("tag");
-        const items = (note.checklist || []).filter((item) => re.test(item.text || ""));
-        if (items.length > 0) {
-            matchedBy.add("checklist");
-            if (!window) window = items.map((item) => `- ${item.text}`).join("\n").slice(0, WINDOW_RADIUS * 2);
-        }
         const match = re.exec(content);
         if (match) {
             matchedBy.add("content");
@@ -101,11 +94,10 @@ const describeKeywordHit = (note, regexes) => {
     return { matchedBy: [...matchedBy], window };
 };
 
-// Title hits first, then tags, then checklist/content; more matched fields rank higher.
+// Title hits first, then tags, then content; more matched fields rank higher.
 const keywordRank = (hit) => (
     (hit.matchedBy.includes("title") ? 8 : 0)
     + (hit.matchedBy.includes("tag") ? 4 : 0)
-    + (hit.matchedBy.includes("checklist") ? 2 : 0)
     + (hit.matchedBy.includes("content") ? 1 : 0)
 );
 
@@ -132,7 +124,7 @@ const searchSupport = async (req, res) => {
             userId,
             isDeleted: { $ne: true },
             $or: regexes.flatMap((re) => [
-                { title: re }, { content: re }, { tags: re }, { "checklist.text": re },
+                { title: re }, { content: re }, { tags: re },
             ]),
         }).select(NOTE_FIELDS).sort({ updatedAt: -1 }).limit(input.keywordLimit).lean();
     }

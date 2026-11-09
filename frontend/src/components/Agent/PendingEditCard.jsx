@@ -67,7 +67,7 @@ const PendingEditCard = ({ edit, onAction }) => {
           )}
           {edit.otherChanges.length > 0 && (
             <p className="text-xs text-stone-500">
-              Also changes {edit.otherChanges.map((k) => (k === 'isChecklist' ? 'checklist mode' : k)).join(', ')}
+              Also changes {edit.otherChanges.join(', ')}
             </p>
           )}
           {edit.diff && (

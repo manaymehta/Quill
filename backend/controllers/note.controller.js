@@ -1,12 +1,14 @@
 const Note = require("../models/note.model");
 const { indexInBackground, deleteEmbed, indexStatusOf } = require("../services/note-index.service");
+const { normalizeNoteBody } = require("../services/note-body.service");
+const { NOTE_LIMITS } = require("../middleware/request-validation");
 const { isFastApiConfigured, callFastApi } = require("../services/fastapi.service");
 const { LIVE, LISTS, sortFor, homeFilter, listsOf, placeArrivals, reorderList } = require("../services/note-order.service");
 const {
     requireLivingFolder, moveToFolder, setArchived, trashFields, restoreFromTrash,
 } = require("../services/note-actions.service");
 const { isObjectId } = require("../utils/object-id");
-const NOTE_LIST_FIELDS = "_id title content tags folderId showInHome isArchived isChecklist checklist orderIndex homeOrderIndex archiveOrderIndex linkPreviews createdAt updatedAt";
+const NOTE_LIST_FIELDS = "_id title content tags folderId showInHome isArchived orderIndex homeOrderIndex archiveOrderIndex linkPreviews createdAt updatedAt";
 const NOTE_TRASH_FIELDS = `${NOTE_LIST_FIELDS} isDeleted deletedAt deletedBatchId`;
 const NOTE_GRAPH_FIELDS = "_id title tags isArchived";
 
@@ -23,10 +25,15 @@ const getNoteIndexStatus = async (req, res) => {
 };
 
 const addNote = async (req, res) => {
-    const { _id, title, content, tags, isChecklist, checklist, folderId, showInHome, linkPreviews } = req.body;
+    const body = normalizeNoteBody(req.body);
+    const { _id, title, content, tags, folderId, showInHome, linkPreviews } = body;
     const userId = req.user._id;
 
-    if (!title && !content && (!checklist || checklist.length === 0)) {
+    if (typeof content === "string" && content.length > NOTE_LIMITS.content) {
+        return res.status(400).json({ error: true, message: `Note content must be at most ${NOTE_LIMITS.content.toLocaleString("en-US")} characters` });
+    }
+
+    if (!title && !content) {
         return res.status(400).json({ error: true, message: "Content or Title is required" });
     }
 
@@ -38,8 +45,6 @@ const addNote = async (req, res) => {
         title: title || " ",
         content: content || " ",
         tags: tags || [],
-        isChecklist: isChecklist || false,
-        checklist: checklist || [],
         userId,
         folderId: targetFolderId,
         showInHome: typeof showInHome !== "undefined" ? showInHome : false,
@@ -64,7 +69,6 @@ const addNote = async (req, res) => {
 
 const editNote = async (req, res) => {
     const noteId = req.params.noteId;
-    const { title, content, tags, isChecklist, checklist, folderId, showInHome, linkPreviews } = req.body;
     const userId = req.user._id;
 
     const note = await Note.findOne({ _id: noteId, userId: userId, isDeleted: { $ne: true } });
@@ -72,15 +76,19 @@ const editNote = async (req, res) => {
     if (!note) {
         return res.status(404).json({ error: true, message: "Note doesn't exist" });
     }
+
+    const body = normalizeNoteBody(req.body, note);
+    const { title, content, tags, folderId, showInHome, linkPreviews } = body;
+
+    if (typeof content === "string" && content.length > NOTE_LIMITS.content) {
+        return res.status(400).json({ error: true, message: `Note content must be at most ${NOTE_LIMITS.content.toLocaleString("en-US")} characters` });
+    }
+
     const listsBefore = listsOf(note);
 
     if (typeof title !== "undefined") note.title = title;
     if (typeof content !== "undefined") note.content = content;
     if (typeof tags !== "undefined") note.tags = tags;
-    if (typeof isChecklist !== "undefined") {
-        note.isChecklist = isChecklist;
-    }
-    if (typeof checklist !== "undefined") note.checklist = checklist;
     if (typeof folderId !== "undefined") {
         if (folderId !== null) await requireLivingFolder(folderId, userId);
         note.folderId = folderId;
@@ -100,8 +108,6 @@ const editNote = async (req, res) => {
     const contentChanged = typeof title !== "undefined"
         || typeof tags !== "undefined"
         || typeof content !== "undefined"
-        || typeof checklist !== "undefined"
-        || typeof isChecklist !== "undefined"
         || typeof linkPreviews !== "undefined";
     if (contentChanged) indexInBackground(note, userId);
 

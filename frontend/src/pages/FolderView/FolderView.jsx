@@ -6,7 +6,7 @@ import { useTabsStore } from '../../store/useTabsStore';
 import { useFoldersStore } from '../../store/useFoldersStore';
 import { useFoldersQuery, useFolderNotesQuery } from '../../hooks/useNotesQuery';
 import { buildFolderHierarchy } from '../../utils/folderHierarchy';
-import { useDeleteNoteMutation, useArchiveNoteMutation, useChecklistToggleMutation, useToggleShowInHomeMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
+import { useDeleteNoteMutation, useArchiveNoteMutation, useTaskToggleMutation, useToggleShowInHomeMutation, useMoveNoteMutation } from '../../hooks/useNoteMutations';
 import { useEditFolderMutation } from '../../hooks/useFolderMutations';
 import FoldersGrid from '../../components/Cards/FoldersGrid';
 import Breadcrumb from '../../components/Cards/Breadcrumb';
@@ -37,7 +37,7 @@ const FolderView = () => {
   const { promptToggleArchive } = useArchiveNoteMutation();
   const toggleShowInHomeMutation = useToggleShowInHomeMutation();
   const moveNoteMutation = useMoveNoteMutation();
-  const checklistToggleMutation = useChecklistToggleMutation();
+  const taskToggleMutation = useTaskToggleMutation();
   const editFolderMutation = useEditFolderMutation();
 
   // Redirect if folder doesn't exist
@@ -105,7 +105,7 @@ const FolderView = () => {
     moveNoteMutation.mutate({ noteId, targetFolderId });
   };
 
-  const handleChecklist = (note, index) => checklistToggleMutation.toggle(note, index);
+  const handleTaskToggle = (note, index, line) => taskToggleMutation.toggle(note, index, line);
 
   return (
     <div className="relative min-h-0">
@@ -147,7 +147,7 @@ const FolderView = () => {
                     onArchive={promptToggleArchive}
                     onToggleHome={handleToggleHome}
                     onMove={handleMoveNote}
-                    onChecklistToggle={handleChecklist}
+                    onTaskToggle={handleTaskToggle}
                     hideFolderBadge={true}
                   />
                 </div>
