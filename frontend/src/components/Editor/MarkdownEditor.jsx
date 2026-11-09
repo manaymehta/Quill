@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
-import { historyField, redo } from '@codemirror/commands';
+import { historyField, redo, redoDepth, undo, undoDepth } from '@codemirror/commands';
 import { keymap, EditorView } from '@codemirror/view';
 import { Compartment } from '@codemirror/state';
 import { quillTheme, quillMarkdownHighlight, hideMarkdownSyntax, lineWrap } from '../../utils/markdownEditor';
+import { markdownTaskList, insertTask } from '../../utils/markdownTaskList';
 import { editorRegistry } from '../../utils/editorRegistry';
 
 // Everything in the editor that needs CodeMirror (~600 kB), kept in its own chunk so the rest of the
@@ -204,6 +205,7 @@ const EDITOR_EXTENSIONS = [
   hideMarkdownSyntax,
   lineWrap,
   keyboardScrollMargin,
+  markdownTaskList,
   proseContentAttributes,
   keymap.of([
     { key: 'Mod-Shift-z', run: redo, preventDefault: true },
@@ -228,11 +230,29 @@ const EDITOR_BASIC_SETUP = {
 // history) from the in-memory registry; when it closes, saves that snapshot if keepOnClose() says
 // the tab is still open and unchanged from outside (a closed tab or an outside change drops it).
 // keyboardOverlap: how much of the scroll area the on-screen keyboard covers (px, 0 when closed).
-const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepOnClose, keyboardOverlap = 0, onPasteText }) => {
+const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepOnClose, keyboardOverlap = 0, onPasteText, onHistoryChange, onUserEdit }) => {
   const onPasteTextRef = useRef(onPasteText);
   useEffect(() => {
     onPasteTextRef.current = onPasteText;
   }, [onPasteText]);
+
+  // Tells the toolbar whether there is anything to undo/redo, and reports user edits so an open
+  // undo/redo pill closes on typing. Undo/redo transactions are history, not edits: they keep it open.
+  // The parent passes stable callbacks, so this extension (and the array below) stays stable too.
+  const historyListener = useMemo(() => EditorView.updateListener.of((update) => {
+    if (!update.docChanged) return;
+    const isHistory = update.transactions.some((tr) => tr.isUserEvent('undo') || tr.isUserEvent('redo'));
+    if (!isHistory && update.transactions.some((tr) => tr.isUserEvent('input') || tr.isUserEvent('delete') || tr.isUserEvent('move.drop'))) {
+      onUserEdit?.();
+    }
+    onHistoryChange?.({
+      canUndo: undoDepth(update.state) > 0,
+      canRedo: redoDepth(update.state) > 0,
+    });
+  }), [onUserEdit, onHistoryChange]);
+
+  // Stable array: a new extensions array would reconfigure the whole editor on every render
+  const extensions = useMemo(() => [...EDITOR_EXTENSIONS, historyListener], [historyListener]);
 
   const initialState = useMemo(() => {
     const snapshot = editorRegistry.getEditorSnapshot(noteId);
@@ -282,6 +302,15 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
       onChange={onChange}
       onCreateEditor={(view) => {
         viewRef.current = view;
+        // Undo/redo stay in this chunk: the toolbar only calls these, never CodeMirror itself
+        view.quillUndo = () => undo(view);
+        view.quillRedo = () => redo(view);
+        // Toolbar checkbox button: inserts at the cursor the user last placed (bottom if none)
+        view.quillInsertTask = () => insertTask(view);
+        onHistoryChange?.({
+          canUndo: undoDepth(view.state) > 0,
+          canRedo: redoDepth(view.state) > 0,
+        });
         cleanupMobileHandlersRef.current?.();
         cleanupMobileHandlersRef.current = setupMobileHandlers(view, onPasteTextRef);
         if (keyboardOverlap > 0) {
@@ -298,7 +327,7 @@ const LiveMarkdownEditor = ({ noteId, value, onChange, viewRef, autoFocus, keepO
         }
         if (autoFocus) view.focus();
       }}
-      extensions={EDITOR_EXTENSIONS}
+      extensions={extensions}
       placeholder="Start typing..."
       basicSetup={EDITOR_BASIC_SETUP}
     />

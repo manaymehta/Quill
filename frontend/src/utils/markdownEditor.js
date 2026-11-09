@@ -13,6 +13,7 @@ import { EditorView, ViewPlugin, Decoration, WidgetType } from '@codemirror/view
 import { RangeSetBuilder } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
+import { taskLineInfo } from './markdownTaskList';
 
 // ─── Cream Theme ────────────────────────────────────────────────────────────
 export const quillTheme = EditorView.theme({
@@ -198,14 +199,23 @@ export const hideMarkdownSyntax = ViewPlugin.fromClass(
         from: view.viewport.from,
         to:   view.viewport.to,
         enter(node) {
-          if (node.name === 'ListMark') {
+          const isListMark = node.name === 'ListMark';
+          if (!isListMark && !SYNTAX_MARKS.has(node.name)) return;
+
+          const nodeLine = state.doc.lineAt(node.from);
+          // A task's bullet and `[ ]` are replaced by the checkbox widget itself (markdownTaskList):
+          // decorating them here would overlap that replacement
+          const task = taskLineInfo(nodeLine.text);
+          if (task && node.from >= nodeLine.from + task.indent.length && node.to <= nodeLine.from + task.prefixEnd) {
+            return;
+          }
+
+          if (isListMark) {
             builder.add(node.from, node.to, listMarkerDecoration);
             return;
           }
-          if (!SYNTAX_MARKS.has(node.name)) return;
-          const nodeLine = state.doc.lineAt(node.from).number;
           // Hide the marker on every line EXCEPT the one the cursor is on
-          if (nodeLine !== cursorLine) {
+          if (nodeLine.number !== cursorLine) {
             builder.add(node.from, node.to, hiddenDecoration);
           }
         },

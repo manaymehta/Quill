@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
-import { motion as Motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { motion as Motion, AnimatePresence, animate, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { FiMenu } from 'react-icons/fi';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
@@ -18,8 +18,19 @@ import { preloadMarkdownEditor } from './markdownEditorLoader';
 // Card mode: the gap around the card, and its max width (phone = below the tablet breakpoint)
 const EDITOR_GAP_PX   = { phone: 8, desktop: 16 };
 const EDITOR_MAX_W_PX = { phone: 768, desktop: 790 };
-const EDITOR_ROW_MAX_WITH_PANEL_PX = 1170; // card + side panel (desktop)
-const EDITOR_SIDE_PANEL_SPACE_PX = 350 + 16;  // the side panel (md:w-[350px]) and the row's gap (gap-4)
+const EDITOR_SIDE_PANEL_W_PX = 350;
+const EDITOR_SIDE_PANEL_GAP_PX = 16;
+const EDITOR_SIDE_PANEL_SPACE_PX = EDITOR_SIDE_PANEL_W_PX + EDITOR_SIDE_PANEL_GAP_PX;
+// Card mode: the row's card-mode width with the panel open. It is exactly the editor plus the panel
+// and its gap (790 + 350 + 16), with no spare space: the old 1170 left 14px unused, which is what
+// made the text drift when the panel was open and full screen was toggled.
+const EDITOR_ROW_MAX_WITH_PANEL_PX = EDITOR_MAX_W_PX.desktop + EDITOR_SIDE_PANEL_SPACE_PX;
+// Full screen only: it has no row to grow, so the panel's own width is tweened and the editor gives
+// the space up frame by frame. Card mode keeps its old feel: the panel takes its 350px at once and
+// the row's CSS transition (index.css) makes room, while the panel scales/fades in over 250ms.
+const PANEL_TWEEN = { duration: 0.5, ease: [0.16, 1, 0.3, 1] };
+const PANEL_FADE = { duration: 0.25, ease: 'easeOut' };
+const PANEL_FADE_MS = 250;
 // Card ↔ full screen. A large surface: a touch of bounce so it lands rather than crawls in.
 const FULLSCREEN_SPRING = { type: 'spring', visualDuration: 0.32, bounce: 0.12 };
 
@@ -93,6 +104,20 @@ const GlobalEditorOverlay = () => {
   const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
   const [panelContent, setPanelContent] = useState('');
 
+  // The panel's width (and its gap). Card mode sets it at once, like before; full screen tweens it,
+  // because there the editor is the one that has to give the space up. The fade/scale stays the old
+  // 250ms in both modes.
+  const panelLayoutP = useMotionValue(0);
+  const panelFade = useMotionValue(0);
+  const panelWidth  = useTransform(panelLayoutP, (v) => `${EDITOR_SIDE_PANEL_W_PX * v}px`);
+  const panelGap    = useTransform(panelLayoutP, (v) => `${EDITOR_SIDE_PANEL_GAP_PX * v}px`);
+  const panelOpacity = useTransform(panelFade, (v) => v);
+  const panelScale   = useTransform(panelFade, (v) => 0.95 + 0.05 * v);
+  const panelVisibility = useTransform(panelFade, (v) => (v > 0 ? 'visible' : 'hidden'));
+  // Kept mounted through the fade-out: a width-0 bordered box still measures 2px (border box), so it
+  // leaves the row when closed.
+  const [isPanelRendered, setIsPanelRendered] = useState(false);
+
   const isEditorOpen = activeTabId !== 'home';
   const isAgentMode = useSearchStore((state) => state.searchMode === 'agent');
   const activeIndex = openTabs.findIndex((t) => t._id === activeTabId);
@@ -103,6 +128,30 @@ const GlobalEditorOverlay = () => {
     setIsMockPanelOpen(false);
     setPanelContent('');
   }, [activeTabId]);
+
+  // The phone layout uses the BottomSheet (no reserved space), so the panel's width only animates on
+  // desktop. Crossing the breakpoint closes it rather than leaving a stale gap behind.
+  const desktopPanelOpen = isMockPanelOpen && !isBelowTablet;
+  useEffect(() => {
+    if (desktopPanelOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsPanelRendered(true);
+    }
+    // Card mode: the width changes at once (the row's transition makes room) but on close it waits
+    // for the 250ms fade, so the panel doesn't vanish before it finishes fading. Full screen: tween.
+    const controls = animate(panelLayoutP, desktopPanelOpen ? 1 : 0, {
+      ...(isFullscreen ? PANEL_TWEEN : { duration: 0 }),
+      delay: !desktopPanelOpen && !isFullscreen ? PANEL_FADE_MS / 1000 : 0,
+      onComplete: () => {
+        if (!desktopPanelOpen) setIsPanelRendered(false);
+      },
+    });
+    const fade = animate(panelFade, desktopPanelOpen ? 1 : 0, PANEL_FADE);
+    return () => {
+      controls.stop();
+      fade.stop();
+    };
+  }, [desktopPanelOpen, isFullscreen, panelLayoutP, panelFade]);
 
   useEffect(() => {
     const warm = preloadMarkdownEditor;
@@ -282,10 +331,13 @@ const GlobalEditorOverlay = () => {
             }}
           >
           {/* Row (editor + panel). Its card-mode max width widens when the panel opens; that's a CSS
-              transition on --editor-row-max (index.css), separate from the full-screen spring. */}
+              transition on --editor-row-max (index.css), separate from the full-screen spring. The
+              width is exactly the editor plus the panel and its gap (790 + 350 + 16), so there is no
+              spare space left over — the old 1170 left 14px, which nudged the text when toggling
+              full screen with the panel open. */}
           <div
-            className="editor-row flex flex-col md:flex-row gap-4 h-full pointer-events-auto w-full"
-            style={{ '--editor-row-max': isMockPanelOpen && !isBelowTablet ? `${EDITOR_ROW_MAX_WITH_PANEL_PX}px` : 'var(--editor-max-w)' }}
+            className="editor-row flex flex-col md:flex-row gap-4 md:gap-0 h-full pointer-events-auto w-full"
+            style={{ '--editor-row-max': desktopPanelOpen ? `${EDITOR_ROW_MAX_WITH_PANEL_PX}px` : 'var(--editor-max-w)' }}
           >
             {/* Main Editor. In card mode it keeps its width while the row widens or narrows for the
                 panel (min-width: the card width that fits beside the panel, so it only narrows where
@@ -296,7 +348,7 @@ const GlobalEditorOverlay = () => {
               className="h-full w-full"
               style={{
                 maxWidth: 'calc(var(--editor-max-w) + (100vw - var(--editor-max-w)) * var(--fs))',
-                minWidth: `calc(min(var(--editor-max-w), 100cqw - 2 * var(--editor-gap) - ${isMockPanelOpen && !isBelowTablet ? EDITOR_SIDE_PANEL_SPACE_PX : 0}px) * (1 - var(--fs)))`,
+                minWidth: `calc(min(var(--editor-max-w), 100cqw - 2 * var(--editor-gap) - ${desktopPanelOpen ? EDITOR_SIDE_PANEL_SPACE_PX : 0}px) * (1 - var(--fs)))`,
               }}
             >
               {/* externalRev in the key: an outside change (agent edit, revert)
@@ -312,20 +364,31 @@ const GlobalEditorOverlay = () => {
             </div>
 
             {/* Side panel: beside the editor on wider screens, a bottom sheet on phones (the shared
-                BottomSheet — pulled down to close, its title the place to drag from) */}
-            <AnimatePresence>
-              {isMockPanelOpen && !isBelowTablet && (
-                <Motion.div
-                  initial={{ scale: 0.95, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.95, opacity: 0 }}
-                  transition={{ type: 'tween', ease: 'easeOut', duration: 0.25 }}
-                  className="md:w-[350px] shrink-0 h-full bg-[#1e1e1e] rounded-[24px] shadow-xl border border-[#333] p-8 flex flex-col text-stone-200 origin-left z-30"
-                >
+                BottomSheet — pulled down to close, its title the place to drag from).
+                On desktop its width is the animated layout space: card mode takes it at once (the
+                row's transition makes room), full screen tweens it so the editor gives it up frame
+                by frame instead of snapping. The content keeps its 350px inside and is clipped while
+                the panel grows, so nothing reflows. It stays mounted through the fade-out so closing
+                animates too, then unmounts; `inert` keeps it out of the tab order. */}
+            {!isBelowTablet && isPanelRendered && (
+              <Motion.div
+                className="shrink-0 h-full bg-[#1e1e1e] rounded-[24px] shadow-xl border border-[#333] overflow-hidden origin-left z-30"
+                style={{
+                  width: panelWidth,
+                  marginLeft: panelGap,
+                  opacity: panelOpacity,
+                  scale: panelScale,
+                  visibility: panelVisibility,
+                  pointerEvents: isMockPanelOpen ? 'auto' : 'none',
+                }}
+                aria-hidden={!isMockPanelOpen}
+                inert={!isMockPanelOpen}
+              >
+                <div className="w-[350px] h-full p-8 flex flex-col text-stone-200">
                   {renderPanelBody()}
-                </Motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+              </Motion.div>
+            )}
             <AnimatePresence>
               {isMockPanelOpen && isBelowTablet && (
                 <BottomSheet key="editor-panel-sheet" onClose={() => setIsMockPanelOpen(false)} heightShare={0.6} className="text-stone-200">

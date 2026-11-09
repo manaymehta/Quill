@@ -1,8 +1,8 @@
 import { memo, useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
-import { MdAdd, MdClose, MdRefresh, MdKeyboardArrowDown, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen, MdOutlineLink } from 'react-icons/md'
+import { MdAdd, MdClose, MdRefresh, MdKeyboardArrowDown, MdCheckBoxOutlineBlank, MdCheckBox, MdNotes, MdOutlineDragIndicator, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen, MdOutlineLink, MdUndo, MdRedo } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import { RiSparkling2Fill } from 'react-icons/ri'
-import { LuUndo2 } from 'react-icons/lu'
+import { LuUndo2, LuRedo2 } from 'react-icons/lu'
 import axiosInstance from '../../utils/axiosInstance';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -118,6 +118,66 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
   // Ref to the CodeMirror editor view for programmatic focus
   const cmViewRef = useRef(null);
+
+  // Undo / redo pill: the trigger after Panel toggles it, and it stays open while you undo/redo.
+  // Local state (not a store) so a tab switch, which unmounts this editor, resets it.
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
+  const historyWrapRef = useRef(null);
+  const editorHadFocusRef = useRef(false);
+
+  const handleHistoryChange = useCallback(({ canUndo, canRedo }) => {
+    setHistoryState((prev) => (prev.canUndo === canUndo && prev.canRedo === canRedo ? prev : { canUndo, canRedo }));
+  }, []);
+
+  // Typing, deleting or dropping text closes the pill; the pill's own undo/redo keeps it open.
+  const handleEditorUserEdit = useCallback(() => {
+    setIsHistoryOpen(false);
+  }, []);
+
+  // One mechanism for every outside press: capture-phase pointerdown, so mouse, pen and touch all
+  // close the pill and the press still lands normally on whatever was clicked.
+  useEffect(() => {
+    if (!isHistoryOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (historyWrapRef.current?.contains(event.target)) return;
+      setIsHistoryOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setIsHistoryOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isHistoryOpen]);
+
+  const handleHistoryUndo = useCallback(() => {
+    const view = cmViewRef.current;
+    if (!view?.quillUndo) return;
+    view.quillUndo();
+    // Keep the caret (and the on-screen keyboard) where they were; don't steal focus otherwise
+    if (editorHadFocusRef.current) view.focus();
+  }, []);
+
+  const handleHistoryRedo = useCallback(() => {
+    const view = cmViewRef.current;
+    if (!view?.quillRedo) return;
+    view.quillRedo();
+    if (editorHadFocusRef.current) view.focus();
+  }, []);
+
+  // The toolbar's checkbox: inserted in the text itself, at the cursor the user last placed (or at
+  // the bottom of the note), so it sits between the paragraphs instead of in a separate pane.
+  const handleInsertCheckbox = useCallback(() => {
+    const view = cmViewRef.current;
+    if (!view?.quillInsertTask) return;
+    view.quillInsertTask();
+    if (isMobileOrTouch()) view.focusForTyping?.();
+    else view.focus();
+  }, []);
 
   // The scrolling area's reserved scrollbar gutter (always kept, see .editor-scrollbar) is taken
   // back out of its right padding (.editor-column in index.css), so its left and right margins
@@ -781,6 +841,15 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const isShowingBefore = hasAgentBefore && agentView === 'before';
   const isShowingChanges = hasAgentBefore && agentView === 'changes';
 
+  // The trigger only belongs to the live editor. A pointer press already closes the pill, but a
+  // non-pointer switch (checklist on, agent Before/Changes) must not leave it open underneath.
+  const showLiveEditorTools = !isChecklist && !isShowingBefore && !isShowingChanges;
+  const showHistoryTrigger = showLiveEditorTools;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!showHistoryTrigger) setIsHistoryOpen(false);
+  }, [showHistoryTrigger]);
+
   return (
     <div className='editor-wrapper flex flex-col h-full w-full bg-[#f4eadc] overflow-hidden relative' style={EDITOR_CARD_STYLE}>
 
@@ -1138,6 +1207,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                   autoFocus={isActive && !isChecklist && !isMobileOrTouchScreen}
                   keepOnClose={canWriteBackOnClose}
                   keyboardOverlap={keyboardOverlap}
+                  onHistoryChange={handleHistoryChange}
+                  onUserEdit={handleEditorUserEdit}
                   onPasteText={(pastedText) => {
                     const urls = pastedText.match(/(https?:\/\/[^\s]+)/g) || [];
                     const cleanUrls = urls.map(u => u.replace(/[.,#!$%^&*;:{}=_`~()-]+$/, ''));
@@ -1281,6 +1352,17 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         {/* tools */}
         <div className="flex items-center gap-1 justify-self-start">
 
+          {showLiveEditorTools && (
+            <button
+              onClick={handleInsertCheckbox}
+              className="flex items-center justify-center gap-1.5 p-2 md:px-2.5 md:py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer text-stone-500 hover:text-[#333] hover:bg-black/5"
+              title="Insert checkbox"
+              aria-label="Insert checkbox"
+            >
+              <MdCheckBoxOutlineBlank className="text-xl md:text-base" />
+              <span className="hidden md:inline">Checkbox</span>
+            </button>
+          )}
 
           <button
             onClick={() => setIsChecklist(!isChecklist)}
@@ -1309,6 +1391,61 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             <MdViewSidebar className="text-xl md:text-base" />
             <span className="hidden md:inline">Panel</span>
           </button>
+
+          {showHistoryTrigger && (
+            <div
+              ref={historyWrapRef}
+              className="relative flex items-center"
+              onPointerDown={() => {
+                // Recorded before the button can blur the editor, so undo/redo can give focus back
+                editorHadFocusRef.current = Boolean(cmViewRef.current?.hasFocus);
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setIsHistoryOpen((open) => !open)}
+                className={`flex items-center justify-center gap-px p-2 md:px-2.5 md:py-2 rounded-lg transition-colors cursor-pointer ${isHistoryOpen ? 'bg-white shadow-sm text-[#333]' : 'text-stone-500 hover:text-[#333] hover:bg-black/5'}`}
+                title="Undo / redo"
+                aria-label="Undo and redo"
+                aria-expanded={isHistoryOpen}
+              >
+                <MdUndo className="text-lg md:text-[15px]" />
+                <MdRedo className="text-lg md:text-[15px]" />
+              </button>
+
+              {isHistoryOpen && (
+                <div
+                  role="group"
+                  aria-label="Undo and redo"
+                  className="absolute bottom-full left-1/2 z-30 mb-3 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-[#e0d2bf] bg-[#f4eadc] p-1 whitespace-nowrap shadow-[0_14px_34px_rgba(70,50,30,0.22),0_2px_6px_rgba(70,50,30,0.10)] select-none"
+                >
+                  <button
+                    type="button"
+                    onClick={handleHistoryUndo}
+                    disabled={!historyState.canUndo}
+                    className="flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium text-[#44403c] transition-colors cursor-pointer hover:bg-[#ebe0d3] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    <LuUndo2 className="text-sm" />
+                    Undo
+                  </button>
+                  <span className="my-1 w-px self-stretch bg-black/10" aria-hidden="true" />
+                  <button
+                    type="button"
+                    onClick={handleHistoryRedo}
+                    disabled={!historyState.canRedo}
+                    className="flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium text-[#44403c] transition-colors cursor-pointer hover:bg-[#ebe0d3] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    <LuRedo2 className="text-sm" />
+                    Redo
+                  </button>
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-1/2 -bottom-1.5 size-2.5 -translate-x-1/2 rotate-45 rounded-br-[2px] border-r border-b border-[#e0d2bf] bg-[#f4eadc]"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
         </div>
 

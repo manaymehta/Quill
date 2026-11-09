@@ -82,7 +82,15 @@ const InnerNoteCard = memo(({
   const [showMovePicker, setShowMovePicker] = useState(false);
   const observerTargetRef = useRef(null);
 
-  const markdownSlice = useMemo(() => (content || '').slice(0, 500), [content]);
+  // Card preview: cut between lines, so a task line (`- [ ] …`) is never sliced in half and shown
+  // as stray markdown text
+  const markdownSlice = useMemo(() => {
+    const text = content || '';
+    if (text.length <= 500) return text;
+    const cut = text.slice(0, 500);
+    const lineBreak = cut.lastIndexOf('\n');
+    return lineBreak > 250 ? cut.slice(0, lineBreak) : cut;
+  }, [content]);
   // Parsed once per text: the card still re-renders (e.g. to replay its fade-in after the editor closes),
   // but React reuses this element as is instead of running the markdown parser again
   const markdownPreview = useMemo(() => (
