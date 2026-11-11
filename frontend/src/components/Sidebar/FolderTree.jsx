@@ -15,11 +15,8 @@ import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdEdit, MdDelete, MdPalette,
 
 const COLORS = ['#e85d56', '#f2994a', '#27ae60', '#2f80ed', '#9b51e0', '#e0e0e0'];
 
-// Row variants — children inherit timing from parent stagger
-const rowVariants = {
-    open: { opacity: 1, x: 0, transition: { type: 'spring', stiffness: 500, damping: 38 } },
-    closed: { opacity: 0, x: -10, transition: { duration: 0.12, ease: 'easeIn' } },
-};
+// Folder rows are plain divs: the Folders dropdown's height/opacity is the only animation, so the
+// rows appear with the sidebar instead of springing in one by one after it has opened.
 
 const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarchy }) => {
     const navigate = useNavigate();
@@ -71,7 +68,10 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
 
     const hasChildren = hierarchy ? hierarchy.hasChildren(folder._id) : false;
     const isActive = activeFolderId === folder._id;
-    const paddingLeft = isSidebarOpen ? '2px' : '8px';
+    // The tree is only ever visible while the sidebar is open (or fading/closing with it), so the
+    // rows keep the expanded layout for the whole close. Switching them to a rail layout the moment
+    // isSidebarOpen flips left centred folder icons floating in a still-wide drawer mid-close.
+    const paddingLeft = '2px';
 
     const handleBlurOrSubmit = () => {
         setIsEditing(false);
@@ -156,31 +156,29 @@ const FolderNode = ({ folder, expanded, onToggleExpand, activeFolderId, hierarch
                         openMenu({ kind: contextMenuKind(e), x: e.clientX, y: e.clientY });
                     }
                 }}
-                className={`flex items-center justify-between h-10 w-full rounded-lg cursor-pointer transition-colors duration-150 ${isActive ? 'bg-[#4c2f2e] text-[#e85d56]' : 'text-gray-300 hover:bg-[#282a2d]'} select-none [-webkit-touch-callout:none]`}
+                className={`flex items-center justify-between h-10 w-full rounded-lg cursor-pointer transition-colors duration-200 ${isActive ? 'bg-[#4c2f2e] text-[#e85d56]' : 'text-gray-300 hover:bg-[#282a2d]'} select-none [-webkit-touch-callout:none]`}
             >
                 <div className="flex items-center justify-between w-full min-w-0 px-2">
                     <div className="flex items-center min-w-0 flex-1">
-                        <span style={{ color: '#f4eadc' }} className={`mr-2 flex-shrink-0 ${!isSidebarOpen && 'mx-auto flex justify-center w-full'}`}>
-                            {expanded ? <MdFolderOpen size={isSidebarOpen ? 20 : 24} /> : <MdFolder size={isSidebarOpen ? 20 : 24} />}
+                        <span style={{ color: '#f4eadc' }} className="mr-2 flex-shrink-0">
+                            {expanded ? <MdFolderOpen size={20} /> : <MdFolder size={20} />}
                         </span>
-                        {isSidebarOpen && (
-                            <div className="flex-1 min-w-0">
-                                {isEditing ? (
-                                    <input
-                                        autoFocus type="text" value={nameVal}
-                                        onChange={(e) => setNameVal(e.target.value)}
-                                        onBlur={handleBlurOrSubmit}
-                                        onKeyDown={handleKeyDown}
-                                        className="bg-(--page-bg) text-white text-sm outline-none border border-[#e85d56] px-1 py-0.5 rounded w-full"
-                                        onClick={(e) => e.stopPropagation()}
-                                    />
-                                ) : (
-                                    <span className="text-sm font-medium truncate block">{folder.name}</span>
-                                )}
-                            </div>
-                        )}
+                        <div className="flex-1 min-w-0">
+                            {isEditing && isSidebarOpen ? (
+                                <input
+                                    autoFocus type="text" value={nameVal}
+                                    onChange={(e) => setNameVal(e.target.value)}
+                                    onBlur={handleBlurOrSubmit}
+                                    onKeyDown={handleKeyDown}
+                                    className="bg-(--page-bg) text-white text-sm outline-none border border-[#e85d56] px-1 py-0.5 rounded w-full"
+                                    onClick={(e) => e.stopPropagation()}
+                                />
+                            ) : (
+                                <span className="text-sm font-medium truncate block">{folder.name}</span>
+                            )}
+                        </div>
                     </div>
-                    {isSidebarOpen && hasChildren && (
+                    {hasChildren && (
                         <div
                             onClick={(e) => { e.stopPropagation(); onToggleExpand(folder._id); }}
                             className="w-5 h-5 flex items-center justify-center text-gray-500 hover:text-white rounded ml-2 flex-shrink-0"
@@ -274,8 +272,7 @@ const FolderTree = ({ parentId = null, depth = 0, expandedFolders, onToggleExpan
                 const expanded = !!expandedFolders[folder._id];
                 const hasActiveChild = hierarchy.getDirectChildren(folder._id).some(f => f._id === activeFolderId);
                 return (
-                    // variants inherited from parent — this is what enables stagger
-                    <motion.div key={folder._id} variants={rowVariants} style={{ willChange: 'transform, opacity' }}>
+                    <div key={folder._id}>
                         <FolderNode
                             folder={folder}
                             depth={depth}
@@ -304,7 +301,7 @@ const FolderTree = ({ parentId = null, depth = 0, expandedFolders, onToggleExpan
                                 />
                             </div>
                         </div>
-                    </motion.div>
+                    </div>
                 );
             })}
         </div>

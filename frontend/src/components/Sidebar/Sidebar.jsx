@@ -1,6 +1,5 @@
 import React, { forwardRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useUIStore } from '../../store/useUIStore';
 import { MdOutlineStickyNote2, MdOutlineDelete, MdOutlineAutoGraph, MdOutlineArchive, MdAdd, MdOutlineFolder } from 'react-icons/md';
 import { useFoldersStore } from '../../store/useFoldersStore';
@@ -25,6 +24,15 @@ const Sidebar = forwardRef((props, ref) => {
   const createFolderMutation = useCreateFolderMutation();
 
   const [isFoldersCollapsed, setIsFoldersCollapsed] = useState(false);
+  const isFoldersOpen = isSidebarOpen && !isFoldersCollapsed;
+  // The dropdown has two different closes: its own (Folders row) can fold the list visibly, but
+  // when the whole sidebar is closing it must get out of the way quickly so the list is not
+  // squashed sideways and downwards at the same time.
+  const dropdownTiming = isFoldersOpen
+    ? { grid: '260ms cubic-bezier(0.22, 1, 0.36, 1)', content: '220ms cubic-bezier(0.22, 1, 0.36, 1)' }
+    : isSidebarOpen
+      ? { grid: '200ms cubic-bezier(0.4, 0, 0.2, 1)', content: '200ms cubic-bezier(0.4, 0, 0.2, 1)' }
+      : { grid: '120ms cubic-bezier(0.4, 0, 0.2, 1)', content: '100ms cubic-bezier(0.4, 0, 0.2, 1)' };
   const [showAddFolderInput, setShowAddFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [expandedFolders, setExpandedFolders] = useState({});
@@ -58,7 +66,7 @@ const Sidebar = forwardRef((props, ref) => {
         overflow-y-auto overflow-x-hidden overscroll-contain scrollbar-thin
         ${isSidebarOpen
           ? 'translate-x-0 w-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]'
-          : `-translate-x-full w-55 duration-200 ease-[cubic-bezier(0.2,0,0,1)] ${hideRail ? '' : 'sm:translate-x-0 sm:w-16'}`}
+          : `-translate-x-full w-55 duration-200 ease-[cubic-bezier(0.2,0,0,1)] ${hideRail ? 'sm:w-16' : 'sm:translate-x-0 sm:w-16'}`}
       `}
     >
       <div className="py-4">
@@ -97,7 +105,7 @@ const Sidebar = forwardRef((props, ref) => {
               <div className="w-14 flex-shrink-0 flex items-center justify-center">
                 {item.icon}
               </div>
-              <div className={`transition-[opacity,width] overflow-hidden text-left flex-1 min-w-0 ${isSidebarOpen ? 'opacity-100 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]' : 'opacity-100 sm:w-0 sm:opacity-0 sm:flex-none duration-200 ease-[cubic-bezier(0.2,0,0,1)]'}`}>
+              <div className={`overflow-hidden text-left flex-1 min-w-0 transition-opacity ${isSidebarOpen ? 'opacity-100 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]' : 'opacity-100 sm:opacity-0 duration-200 ease-[cubic-bezier(0.2,0,0,1)]'}`}>
                 <span className="whitespace-nowrap text-left block">
                   {item.text}
                 </span>
@@ -133,58 +141,45 @@ const Sidebar = forwardRef((props, ref) => {
               <div className="w-14 flex-shrink-0 flex items-center justify-center">
                 <MdOutlineFolder size={24} />
               </div>
-              <div className={`transition-[opacity,width] overflow-hidden flex items-center justify-between text-left flex-1 min-w-0 pr-4 ${isSidebarOpen ? 'opacity-100 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]' : 'opacity-100 sm:w-0 sm:opacity-0 sm:flex-none duration-200 ease-[cubic-bezier(0.2,0,0,1)]'}`}>
+              <div className={`overflow-hidden flex items-center justify-between text-left flex-1 min-w-0 pr-4 transition-opacity ${isSidebarOpen ? 'opacity-100 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]' : 'opacity-100 sm:opacity-0 duration-200 ease-[cubic-bezier(0.2,0,0,1)]'}`}>
                 <span className="whitespace-nowrap text-left">Folders</span>
-                {isSidebarOpen && (
-                  <div className="flex items-center gap-1">
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowAddFolderInput(true);
-                        if (isFoldersCollapsed) setIsFoldersCollapsed(false);
-                      }}
-                      className="p-1 hover:text-white hover:bg-black/20 rounded transition-colors cursor-pointer text-stone-400"
-                      title="Add Folder"
-                    >
-                      <MdAdd size={18} />
-                    </div>
+                <div className="flex items-center gap-1">
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowAddFolderInput(true);
+                      if (isFoldersCollapsed) setIsFoldersCollapsed(false);
+                    }}
+                    className="p-1 hover:text-white hover:bg-black/20 rounded transition-colors cursor-pointer text-stone-400"
+                    title="Add Folder"
+                  >
+                    <MdAdd size={18} />
                   </div>
-                )}
+                </div>
               </div>
             </div>
 
-            {/* Parent staggered container variants */}
-            <AnimatePresence initial={false}>
-              {isSidebarOpen && !isFoldersCollapsed && (
-                <motion.div
-                  initial="closed"
-                  animate="open"
-                  exit="closed"
-                  variants={{
-                    open: {
-                      height: "auto",
-                      opacity: 1,
-                      transition: {
-                        height: { type: "spring", stiffness: 400, damping: 30 },
-                        opacity: { duration: 0.15 },
-                        staggerChildren: 0.035,
-                        delayChildren: 0.05
-                      }
-                    },
-                    closed: {
-                      height: 0,
-                      opacity: 0,
-                      transition: {
-                        height: { duration: 0.2, ease: "easeIn" },
-                        opacity: { duration: 0.1 },
-                        staggerChildren: 0.02,
-                        staggerDirection: -1
-                      }
-                    }
+            {/* The dropdown stays mounted and is clipped by a 0fr→1fr grid row: the height follows
+                the actual content (including nested folders opening/closing), instead of a measured
+                "auto" height that would clip them. Same open/close curves as the sidebar. */}
+            <div
+              className="grid ml-5"
+              style={{
+                gridTemplateRows: isFoldersOpen ? '1fr' : '0fr',
+                transition: `grid-template-rows ${dropdownTiming.grid}`,
+              }}
+              aria-hidden={!isFoldersOpen}
+            >
+              <div className="overflow-hidden min-h-0">
+                <div
+                  className={`pl-1 pr-1 py-1 border-l-2 ${folders.some(f => f.parentId === null && !f.isDeleted && f._id === activeFolderId) ? 'border-[#414549]' : 'border-[#2d3033]'}`}
+                  style={{
+                    opacity: isFoldersOpen ? 1 : 0,
+                    transform: isFoldersOpen ? 'translateY(0)' : 'translateY(-4px)',
+                    transition: `opacity ${dropdownTiming.content}, transform ${dropdownTiming.content}`,
                   }}
-                  className={`overflow-hidden pl-1 pr-1 py-1 border-l-2 ${folders.some(f => f.parentId === null && !f.isDeleted && f._id === activeFolderId) ? 'border-[#414549]' : 'border-[#2d3033]'} ml-5 mt-1`}
                 >
-                  {showAddFolderInput && (
+                  {isFoldersOpen && showAddFolderInput && (
                     <div className="flex items-center h-10 px-2 rounded-lg bg-[#282a2d] mb-1">
                       <MdOutlineFolder size={20} style={{ color: '#f4eadc' }} className="mr-2 flex-shrink-0" />
                       <input
@@ -221,9 +216,9 @@ const Sidebar = forwardRef((props, ref) => {
                     onToggleExpand={toggleExpand}
                     activeFolderId={activeFolderId}
                   />
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+              </div>
+            </div>
           </div>
         </li>
       </ul>

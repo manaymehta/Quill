@@ -48,7 +48,7 @@ const Trash = () => {
   const isEmpty = individualTrashNotes.length === 0 && trashFolders.length === 0;
 
   return (
-    <div className="pb-24 px-2 md:px-4">
+    <div className="pb-24 pl-2 pr-2 sm:pr-6">
       {isEmpty ? (
         <div className="flex flex-col items-center justify-center min-h-[50vh] text-center">
           <p className="text-stone-400 text-sm">

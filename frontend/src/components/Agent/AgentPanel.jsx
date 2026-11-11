@@ -13,6 +13,7 @@ import AgentMessage from './AgentMessage';
 import AgentSidePanel from './AgentSidePanel';
 import BottomSheet from '../Modals/BottomSheet';
 import { useScrollEdges } from './useScrollEdges';
+import { useKeyboardInset } from '../../utils/virtualKeyboard';
 import { btnRoundDark, btnRoundDarkOn, FADE_IN, FADE_OUT, HEIGHT_SPRING, OpeningNoteContext, SWAP } from './agentStyles';
 import { Collapse, RenderGuard } from './agentUi';
 
@@ -225,6 +226,7 @@ const AgentPanel = () => {
 
   const isDockMobile = useMediaQuery(DOCK_MOBILE_QUERY);
   const isBelowTablet = useMediaQuery(BELOW_TABLET_QUERY);
+  const keyboardInset = useKeyboardInset();
   const dock = isDockMobile ? DOCK_METRICS.mobile : DOCK_METRICS.desktop;
   const gap = isBelowTablet ? PANEL_GAP.phone : PANEL_GAP.desktop;
   // The dock compacts while the chat is open (as for a note): the card ends `gap` above it
@@ -370,7 +372,14 @@ const AgentPanel = () => {
     // Placed from the page content's top (below the navbar's space), pulled up to `topClear`
     // With the on-screen keyboard open the card ends `gap` above it instead of above the dock, which
     // stays put behind the keyboard (utils/virtualKeyboard)
-    <div className="agent-panel relative z-[1] px-2 md:px-4" style={{ marginTop: topClear - contentTop, height: `calc(100dvh - ${topClear}px - max(${bottomClear}px, env(keyboard-inset-height, 0px) + ${gap}px))` }}>
+    <div
+      className="agent-panel relative z-[1] px-2 md:px-4"
+      style={{
+        marginTop: topClear - contentTop,
+        '--kb-inset': `${keyboardInset}px`,
+        height: `calc(100dvh - ${topClear}px - max(${bottomClear}px, max(env(keyboard-inset-height, 0px), var(--kb-inset, 0px)) + ${gap}px))`,
+      }}
+    >
       {/* The row: the card, and the side panel beside it on wider screens. Its max width widens as
           the panel opens (as the editor's row does for Summary), so the card slides aside. The card
           keeps a fixed width meanwhile (a size container measures the room): sized by what was left

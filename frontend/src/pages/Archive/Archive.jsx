@@ -28,7 +28,7 @@ const Archive = () => {
 
     return (
         <div className="relative min-h-0">
-            <div className="pb-24 px-2 md:px-4">
+            <div className="pb-24 pl-2 pr-2 sm:pr-6">
                 <NotesGrid
                     notes={archivedNotes}
                     emptyMessage={"No Archived Notes..."}

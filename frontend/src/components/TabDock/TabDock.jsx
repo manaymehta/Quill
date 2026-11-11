@@ -188,9 +188,9 @@ const TabDock = () => {
 
   // Full-screen editor: the dock shrinks into a dot — the compact dock reduced to one button: its
   // own height, rounding and bottom position (so only the width changes), with a coral circle the
-  // size of its + button inside, at the same inset. The editor's toolbar is sized around it
-  // (fullscreenToolbarHeight in editorChrome.js), so it sits centred in the toolbar. A second
-  // progress (0 = dock, 1 = dot) drives it, on top of the compaction above.
+  // size of its + button inside, at the same inset. The full-screen card keeps the page gap and the
+  // dock clearance, so the dot sits in its own space below the card rather than inside the toolbar.
+  // A second progress (0 = dock, 1 = dot) drives it, on top of the compaction above.
   const isEditorFullscreen = useUIStore((s) => s.isEditorFullscreen);
   // Tapping the dot expands the dock back to normal, and it stays expanded until a tap outside it
   // (picking a note or + in it doesn't shrink it). Leaving or re-entering full screen, or leaving

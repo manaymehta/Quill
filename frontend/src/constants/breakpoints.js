@@ -3,3 +3,6 @@
 // window.matchMedia(query).matches at the moment of an action.
 export const MOBILE_QUERY = '(max-width: 639px)';      // below sm: phones
 export const BELOW_TABLET_QUERY = '(max-width: 767px)'; // below md: phones + small tablets
+// The summary panel stays beside the editor down to 900px (card ~572px, compact action bar); below
+// that it becomes the shared bottom sheet. Latched when the panel opens — see GlobalEditorOverlay.
+export const PANEL_NARROW_QUERY = '(max-width: 56.24rem)';

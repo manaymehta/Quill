@@ -27,6 +27,7 @@ const MainLayout = () => {
     const closeConfirmModal = useModalStore((state) => state.closeConfirmModal);
     const closeFolderDeleteModal = useModalStore((state) => state.closeFolderDeleteModal);
     const isAgentMode = useSearchStore((state) => state.searchMode === 'agent');
+    const isEditorFullscreen = useUIStore((state) => state.isEditorFullscreen);
     const location = useLocation();
 
     const isEditorActive = activeTabId !== 'home';
@@ -95,7 +96,11 @@ const MainLayout = () => {
     }, [isKeyboardOverlay]);
 
     return (
-        <div className="relative min-h-screen min-h-dvh">
+        <div
+            className="app-shell relative min-h-screen min-h-dvh"
+            data-sidebar-open={isSidebarOpen ? '' : undefined}
+            data-sidebar-fullscreen={isEditorActive && isEditorFullscreen ? '' : undefined}
+        >
             <ParticleBackground isPaused={isEditorActive || isAgentMode} />
             
             {/* Navbar rendered on normal pages at z-[100]; hidden while a note or the agent chat is
@@ -147,8 +152,9 @@ const MainLayout = () => {
             {/* Global Note Editor Overlay (z-20) */}
             <GlobalEditorOverlay />
             
-            {/* Mobile Backdrop overlay (z-[75]) — minimal 0.5rem overscan (-inset-2) moves blur-kernel edge sampling outside visible viewport, eliminating the 1px line while preserving cinematic motion blur */}
-            <div 
+            {/* Sidebar backdrop: phones only (sm:hidden), as in the last commit. Above that the
+                sidebar pushes the page, and in full screen it slides over the editor. */}
+            <div
                 className={`fixed -inset-2 bg-black/60 backdrop-blur-[2px] z-[75] sm:hidden transition-all ${isSidebarOpen ? "opacity-100 pointer-events-auto duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "opacity-0 pointer-events-none duration-200 ease-[cubic-bezier(0.2,0,0,1)]"}`}
                 onClick={toggleSidebar}
             />

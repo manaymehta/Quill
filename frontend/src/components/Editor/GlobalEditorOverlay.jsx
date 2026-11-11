@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
-import { motion as Motion, AnimatePresence, animate, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
+import { motion as Motion, AnimatePresence, animate, useMotionValue, useTransform } from 'framer-motion';
 import { FiMenu } from 'react-icons/fi';
+import { MdClose } from 'react-icons/md';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useSearchStore } from '../../store/useSearchStore';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
-import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
+import { BELOW_TABLET_QUERY, PANEL_NARROW_QUERY } from '../../constants/breakpoints';
 import { DOCK_METRICS, DOCK_MOBILE_QUERY, getEditorClearance } from '../TabDock/dockMetrics';
 import BottomSheet from '../Modals/BottomSheet';
 import { EDITOR_CARD_STYLE, EDITOR_RADIUS_PX } from './editorChrome';
@@ -15,24 +16,34 @@ import { EDITOR_CARD_STYLE, EDITOR_RADIUS_PX } from './editorChrome';
 import AddEditNotes from '../../pages/Home/AddEditNotes';
 import { preloadMarkdownEditor } from './markdownEditorLoader';
 
-// Card mode: the gap around the card, and its max width (phone = below the tablet breakpoint)
-const EDITOR_GAP_PX   = { phone: 8, desktop: 16 };
-const EDITOR_MAX_W_PX = { phone: 768, desktop: 790 };
-const EDITOR_SIDE_PANEL_W_PX = 350;
+// Card mode: one continuous page gap (8px on phones → 16px on desktop) and one card measure. The
+// gap is not switched in JS at a breakpoint: the card/panel row reflows continuously with the window.
+const EDITOR_GAP_CSS = 'clamp(8px, 2vw, 16px)';
+const EDITOR_MAX_W_PX = 790;
+// The panel is a share of the window, not a fixed slab: 280px minimum, 350px maximum.
+const EDITOR_SIDE_PANEL_W = 'clamp(280px, 28vw, 350px)';
 const EDITOR_SIDE_PANEL_GAP_PX = 16;
-const EDITOR_SIDE_PANEL_SPACE_PX = EDITOR_SIDE_PANEL_W_PX + EDITOR_SIDE_PANEL_GAP_PX;
-// Card mode: the row's card-mode width with the panel open. It is exactly the editor plus the panel
-// and its gap (790 + 350 + 16), with no spare space: the old 1170 left 14px unused, which is what
-// made the text drift when the panel was open and full screen was toggled.
-const EDITOR_ROW_MAX_WITH_PANEL_PX = EDITOR_MAX_W_PX.desktop + EDITOR_SIDE_PANEL_SPACE_PX;
-// Full screen only: it has no row to grow, so the panel's own width is tweened and the editor gives
-// the space up frame by frame. Card mode keeps its old feel: the panel takes its 350px at once and
-// the row's CSS transition (index.css) makes room, while the panel scales/fades in over 250ms.
+const EDITOR_SIDE_PANEL_SPACE = `calc(${EDITOR_SIDE_PANEL_W} + ${EDITOR_SIDE_PANEL_GAP_PX}px)`;
+// The panel's arrival in the floating state: full width on the first frame, only the 250ms
+// fade/scale is animated on it; the 500ms progress animates the row and the editor's width. Full
+// screen keeps the panel width tween. Don't make the fade match the 500ms — that is the old motion.
 const PANEL_TWEEN = { duration: 0.5, ease: [0.16, 1, 0.3, 1] };
 const PANEL_FADE = { duration: 0.25, ease: 'easeOut' };
-const PANEL_FADE_MS = 250;
-// Card ↔ full screen. A large surface: a touch of bounce so it lands rather than crawls in.
-const FULLSCREEN_SPRING = { type: 'spring', visualDuration: 0.32, bounce: 0.12 };
+// Card ↔ full screen, as a fixed-duration tween on the curve the old spring produced. framer's
+// spring (visualDuration 0.32, bounce 0.12 → ζ 0.88) reached the target at ~0.32 s, then its raw
+// value dipped ~0.3% and crept back for another half second; consumers clamped it, so the motion
+// froze at 1 and slid below it again — a visible hitch at the landing. The same curve, sampled over
+// the tween's length and normalised to arrive exactly on the target, keeps the motion identical and
+// ends it there.
+const FULLSCREEN_TWEEN_S = 0.32;
+const FS_ZETA = 0.88; // damping / (2 * sqrt(stiffness * mass)) for bounce 0.12
+const FS_W = (2 * Math.PI) / (FULLSCREEN_TWEEN_S * 1.2);
+const FS_WD = FS_W * Math.sqrt(1 - FS_ZETA * FS_ZETA);
+const fsSpring = (t) => 1 - Math.exp(-FS_ZETA * FS_W * t) * ((FS_ZETA * FS_W / FS_WD) * Math.sin(FS_WD * t) + Math.cos(FS_WD * t));
+const FS_SETTLED = fsSpring(FULLSCREEN_TWEEN_S);
+// framer hands an easing its normalised progress, so the spring is sampled over the tween's length.
+const fsEase = (progress) => fsSpring(progress * FULLSCREEN_TWEEN_S) / FS_SETTLED;
+const FULLSCREEN_TWEEN = { duration: FULLSCREEN_TWEEN_S, ease: fsEase };
 
 const TabEditorSlot = memo(({ tab, isActive, onNoteSaved, onToggleMockPanel, onSummaryReceived }) => {
   const closeTab = useTabsStore((state) => state.closeTab);
@@ -81,41 +92,61 @@ const GlobalEditorOverlay = () => {
   // Reactive (re-renders when the breakpoint is crossed); reading window.innerWidth during render
   // left the ghost cards / summary panel in the old layout after a resize until something else re-rendered.
   const isBelowTablet = useMediaQuery(BELOW_TABLET_QUERY);
+  // Below this the side panel + editor would look cramped, so the shared bottom sheet is used. It is
+  // latched when the panel opens (see isSheetMode), so a resize can't swap layouts mid-view.
+  const isPanelNarrow = useMediaQuery(PANEL_NARROW_QUERY);
   const dockClearance = getEditorClearance(isDockMobile ? DOCK_METRICS.mobile : DOCK_METRICS.desktop);
-  const editorGap  = isBelowTablet ? EDITOR_GAP_PX.phone : EDITOR_GAP_PX.desktop;
-  const editorMaxW = isBelowTablet ? EDITOR_MAX_W_PX.phone : EDITOR_MAX_W_PX.desktop;
+  const editorGap  = EDITOR_GAP_CSS;
+  const editorMaxW = EDITOR_MAX_W_PX;
 
   // Card ↔ full-screen progress. Starts at the remembered mode, so opening an editor that's already
   // full screen doesn't animate. Gaps are rounded to whole pixels (sub-pixel edges make the text
   // re-snap to the pixel grid each frame — the dock's jitter lesson); corners and fades needn't be.
   // The target follows the store directly (not a React effect, which runs only after the re-render
-  // has painted), so the motion starts on the next frame after the click.
-  const fsTarget = useMotionValue(isFullscreen ? 1 : 0);
-  const fs       = useSpring(fsTarget, FULLSCREEN_SPRING);
-  useEffect(() => useUIStore.subscribe((state, prev) => {
-    if (state.isEditorFullscreen !== prev.isEditorFullscreen) fsTarget.set(state.isEditorFullscreen ? 1 : 0);
-  }), [fsTarget]);
+  // has painted), so the motion starts on the next frame after the click. The tween is stopped
+  // before a new one starts, so a click in the middle of a transition continues from where it is.
+  const fs = useMotionValue(isFullscreen ? 1 : 0);
+  const fsAnimation = useRef(null);
+  useEffect(() => {
+    const unsubscribe = useUIStore.subscribe((state, prev) => {
+      if (state.isEditorFullscreen === prev.isEditorFullscreen) return;
+      fsAnimation.current?.stop();
+      fsAnimation.current = animate(fs, state.isEditorFullscreen ? 1 : 0, FULLSCREEN_TWEEN);
+    });
+    return () => {
+      unsubscribe();
+      fsAnimation.current?.stop();
+    };
+  }, [fs]);
   const fsClamped = useTransform(fs, (v) => Math.min(1, Math.max(0, v)));
-  const gapNow    = useTransform(fs, (v) => `${Math.max(0, Math.round(editorGap * (1 - v)))}px`);
-  const bottomNow = useTransform(fs, (v) => `${Math.max(0, Math.round(dockClearance * (1 - v)))}px`);
-  const radiusNow = useTransform(fs, (v) => `${Math.max(0, EDITOR_RADIUS_PX * (1 - v))}px`);
-  const chromeNow = useTransform(fsClamped, (v) => 1 - v);
 
   const [isMockPanelOpen, setIsMockPanelOpen] = useState(false);
   const [panelContent, setPanelContent] = useState('');
 
-  // The panel's width (and its gap). Card mode sets it at once, like before; full screen tweens it,
-  // because there the editor is the one that has to give the space up. The fade/scale stays the old
-  // 250ms in both modes.
+  // panelLayoutP = 500ms "make room" progress. Floating: the panel is full width from frame 0 and
+  // only fades in; this progress moves the row and the editor. Full screen: it also drives the width.
   const panelLayoutP = useMotionValue(0);
   const panelFade = useMotionValue(0);
-  const panelWidth  = useTransform(panelLayoutP, (v) => `${EDITOR_SIDE_PANEL_W_PX * v}px`);
-  const panelGap    = useTransform(panelLayoutP, (v) => `${EDITOR_SIDE_PANEL_GAP_PX * v}px`);
+  const panelWidth  = useTransform([panelLayoutP, fsClamped], ([p, v]) => {
+    const t = Math.min(1, Math.max(0, v));
+    return `calc(${EDITOR_SIDE_PANEL_W} * ${(1 - t) + t * p})`;
+  });
+  const panelGap    = useTransform([panelLayoutP, fsClamped], ([p, v]) => {
+    const t = Math.min(1, Math.max(0, v));
+    const gap = EDITOR_SIDE_PANEL_GAP_PX + (8 - EDITOR_SIDE_PANEL_GAP_PX) * t;
+    return `${gap * ((1 - t) + t * p)}px`;
+  });
+  // Row and editor width share this progress. Keep them on motion values: moving either onto a CSS
+  // transition makes the two race and the editor snap or bounce.
+  const rowMax = useTransform(
+    panelLayoutP,
+    (v) => `calc(${EDITOR_MAX_W_PX}px + (var(--editor-row-open) - ${EDITOR_MAX_W_PX}px) * ${v})`,
+  );
   const panelOpacity = useTransform(panelFade, (v) => v);
   const panelScale   = useTransform(panelFade, (v) => 0.95 + 0.05 * v);
   const panelVisibility = useTransform(panelFade, (v) => (v > 0 ? 'visible' : 'hidden'));
-  // Kept mounted through the fade-out: a width-0 bordered box still measures 2px (border box), so it
-  // leaves the row when closed.
+  // Mounted for the whole close (the row finishes after the 250ms fade) and removed at progress 0,
+  // so the row doesn't keep the panel's 2px border box.
   const [isPanelRendered, setIsPanelRendered] = useState(false);
 
   const isEditorOpen = activeTabId !== 'home';
@@ -129,21 +160,32 @@ const GlobalEditorOverlay = () => {
     setPanelContent('');
   }, [activeTabId]);
 
-  // The phone layout uses the BottomSheet (no reserved space), so the panel's width only animates on
-  // desktop. Crossing the breakpoint closes it rather than leaving a stale gap behind.
-  const desktopPanelOpen = isMockPanelOpen && !isBelowTablet;
+  // Sheet vs side is latched when the panel opens; deriving it live would swap modes mid-view on a
+  // resize. Closed, it re-reads the window for the next open.
+  const [isSheetMode, setIsSheetMode] = useState(isPanelNarrow);
+  useEffect(() => {
+    if (isMockPanelOpen) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsSheetMode(isPanelNarrow);
+  }, [isMockPanelOpen, isPanelNarrow]);
+  const desktopPanelOpen = isMockPanelOpen && !isSheetMode;
+  // The close takes 500ms; reopening inside that gap must not be unmounted by the old callback.
+  const panelOpenRef = useRef(desktopPanelOpen);
+  useEffect(() => {
+    panelOpenRef.current = desktopPanelOpen;
+  }, [desktopPanelOpen]);
   useEffect(() => {
     if (desktopPanelOpen) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsPanelRendered(true);
     }
-    // Card mode: the width changes at once (the row's transition makes room) but on close it waits
-    // for the 250ms fade, so the panel doesn't vanish before it finishes fading. Full screen: tween.
+    // 500ms layout progress; the fade stays 250ms and must not be merged with it. The panel stays
+    // mounted until this finishes, so the row can return before it is removed. p ends exactly at 1/0
+    // and the row and card read the same value, so the final frame is the final layout.
     const controls = animate(panelLayoutP, desktopPanelOpen ? 1 : 0, {
-      ...(isFullscreen ? PANEL_TWEEN : { duration: 0 }),
-      delay: !desktopPanelOpen && !isFullscreen ? PANEL_FADE_MS / 1000 : 0,
+      ...PANEL_TWEEN,
       onComplete: () => {
-        if (!desktopPanelOpen) setIsPanelRendered(false);
+        if (!panelOpenRef?.current) setIsPanelRendered(false);
       },
     });
     const fade = animate(panelFade, desktopPanelOpen ? 1 : 0, PANEL_FADE);
@@ -151,7 +193,7 @@ const GlobalEditorOverlay = () => {
       controls.stop();
       fade.stop();
     };
-  }, [desktopPanelOpen, isFullscreen, panelLayoutP, panelFade]);
+  }, [desktopPanelOpen, panelLayoutP, panelFade]);
 
   useEffect(() => {
     const warm = preloadMarkdownEditor;
@@ -178,18 +220,27 @@ const GlobalEditorOverlay = () => {
 
   // The side panel's contents, beside the editor or in the phone sheet (where the title is the place
   // to drag the sheet from)
-  const renderPanelBody = (onTitlePointerDown) => (
+  const renderPanelBody = ({ onTitlePointerDown, onClose } = {}) => (
     <>
+      <button
+        type="button"
+        onClick={onClose}
+        title="Close panel"
+        aria-label="Close panel"
+        className="absolute right-3 top-3 z-10 flex size-8 shrink-0 items-center justify-center rounded-full text-stone-400 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+      >
+        <MdClose className="text-lg" />
+      </button>
       <h3
         onPointerDown={onTitlePointerDown}
-        className={`text-2xl font-medium mb-4 pt-2 md:pt-0 ${onTitlePointerDown ? 'touch-none' : ''} ${panelContent ? 'text-[#e85d56]' : 'text-white'}`}
+        className={`text-2xl font-medium mb-4 pr-10 pt-2 md:pt-0 ${onTitlePointerDown ? 'touch-none' : ''} ${panelContent ? 'text-[#e85d56]' : 'text-white'}`}
         style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
       >
         {panelContent ? 'Summary' : 'Mock Panel'}
       </h3>
 
       {panelContent ? (
-        <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-5 overflow-y-auto editor-scrollbar text-sm text-stone-300 leading-relaxed font-serif whitespace-pre-wrap">
+        <div className="flex-grow bg-[#2a2a2a] rounded-xl border border-[#444] p-5 overflow-y-auto agent-scrollbar break-words text-sm text-stone-300 leading-relaxed font-serif whitespace-pre-wrap">
           {panelContent}
         </div>
       ) : (
@@ -282,25 +333,32 @@ const GlobalEditorOverlay = () => {
         );
       })}
 
-      {/* Active editor — centered (only active tab is mounted in the DOM).
-          Card ↔ full screen is one spring (--fs: 0 = card, 1 = full screen) that every size here
-          is interpolated along: the gap around the card, the space above the dock, the widths, and
-          the card's corners/border/shadow (editorChrome.js). The card-mode width is defined once,
-          as --editor-card-w; the editor's text column (.editor-column in index.css) is always that
-          card's inner width, centred — so the text never changes width or re-wraps.
+      {/* Active editor — centered (only the active tab is mounted).
+          Card ↔ full screen is one spring (--fs) that interpolates the gaps, the widths and the
+          chrome. The floating width is interpolated between the closed and open measures (see the
+          --editor-card-* vars below), so it only changes by the room that is actually missing.
           The outer layer is a size container with no padding, so 100cqw is the window width. */}
       {activeTab && isEditorOpen && (
         <Motion.div
           className="fixed inset-0 z-20 animate-scale-up pointer-events-none @container"
           style={{
-            '--editor-gap': `${editorGap}px`,
+            '--editor-gap': editorGap,
             '--editor-max-w': `${editorMaxW}px`,
             '--editor-card-w': 'min(var(--editor-max-w), 100cqw - 2 * var(--editor-gap))',
+            // Closed/open editor measures and the open row. Plain continuous formulas: only the rail
+            // and the sheet are discrete switches.
+            '--editor-panel-space': EDITOR_SIDE_PANEL_SPACE,
+            '--editor-card-closed': 'min(var(--editor-max-w), 100cqw - 2 * var(--editor-gap))',
+            '--editor-card-open': 'min(var(--editor-max-w), 100cqw - 2 * max(var(--editor-gap), var(--editor-rail-clear)) - var(--editor-panel-space))',
+            '--editor-row-open': `min(calc(${EDITOR_MAX_W_PX}px + ${EDITOR_SIDE_PANEL_SPACE}), calc(100vw - 2 * var(--editor-rail-clear)))`,
+            '--panel-p': panelLayoutP,
             '--fs': fsClamped,
-            '--editor-gap-now': gapNow,
-            '--editor-bottom-now': bottomNow,
-            '--editor-radius': radiusNow,
-            '--editor-chrome': chromeNow,
+            // Both the page gap and the space above the dock ease to the same 8px frame in full screen;
+            // the card keeps its rounded corners and shadow (no square, edge-to-edge state).
+            '--editor-gap-now': `calc(${editorGap} + (8px - ${editorGap}) * var(--fs))`,
+            '--editor-bottom-now': `calc(${dockClearance}px + (8px - ${dockClearance}px) * var(--fs))`,
+            '--editor-radius': `${EDITOR_RADIUS_PX}px`,
+            '--editor-chrome': 1,
           }}
         >
           {/* Grows from 100% to 100vw: the page reserves a scrollbar gutter (scrollbar-gutter: stable
@@ -313,25 +371,22 @@ const GlobalEditorOverlay = () => {
               padding: 'var(--editor-gap-now) var(--editor-gap-now) var(--editor-bottom-now)',
             }}
           >
-          {/* Row (editor + panel). Its card-mode max width widens when the panel opens; that's a CSS
-              transition on --editor-row-max (index.css), separate from the full-screen spring. The
-              width is exactly the editor plus the panel and its gap (790 + 350 + 16), so there is no
-              spare space left over — the old 1170 left 14px, which nudged the text when toggling
-              full screen with the panel open. */}
-          <div
+          {/* Row (editor + panel). Grows from the closed editor width to the open width over the same
+              500ms progress; the full-screen spring interpolates that number to the window width. */}
+          <Motion.div
             className="editor-row flex flex-col md:flex-row gap-4 md:gap-0 h-full pointer-events-auto w-full"
-            style={{ '--editor-row-max': desktopPanelOpen ? `${EDITOR_ROW_MAX_WITH_PANEL_PX}px` : 'var(--editor-max-w)' }}
+            style={{ '--editor-row-max': rowMax }}
           >
-            {/* Main Editor. In card mode it keeps its width while the row widens or narrows for the
-                panel (min-width: the card width that fits beside the panel, so it only narrows where
-                the window can't fit both, once, without animating); it used to shrink with the row,
-                squeezed to ~420px and re-wrapping its text on every frame of the panel's open and
-                close. In full screen (--fs → 1) the floor goes to 0 and it makes room for the panel. */}
+            {/* Main Editor. Width is interpolated with the same progress as the row: at wide widths
+                both ends are 790 so it only slides; narrower, it slides to the rail and gives up the
+                rest. */}
             <div
-              className="h-full w-full"
+              className="h-full w-full min-w-0"
               style={{
                 maxWidth: 'calc(var(--editor-max-w) + (100vw - var(--editor-max-w)) * var(--fs))',
-                minWidth: `calc(min(var(--editor-max-w), 100cqw - 2 * var(--editor-gap) - ${desktopPanelOpen ? EDITOR_SIDE_PANEL_SPACE_PX : 0}px) * (1 - var(--fs)))`,
+                // Must use the same --panel-p as the row; without it the editor snaps to its smaller
+                // measure in one frame.
+                minWidth: 'calc((var(--editor-card-closed) + (var(--editor-card-open) - var(--editor-card-closed)) * var(--panel-p)) * (1 - var(--fs)))',
               }}
             >
               {/* externalRev in the key: an outside change (agent edit, revert)
@@ -346,14 +401,10 @@ const GlobalEditorOverlay = () => {
               />
             </div>
 
-            {/* Side panel: beside the editor on wider screens, a bottom sheet on phones (the shared
-                BottomSheet — pulled down to close, its title the place to drag from).
-                On desktop its width is the animated layout space: card mode takes it at once (the
-                row's transition makes room), full screen tweens it so the editor gives it up frame
-                by frame instead of snapping. The content keeps its 350px inside and is clipped while
-                the panel grows, so nothing reflows. It stays mounted through the fade-out so closing
-                animates too, then unmounts; `inert` keeps it out of the tab order. */}
-            {!isBelowTablet && isPanelRendered && (
+            {/* Side panel. Floating: full width from mount, so the row slides it in; only the 250ms
+                fade/scale is animated on it. Full screen: the width tween. Stays mounted until the
+                close progress ends; `inert` keeps it out of the tab order. */}
+            {!isSheetMode && isPanelRendered && (
               <Motion.div
                 className="shrink-0 h-full bg-[#1e1e1e] rounded-[24px] shadow-xl border border-[#333] overflow-hidden origin-left z-30"
                 style={{
@@ -367,21 +418,21 @@ const GlobalEditorOverlay = () => {
                 aria-hidden={!isMockPanelOpen}
                 inert={!isMockPanelOpen}
               >
-                <div className="w-[350px] h-full p-8 flex flex-col text-stone-200">
-                  {renderPanelBody()}
+                <div className="h-full p-8 flex flex-col text-stone-200 relative" style={{ width: EDITOR_SIDE_PANEL_W }}>
+                  {renderPanelBody({ onClose: () => setIsMockPanelOpen(false) })}
                 </div>
               </Motion.div>
             )}
             <AnimatePresence>
-              {isMockPanelOpen && isBelowTablet && (
+              {isMockPanelOpen && isSheetMode && (
                 <BottomSheet key="editor-panel-sheet" onClose={() => setIsMockPanelOpen(false)} heightShare={0.6} className="text-stone-200">
                   {(startDrag) => (
-                    <div className="flex-1 min-h-0 flex flex-col px-6 pb-6">{renderPanelBody(startDrag)}</div>
+                    <div className="flex-1 min-h-0 flex flex-col px-6 pb-6 relative">{renderPanelBody({ onTitlePointerDown: startDrag, onClose: () => setIsMockPanelOpen(false) })}</div>
                   )}
                 </BottomSheet>
               )}
             </AnimatePresence>
-          </div>
+          </Motion.div>
           </div>
         </Motion.div>
       )}

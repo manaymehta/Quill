@@ -19,6 +19,18 @@
   }
 }
 
+/* The collapsed sidebar is a 64px rail from the `sm` breakpoint (Sidebar.jsx). The editor's open
+   row clears that strip. Keep it while the sidebar is open too: the sidebar overlays the editor, so
+   the editor must not reflow when the sidebar is toggled. */
+:root {
+  --editor-rail-clear: 0px;
+}
+@media (min-width: 40rem) {
+  .app-shell:not([data-sidebar-fullscreen]) {
+    --editor-rail-clear: 4rem;
+  }
+}
+
 /* Scrollbars show only while their own area is being scrolled, fading in and out
    (utils/scrollbarVisibility.js animates this on the scrolling element). Not inherited, so a list
    inside a scrolling page stays hidden; each scrollbar colour below multiplies its opacity by it,
@@ -239,11 +251,10 @@
 }
 
 
-/* Editor text column: identical width in the card and in full screen. --editor-card-w is the card's
-   width in card mode (set by GlobalEditorOverlay); the column is that card's inner width (minus its
-   1px borders), centred. In card mode the extra inset works out to 0; in full screen, where the
-   editor is wider, it grows to keep the text exactly where it was — so nothing re-wraps.
-   --column-pad is the element's own padding on top of that.
+/* Editor text column. --editor-card-w is the editor's closed measure (GlobalEditorOverlay); in full
+   screen the column is inset to that measure, so the text keeps the width it had in the card. When
+   the summary panel narrows the card below that measure, the inset is 0 and the text takes the
+   card's width. --column-pad is the element's own padding on top of that.
    --scrollbar-gutter-w: in a scrolling column, the width of its reserved scrollbar gutter
    (.editor-scrollbar keeps it even when nothing scrolls), measured by the editor. It's taken back
    out of the right padding, so the visible margins are equal on both sides and the scrollbar sits
@@ -254,10 +265,9 @@
   padding-right: max(0px, calc(var(--column-inset) + var(--column-pad, 0px) - var(--scrollbar-gutter-w, 0px)));
 }
 
-/* Editor row (editor + side panel), see GlobalEditorOverlay. Its max width is the card-mode width
-   (widening when the panel opens, eased by this transition) interpolated toward the full window by
-   --fs, the full-screen spring. Only the card-mode part transitions: a transition on max-width itself
-   would restart every frame of the spring and lag behind it. */
+/* Editor row, see GlobalEditorOverlay. --editor-row-max is written per frame by the make-room
+   progress (closed width → open width), then interpolated to the full window by --fs. Keep it on a
+   motion value; a CSS transition here would race the panel and the editor. */
 @property --editor-row-max {
   syntax: '<length>';
   inherits: false;
@@ -265,7 +275,6 @@
 }
 .editor-row {
   max-width: calc(var(--editor-row-max) + (100vw - var(--editor-row-max)) * var(--fs, 0));
-  transition: --editor-row-max 500ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Force dark cursor and selection targeting the light cream editor */

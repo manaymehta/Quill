@@ -16,7 +16,7 @@ import { useKeyboardTop } from '../../utils/virtualKeyboard';
 import { useTabsStore } from '../../store/useTabsStore';
 import { useUIStore } from '../../store/useUIStore';
 import FadeTitle from '../../components/TabDock/FadeTitle';
-import { EDITOR_CARD_STYLE, EDITOR_TOOLBAR_H_PX, EDITOR_TOOLBAR_DOT_SLOT_MARGIN_PX, fullscreenToolbarHeight } from '../../components/Editor/editorChrome';
+import { EDITOR_CARD_STYLE, EDITOR_TOOLBAR_H_PX } from '../../components/Editor/editorChrome';
 import { DOCK_METRICS, DOCK_MOBILE_QUERY } from '../../components/TabDock/dockMetrics';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { BELOW_TABLET_QUERY } from '../../constants/breakpoints';
@@ -60,15 +60,78 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const [showMovePicker, setShowMovePicker] = useState(false);
   const isEditorFullscreen = useUIStore((s) => s.isEditorFullscreen);
   const toggleEditorFullscreen = useUIStore((s) => s.toggleEditorFullscreen);
-  // Toolbar height: card mode's, easing to the full-screen one (fits the dock's dot) along the
-  // full-screen transition (--fs, set by GlobalEditorOverlay)
+  // The toolbar sizes itself from the editor's own width (container queries below), not the window:
+  // opening the side panel makes the editor narrow, and the old wide layout pushed Save/Discard
+  // outside the card on smaller desktop windows.
+  // In full screen the dock shrinks to a dot. The toolbar keeps its exact horizontal position (the
+  // dot does not move when the side panel narrows the editor): the tools stay on the left and the
+  // actions are placed on whichever side of the dot still fits, compacting when they move left.
   const dockMetrics = useMediaQuery(DOCK_MOBILE_QUERY) ? DOCK_METRICS.mobile : DOCK_METRICS.desktop;
   const isBelowTablet = useMediaQuery(BELOW_TABLET_QUERY);
   const toolbarCardH = isBelowTablet ? EDITOR_TOOLBAR_H_PX.phone : EDITOR_TOOLBAR_H_PX.desktop;
-  // a touch screen or a small one: the text area doesn't take focus by itself (it would pop the keyboard)
   const isMobileOrTouchScreen = useMediaQuery('(pointer: coarse)') || isBelowTablet;
-  const toolbarHeight = `calc(${toolbarCardH}px + ${fullscreenToolbarHeight(dockMetrics) - toolbarCardH}px * var(--fs, 0))`;
-  const dotSlotWidth = dockMetrics.height[1] + 2 * EDITOR_TOOLBAR_DOT_SLOT_MARGIN_PX;
+  const toolbarHeight = toolbarCardH;
+  const dotSlotWidth = dockMetrics.height[1] + 16;
+  const toolbarRef = useRef(null);
+  const [toolbarDot, setToolbarDot] = useState({ active: false, side: 'right', actionsRight: 0, tight: false });
+  useLayoutEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) return undefined;
+    const measure = () => {
+      if (!isEditorFullscreen || isBelowTablet) {
+        setToolbarDot((prev) => (prev.active ? { active: false, side: 'right', actionsRight: 0, tight: false } : prev));
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      const padLeft = parseFloat(cs.paddingLeft) || 0;
+      const padRight = parseFloat(cs.paddingRight) || 0;
+      const contentLeft = rect.left + padLeft;
+      const contentWidth = rect.width - padLeft - padRight;
+      const dotCenterBorder = window.innerWidth / 2 - rect.left;
+      const dotWidth = dockMetrics.height[1];
+      const inside = dotCenterBorder - dotWidth / 2 >= 0 && dotCenterBorder + dotWidth / 2 <= rect.width;
+      if (!inside) {
+        setToolbarDot((prev) => (prev.active ? { active: false, side: 'right', actionsRight: 0, tight: false } : prev));
+        return;
+      }
+      const dotCenter = window.innerWidth / 2 - contentLeft;
+      const slotLeft = dotCenter - dotSlotWidth / 2;
+      const slotRight = dotCenter + dotSlotWidth / 2;
+      // Progressive, hysteretic: keep the actions on the right until the compact version really
+      // cannot fit; only then move them left of the dot. Labels/word count drop before the buttons
+      // move, so a width change doesn't make the whole action group jump for no reason.
+      const compact = contentWidth < 660; // the same content width as @min-[660px]
+      const rightSpace = contentWidth - slotRight;
+      const minRight = 148;  // compact actions (140) + a gap
+      const wideRight = 270; // full actions (262) + the dot's own slot margin
+      setToolbarDot((prev) => {
+        const wasLeft = prev.active && prev.side === 'left';
+        const actionsAtRight = wasLeft ? rightSpace >= minRight + 16 : rightSpace >= minRight;
+        const tight = compact ? true : !(rightSpace >= wideRight);
+        const side = actionsAtRight ? 'right' : 'left';
+        const actionsRight = side === 'left' ? (contentWidth - slotLeft) + padRight : 0;
+        const next = { active: true, side, actionsRight, tight };
+        return prev.active === next.active
+          && prev.side === next.side
+          && Math.abs(prev.actionsRight - next.actionsRight) < 0.5
+          && prev.tight === next.tight
+          ? prev
+          : next;
+      });
+    };
+    measure();
+    // Border box: the toolbar's content box can stay the same while its side inset (the column
+    // padding that keeps the text measure centred) grows in full screen. Watching the content box
+    // left the old right offset in place, pushing the actions out to the card edge.
+    const observer = new ResizeObserver(measure);
+    observer.observe(el, { box: 'border-box' });
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [isEditorFullscreen, isBelowTablet, dotSlotWidth, dockMetrics.height]);
   const [error, setError] = useState("")
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [tagInputValue, setTagInputValue] = useState("");
@@ -95,12 +158,45 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   }, []);
 
   // One mechanism for every outside press: capture-phase pointerdown, so mouse, pen and touch all
-  // close the pill and the press still lands normally on whatever was clicked.
+  // close the pill and the press still lands normally on whatever was clicked. A press on the
+  // editor itself is different: it only dismisses the pill, so the same tap must not take focus
+  // (which opens the on-screen keyboard) or land on a checkbox underneath the pill.
   useEffect(() => {
     if (!isHistoryOpen) return undefined;
+    let releaseSwallowedGesture = null;
     const handlePointerDown = (event) => {
       if (historyWrapRef.current?.contains(event.target)) return;
       setIsHistoryOpen(false);
+      if (!event.target.closest?.('[data-editor-surface]')) return;
+      releaseSwallowedGesture?.();
+      event.preventDefault();
+      event.stopPropagation();
+      // The gesture continues after pointerdown: swallow its pointerup/click too, once.
+      const swallow = (next) => {
+        next.preventDefault();
+        next.stopPropagation();
+      };
+      const endGesture = () => releaseSwallowedGesture?.();
+      const onPointerUp = (next) => {
+        swallow(next);
+        document.removeEventListener('pointerup', onPointerUp, true);
+      };
+      const onClick = (next) => {
+        swallow(next);
+        endGesture();
+      };
+      // Safety net for a gesture that ends without pointerup/click (cancelled touch, drag).
+      const timer = setTimeout(endGesture, 500);
+      releaseSwallowedGesture = () => {
+        clearTimeout(timer);
+        document.removeEventListener('pointerup', onPointerUp, true);
+        document.removeEventListener('click', onClick, true);
+        document.removeEventListener('pointercancel', endGesture, true);
+        releaseSwallowedGesture = null;
+      };
+      document.addEventListener('pointerup', onPointerUp, true);
+      document.addEventListener('click', onClick, true);
+      document.addEventListener('pointercancel', endGesture, true);
     };
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') setIsHistoryOpen(false);
@@ -108,6 +204,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     document.addEventListener('pointerdown', handlePointerDown, true);
     document.addEventListener('keydown', handleKeyDown);
     return () => {
+      releaseSwallowedGesture?.();
       document.removeEventListener('pointerdown', handlePointerDown, true);
       document.removeEventListener('keydown', handleKeyDown);
     };
@@ -135,8 +232,9 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
     if (!view?.quillInsertTask) return;
     const inserted = view.quillInsertTask();
     if (!inserted) return;
-    if (isMobileOrTouch()) view.focusForTyping?.();
-    else view.focus();
+    // On phones, adding from the toolbar must not open the keyboard; the new task is already
+    // scrolled into view and selected, and the user opens the keyboard by tapping it.
+    if (!isMobileOrTouch()) view.focus();
   }, []);
 
   // The scrolling area's reserved scrollbar gutter (always kept, see .editor-scrollbar) is taken
@@ -162,7 +260,12 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   useLayoutEffect(() => {
     const el = scrollAreaRef.current;
-    const overlap = keyboardTop === null || !el ? 0 : Math.max(0, Math.round(el.getBoundingClientRect().bottom - keyboardTop));
+    const rawOverlap = keyboardTop === null || !el
+      ? 0
+      : Math.max(0, Math.round(el.getBoundingClientRect().bottom - keyboardTop));
+    // Never reserve more than the scroll area itself: on a short/landscape editor the keyboard can
+    // cover the whole thing, and a larger spacer would only create a huge empty run.
+    const overlap = Math.min(rawOverlap, el ? el.clientHeight : 0);
     setKeyboardOverlap(overlap);
   }, [keyboardTop]);
   useEffect(() => {
@@ -808,7 +911,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       )}
 
       {/* editor content area */}
-      <div ref={scrollAreaRef} className='editor-column [--column-pad:1.25rem] md:[--column-pad:1.75rem] flex-grow flex flex-col pt-4 md:pt-5 pb-2 overflow-y-auto overflow-x-hidden editor-scrollbar'>
+      <div ref={scrollAreaRef} className='editor-column [--column-pad:1.25rem] md:[--column-pad:1.75rem] flex-grow flex flex-col pt-4 md:pt-5 pb-2 overflow-y-auto overflow-x-hidden overscroll-contain editor-scrollbar'>
 
         {/* metadata area */}
         <div className="text-[11px] md:text-[13px] font-medium tracking-wider md:tracking-[0.15em] text-stone-500 mb-0.5 md:mb-1 uppercase flex items-center justify-between gap-1.5 md:gap-2 shrink-0">
@@ -1021,6 +1124,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
           {/* ── CodeMirror live-preview markdown editor ── */}
           <div 
+            data-editor-surface=""
             className={`flex-grow min-w-0 overflow-x-hidden text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] cursor-text ${isShowingBefore || isShowingChanges ? 'hidden' : ''}`}
                onClick={(e) => {
                  if (e.target === e.currentTarget && cmViewRef.current) {
@@ -1184,12 +1288,14 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
         <div className="h-[1px] w-full bg-black/5" />
       </div>
 
-      {/* Toolbar. In full screen the dock shrinks to a dot centred in it (TabDock), so the toolbar
-          becomes three columns — tools | free slot for the dot | actions — with equal side columns,
-          keeping the slot exactly at the centre. */}
+      {/* Toolbar. In full screen the dock stays in its own space below the card (the card keeps the
+          page gap), so the toolbar no longer reserves a slot for the dot: it is a plain two-sided
+          row in both modes. Compact mode (set from the editor's own width) drops the labels and the
+          word count when the side panel makes the editor narrow. */}
       <div
-        className={`editor-column [--column-pad:1rem] md:[--column-pad:1.25rem] bg-[#eaddce] items-center gap-1 md:gap-2 shrink-0 ${
-          isEditorFullscreen ? 'grid grid-cols-[1fr_auto_1fr]' : 'flex justify-between'
+        ref={toolbarRef}
+        className={`editor-column @container [--column-pad:1rem] md:[--column-pad:1.25rem] bg-[#eaddce] items-center gap-1 md:gap-2 shrink-0 ${
+          toolbarDot.active && toolbarDot.side === 'left' ? 'relative flex' : 'flex justify-between'
         }`}
         style={{ height: toolbarHeight }}
       >
@@ -1205,7 +1311,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
               aria-label="Insert checkbox"
             >
               <MdCheckBoxOutlineBlank className="text-xl md:text-base" />
-              <span className="hidden md:inline">Checkbox</span>
+              <span className="hidden @min-[660px]:inline">Checkbox</span>
             </button>
           )}
 
@@ -1216,7 +1322,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             title="Summarize"
           >
             <FaWandMagicSparkles className="text-lg md:text-xs" />
-            <span className="hidden md:inline">{isSummarizing ? "Summarizing..." : "Summarize"}</span>
+            <span className="hidden @min-[660px]:inline">{isSummarizing ? "Summarizing..." : "Summarize"}</span>
           </button>
 
           <button
@@ -1225,7 +1331,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             title="Toggle Panel"
           >
             <MdViewSidebar className="text-xl md:text-base" />
-            <span className="hidden md:inline">Panel</span>
+            <span className="hidden @min-[660px]:inline">Panel</span>
           </button>
 
           {showLiveEditorTools && (
@@ -1285,14 +1391,15 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
         </div>
 
-        {isEditorFullscreen && (
-          <div aria-hidden style={{ width: dotSlotWidth }} />
-        )}
-
         {/* actions */}
-        <div className="flex items-center gap-1 md:gap-2 shrink-0 justify-self-end">
+        <div
+          className={`flex items-center gap-1 md:gap-2 shrink-0 justify-self-end ${
+            toolbarDot.active && toolbarDot.side === 'left' ? 'absolute top-0 bottom-0' : ''
+          }`}
+          style={toolbarDot.active && toolbarDot.side === 'left' ? { right: `${toolbarDot.actionsRight}px` } : undefined}
+        >
 
-          <span className="hidden md:inline text-[11px] text-stone-400 font-medium whitespace-nowrap">
+          <span className={`${toolbarDot.tight ? 'hidden' : 'hidden @min-[660px]:inline'} text-[11px] text-stone-400 font-medium whitespace-nowrap`}>
             {wordCount}w &middot; {charCount}ch
           </span>
 
@@ -1306,8 +1413,8 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
             onClick={handleAddNote}
             className="px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-xs font-medium text-white cursor-pointer bg-[#e85d56] hover:bg-[#fb6d65] hover:shadow-md transition-all flex items-center gap-1.5 whitespace-nowrap"
           >
-            <span className="md:hidden">Save</span>
-            <span className="hidden md:inline">{type === "edit" ? "Save Changes" : "Save Note"}</span>
+            <span className={`${toolbarDot.tight ? 'hidden' : 'hidden @min-[660px]:inline'}`}>{type === "edit" ? "Save Changes" : "Save Note"}</span>
+            <span className={toolbarDot.tight ? '' : '@min-[660px]:hidden'}>Save</span>
           </button>
         </div>
 

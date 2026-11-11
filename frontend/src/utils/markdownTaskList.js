@@ -1269,7 +1269,7 @@ export const insertTask = (view) => {
     selection: { anchor: change.from + prefixOffset + prefix.length },
     annotations: isolateHistory.of('full'),
     userEvent: 'input.insert',
-    scrollIntoView: hasCursor,
+    scrollIntoView: true,
   });
   return true;
 };
