@@ -112,9 +112,10 @@ export const quillMarkdownHighlight = syntaxHighlighting(
       fontSize: '0.9em',
     },
 
-    // Links
-    { tag: tags.link, color: '#d97757', textDecoration: 'underline' },
-    { tag: tags.url,  color: '#c4654a' },
+    // Links. The underline is the signal: colour alone on cream reads as "different text", not
+    // "link". Both the visible name of `[name](address)` and a bare address get it.
+    { tag: tags.link, color: '#d97757', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationThickness: '1px' },
+    { tag: tags.url,  color: '#c4654a', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationThickness: '1px' },
 
     // Blockquote text
     { tag: tags.quote, color: '#78716c', fontStyle: 'italic' },
@@ -200,7 +201,12 @@ export const hideMarkdownSyntax = ViewPlugin.fromClass(
         to:   view.viewport.to,
         enter(node) {
           const isListMark = node.name === 'ListMark';
-          if (!isListMark && !SYNTAX_MARKS.has(node.name)) return;
+          // The address half of `[name](address)` / `![alt](address)`. A bare address is its own
+          // `URL` (or sits in an `Autolink`), so this check leaves it visible and lets the link
+          // style show; it never hides the thing the reader is meant to click.
+          const isDestination = node.name === 'URL'
+            && (node.node.parent?.name === 'Link' || node.node.parent?.name === 'Image');
+          if (!isListMark && !isDestination && !SYNTAX_MARKS.has(node.name)) return;
 
           const nodeLine = state.doc.lineAt(node.from);
           // A task's bullet and `[ ]` are replaced by the checkbox widget itself (markdownTaskList):

@@ -12,7 +12,7 @@ const Breadcrumb = ({ folderId }) => {
     const path = getFolderPath(folders, folderId);
 
     return (
-        <div className="inline-flex items-center bg-white/[0.04] border border-white/[0.05] shadow-sm backdrop-blur-md px-3 py-1.5 rounded-full text-[11px] sm:text-[12px] font-bold text-stone-400 uppercase tracking-[0.15em] select-none">
+        <div className="inline-flex items-center bg-white/[0.04] border border-white/[0.05] shadow-sm backdrop-blur-md px-3 py-1.5 rounded-full text-[12px] font-bold text-stone-400 uppercase tracking-[0.15em] select-none">
             <Link
                 to="/dashboard?view=folders"
                 className="hover:text-stone-200 transition-colors"

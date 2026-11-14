@@ -41,11 +41,14 @@ const GAP_PX = { phone: 8, desktop: 12 };
 // Cards slide to new places: fast start, long gentle settle, no overshoot
 const SLIDE = 'transform 340ms cubic-bezier(0.22, 1, 0.36, 1)';
 
-const getCols = () => {
-    if (typeof window === 'undefined') return 2;
-    if (window.innerWidth >= 1280) return 4;
-    if (window.innerWidth >= 1024) return 3;
-    return 2;
+// A card is never wider than this. The column count follows the space the grid actually has, not the
+// window: the page's padding, the sidebar rail (and the sidebar when it pushes the page) all come out
+// of that space, so tying the count to the window left two columns stretching to 437px at 1023px and
+// then snapping to 288px at 1024px.
+const CARD_MAX_PX = 360;
+const colsForWidth = (width) => {
+    if (!width) return 2;
+    return Math.max(2, Math.min(8, Math.ceil(width / CARD_MAX_PX)));
 };
 
 // Masonry: notes go left to right into columns (index % cols keeps the reading order), each
@@ -108,7 +111,9 @@ const NotesGrid = ({
     const reorderNotesMutation = useReorderNotesMutation();
 
     const [activeId, setActiveId] = useState(null);
-    const [cols, setCols] = useState(() => getCols());
+    // Measured from the grid's own box (below), not the window; the first guess is close enough to
+    // paint before the measurement lands
+    const [cols, setCols] = useState(() => colsForWidth(typeof window === 'undefined' ? 0 : window.innerWidth));
     const gap = useMediaQuery('(min-width: 768px)') ? GAP_PX.desktop : GAP_PX.phone;
     const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
@@ -194,9 +199,7 @@ const NotesGrid = ({
 
     // Re-compute on window resize
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCols(getCols());
-        const onResize = () => setCols(getCols());
+        const onResize = () => setCols(colsForWidth(containerRef.current?.getBoundingClientRect().width ?? window.innerWidth));
         window.addEventListener('resize', onResize);
         return () => window.removeEventListener('resize', onResize);
     }, []);
@@ -225,6 +228,22 @@ const NotesGrid = ({
             window.removeEventListener('touchmove', track, { capture: true });
         };
     }, [activeId]);
+
+    // The grid's own width picks the column count: a window resize, the sidebar opening (it pushes
+    // the page above the dock breakpoint), the rail appearing — all change this box.
+    const hasCards = items.length > 0;
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el || typeof ResizeObserver === 'undefined') return undefined;
+        const apply = (width) => {
+            const next = colsForWidth(width);
+            setCols((prev) => (prev === next ? prev : next));
+        };
+        apply(el.getBoundingClientRect().width);
+        const observer = new ResizeObserver(([entry]) => apply(entry.contentRect.width));
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [hasCards]);
 
     if (loading && items.length === 0) return null;
 

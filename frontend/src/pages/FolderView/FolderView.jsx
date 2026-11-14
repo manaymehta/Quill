@@ -116,7 +116,7 @@ const FolderView = () => {
           <div>
             <div className="space-y-3">
               <div>
-                <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
+                <h3 className="text-[12px] md:text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
                   <MdOutlineFolder className="mr-2" size={16} />
                   Folders
                 </h3>
@@ -133,7 +133,7 @@ const FolderView = () => {
 
               {displayedDirectNotes.length > 0 && (
                 <div>
-                  <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
+                  <h3 className="text-[12px] md:text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
                     <MdOutlineStickyNote2 className="mr-2" size={16} />
                     Notes
                   </h3>
@@ -155,7 +155,7 @@ const FolderView = () => {
 
               {!isLoading && subfolders.length === 0 && directNotes.length === 0 && (
                 <div className="flex flex-col items-center justify-center mt-20 opacity-50">
-                  <p className="text-sm font-medium text-slate-400 text-center">
+                  <p className="text-[15px] md:text-sm font-medium text-slate-400 text-center">
                     This folder is empty.
                   </p>
                 </div>

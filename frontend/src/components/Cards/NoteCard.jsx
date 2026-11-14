@@ -211,19 +211,24 @@ const InnerNoteCard = memo(({
     <div
       ref={observerTargetRef}
       onAnimationEnd={() => setShouldAnimate(false)}
-      className={`group border w-full border-gray-700 rounded-[20px] md:rounded-3xl p-3 md:p-4 bg-[#f8ecdc] note-card relative select-none overflow-hidden transition-transform duration-200 ease-out [-webkit-touch-callout:none]
+      className={`group border w-full border-gray-700 rounded-[20px] md:rounded-3xl p-3 md:p-4 bg-[#f8ecdc] note-card relative select-none overflow-hidden transition-transform duration-200 ease-out [-webkit-touch-callout:none] flex flex-col max-h-[23.75rem] md:max-h-[24.375rem]
         ${shouldAnimate && !isOverlay ? 'animate-card-fade-in' : ''}
         ${isDragging ? 'opacity-30' : 'opacity-100'}
         ${isMenuOpen ? 'ring-1 ring-white/10' : ''}
         ${isOverlay ? 'note-card-lift' : (isDragging ? '' : 'shadow-xs')}`}
     >
-      <div className="flex flex-col">
-        <div className="flex justify-between items-start gap-1">
-          <h4 className="text-lg md:text-2xl font-semibold tracking-tight text-[#e85d56] leading-tight flex-1 min-w-0 pr-1">{title}</h4>
-          
-          {/* The dragged copy keeps the button's room (hidden): without it the title could fit on
-              one line less and the lifted card came out shorter than the one picked up */}
-          <div className={`relative shrink-0 no-card-click ${isOverlay ? 'invisible' : ''}`} aria-hidden={isOverlay || undefined}>
+      <div className="flex flex-col min-h-0">
+        <div className="relative shrink-0">
+          <h4 className="text-xl md:text-2xl font-semibold tracking-tight text-[#e85d56] leading-tight pr-1 line-clamp-3">
+            {/* The dots cost the first line 28px, not every line: this float is exactly one line tall
+                (1.25em = leading-tight), so the lines under it run the full card width. Without it a
+                narrow card broke "Multi-Stage" after the hyphen — its only break point — into
+                "Multi-" / "Stage". The dragged copy keeps the same spacer, with the dots invisible. */}
+            <span aria-hidden="true" className="float-right h-[1.25em] w-[28px]" />
+            {title}
+          </h4>
+
+          <div className={`absolute right-0 top-0 no-card-click ${isOverlay ? 'invisible' : ''}`} aria-hidden={isOverlay || undefined}>
             <button
               type="button"
               onClick={toggleMenu}
@@ -269,11 +274,14 @@ const InnerNoteCard = memo(({
         )}
 
         <div
-          className="font-medium mt-1.5 md:mt-2 text-[#494949] text-[13px] md:text-sm overflow-hidden break-words"
+          className="font-medium mt-1.5 md:mt-2 text-[#494949] text-sm overflow-hidden break-words min-h-0"
           style={{
+            // The card has a hard max-height, so this body is the only element that gives way when
+            // a note has link previews. The fade is relative to the body's own height because it can
+            // now be far shorter than the 9rem ceiling.
             maxHeight: '9rem',
-            WebkitMaskImage: 'linear-gradient(to bottom, black 0, black 8rem, transparent 9rem)',
-            maskImage: 'linear-gradient(to bottom, black 0, black 8rem, transparent 9rem)',
+            WebkitMaskImage: 'linear-gradient(to bottom, black 0, black calc(100% - 0.75rem), transparent 100%)',
+            maskImage: 'linear-gradient(to bottom, black 0, black calc(100% - 0.75rem), transparent 100%)',
           }}
           onClick={(event) => {
             if (!onTaskToggle) return;
@@ -295,7 +303,7 @@ const InnerNoteCard = memo(({
         </div>
 
         {/* Tags & Folder Row */}
-        <div className="flex items-center justify-between gap-2 mt-1">
+        <div className="flex items-center justify-between gap-2 mt-1 shrink-0">
           <div 
             className="flex items-center gap-2 flex-grow overflow-hidden"
             style={{
@@ -306,7 +314,7 @@ const InnerNoteCard = memo(({
             {!hideFolderBadge && folder && (
               <div 
                 style={{ color: folder.color, backgroundColor: `${folder.color}15` }}
-                className="flex items-center text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full select-none no-card-click truncate max-w-[120px] shrink-0"
+                className="flex items-center text-[12px] leading-[15px] sm:text-xs sm:leading-4 font-semibold px-2 py-0.5 rounded-full select-none no-card-click truncate max-w-[120px] shrink-0"
                 title={`In folder: ${folder.name}`}
               >
                 <MdOutlineFolder size={13} className="mr-1 flex-shrink-0" />
@@ -314,7 +322,7 @@ const InnerNoteCard = memo(({
               </div>
             )}
             {tags && tags.map((t, idx) => (
-              <span key={idx} className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-black/5 text-stone-600 font-semibold shrink-0 select-none no-card-click">
+              <span key={idx} className="text-[12px] leading-[15px] sm:text-xs sm:leading-4 px-2 py-0.5 rounded-full bg-black/5 text-stone-600 font-semibold shrink-0 select-none no-card-click">
                 #{t}
               </span>
             ))}
@@ -322,7 +330,7 @@ const InnerNoteCard = memo(({
         </div>
 
         {linkPreviews && linkPreviews.length > 0 && (
-          <div className="mt-3 -mx-3 md:-mx-4 -mb-3 md:-mb-4 flex flex-col no-card-click border-t border-stone-200/80 rounded-b-[20px] md:rounded-b-3xl overflow-hidden" style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}>
+          <div className="mt-1.5 md:mt-2 -mx-3 md:-mx-4 -mb-3 md:-mb-4 flex flex-col shrink-0 no-card-click border-t border-stone-200/80 rounded-b-[20px] md:rounded-b-3xl overflow-hidden" style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}>
             {linkPreviews.slice(0, 3).map((preview, idx) => (
               <a 
                 key={idx}
@@ -330,9 +338,9 @@ const InnerNoteCard = memo(({
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className={`flex items-center gap-3 px-4 py-3 sm:px-5 sm:py-3.5 bg-black/[0.06] hover:bg-black/[0.12] transition-all duration-200 ${idx !== 0 ? 'border-t border-stone-200/80' : ''}`}
+                className={`flex items-center gap-2 px-3 py-2 sm:gap-3 sm:px-3 md:px-4 md:py-2.5 bg-black/[0.06] hover:bg-black/[0.12] transition-all duration-200 ${idx !== 0 ? 'border-t border-stone-200/80' : ''}`}
               >
-                <MdArrowOutward size={18} className="text-black/30 flex-shrink-0 group-hover:text-black/50 transition-colors" />
+                <MdArrowOutward size={18} className="hidden sm:block text-black/30 flex-shrink-0 group-hover:text-black/50 transition-colors" />
                 {preview.image && (
                   <img 
                     src={preview.image} 
@@ -340,10 +348,10 @@ const InnerNoteCard = memo(({
                     className="w-10 h-10 object-cover rounded-md flex-shrink-0 border border-black/5 shadow-sm"
                   />
                 )}
-                <div className="flex-grow min-w-0 pr-1">
+                <div className="flex-grow min-w-0">
                   <div className="text-xs font-bold text-black/70 truncate leading-snug">{preview.title || preview.url}</div>
                   {preview.siteName && (
-                    <div className="text-[10px] text-black/50 font-bold truncate mt-0.5 uppercase tracking-wider">{preview.siteName}</div>
+                    <div className="text-[10px] text-black/50 font-bold truncate mt-0.5 uppercase tracking-normal sm:tracking-wider">{preview.siteName}</div>
                   )}
                 </div>
               </a>

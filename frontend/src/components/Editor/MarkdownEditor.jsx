@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
-import { markdown } from '@codemirror/lang-markdown';
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { historyField, redo, redoDepth, undo, undoDepth } from '@codemirror/commands';
 import { keymap, EditorView } from '@codemirror/view';
 import { Compartment } from '@codemirror/state';
@@ -199,7 +199,9 @@ const setupMobileHandlers = (view, onPasteTextRef) => {
 const SNAPSHOT_FIELDS = { history: historyField };
 
 const EDITOR_EXTENSIONS = [
-  markdown(),
+  // The extended (GFM) rules, not bare CommonMark: bare addresses become links the same way the
+  // note cards and previews already treat them, and the editor's syntax styling can reach them.
+  markdown({ base: markdownLanguage }),
   quillTheme,
   quillMarkdownHighlight,
   hideMarkdownSyntax,

@@ -135,6 +135,10 @@ class TaskCheckbox extends WidgetType {
 // ─── Decorations ─────────────────────────────────────────────────────────────
 
 const doneLine = Decoration.line({ class: 'cm-task-done' });
+// The strike lives on the text only. A `line-through` on the line itself also draws over the
+// indent in front of the widget and the space behind it, which showed up as a stray dash to the
+// left of the grip on nested checked rows.
+const doneText = Decoration.mark({ class: 'cm-task-done-text' });
 const dragSourceLine = Decoration.line({ class: 'cm-task-drag-source' });
 
 // A line inside fenced/indented code is not a checkbox, even when its text looks like `- [ ]`.
@@ -166,6 +170,8 @@ const buildTaskDecorations = (view) => {
     builder.add(markerFrom, markerTo, Decoration.replace({
       widget: new TaskCheckbox(info),
     }));
+    // Skip an empty range (`- [x]` with nothing after it): RangeSetBuilder rejects from == to.
+    if (info.checked && markerTo < line.to) builder.add(markerTo, line.to, doneText);
   }
 
   return builder.finish();
@@ -180,6 +186,17 @@ const GAP_HYSTERESIS_PX = 3;
 // Row slide: long enough to read as movement, short enough to keep up with the pointer
 const SLIDE_MS = 220;
 const SLIDE_EASE = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
+
+// Rows mid-slide from an auto-sink. A second tick on a row that is still moving cancels its slide
+// and starts from the new place, so transforms never stack.
+const sinkSlides = new WeakMap();
+
+// Vertical breathing room on the lifted row copy. Without it the ghost is exactly one line tall
+// (21.7px), so its background and shadow hug the glyphs and it reads as a sliver of text rather than
+// a card you are holding. Padding is vertical only: the copy has to keep the column's width and wrap
+// like the original. The grab offset is shifted by the same amount so the row does not jump down
+// under the finger at pickup.
+const CLONE_PAD_Y = 6;
 
 const taskListPlugin = ViewPlugin.fromClass(class {
   constructor(view) {
@@ -590,7 +607,8 @@ const taskListPlugin = ViewPlugin.fromClass(class {
     // the shadow off flush at the text edges. A fixed box is not clipped by ancestor overflow, so
     // the whole shadow shows; it still uses viewport coordinates and stays under the pointer.
     wrap.style.cssText = 'position:fixed;left:0;top:0;display:none;pointer-events:none;z-index:60;'
-      + 'will-change:transform;border-radius:6px;'
+      + 'will-change:transform;border-radius:6px;box-sizing:border-box;'
+      + `padding:${CLONE_PAD_Y}px 0;`
       + `background:${paintedBackground(view.dom)};`
       + 'box-shadow:0 0 0 1px rgba(70,50,30,0.06), 0 7px 18px rgba(70,50,30,0.12), 0 2px 5px rgba(70,50,30,0.06);'
       + `font-family:${contentStyle.fontFamily};font-size:${contentStyle.fontSize};`
@@ -608,7 +626,9 @@ const taskListPlugin = ViewPlugin.fromClass(class {
     // pointer sideways out over the rest of the page.
     if (lines.length) {
       const rect = lines[0].getBoundingClientRect();
-      this.drag.grab = { y: event.clientY - rect.top };
+      // + CLONE_PAD_Y: the first line now starts that far inside the copy, so the grab offset has to
+      // grow with it or the whole row would drop under the cursor the moment it lifts.
+      this.drag.grab = { y: event.clientY - rect.top + CLONE_PAD_Y };
       this.drag.lockX = rect.left;
       this.drag.firstLineText = lines[0].textContent;
     }
@@ -637,11 +657,14 @@ const taskListPlugin = ViewPlugin.fromClass(class {
       return;
     }
     const from = clone.getBoundingClientRect();
+    // Compare text-to-text: the copy's border box starts CLONE_PAD_Y above its first line, so using
+    // from.top here would bias every distance by the padding and could pick the wrong row.
+    const fromTextTop = from.top + CLONE_PAD_Y;
     let best = null;
     for (const el of this.view.contentDOM.querySelectorAll('.cm-line')) {
       if (!drag.firstLineText || !el.textContent.startsWith(drag.firstLineText)) continue;
       const rect = el.getBoundingClientRect();
-      const distance = Math.abs(rect.top - from.top);
+      const distance = Math.abs(rect.top - fromTextTop);
       if (!best || distance < best.distance) best = { rect, distance };
     }
     const fade = () => clone.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140 })
@@ -651,8 +674,11 @@ const taskListPlugin = ViewPlugin.fromClass(class {
       setTimeout(() => clone.remove(), 200);
       return;
     }
-    // The copy is a fixed layer on the editor element, so both ends of the settle are viewport coordinates
-    const landed = `translate3d(${Math.round(best.rect.left)}px, ${Math.round(best.rect.top)}px, 0)`;
+    // The copy is a fixed layer on the editor element, so both ends of the settle are viewport
+    // coordinates. `top` is offset by the copy's own padding: landing its border box on the row's
+    // top would put its text CLONE_PAD_Y below the row's text, so the last frame snapped down and
+    // read as a shake before the fade.
+    const landed = `translate3d(${Math.round(best.rect.left)}px, ${Math.round(best.rect.top - CLONE_PAD_Y)}px, 0)`;
     clone.animate(
       [
         { transform: clone.style.transform, opacity: 1, offset: 0 },
@@ -914,6 +940,57 @@ const blockPixelHeight = (view, block) => {
     height += view.lineBlockAt(doc.line(number).from).height;
   }
   return height;
+};
+
+// The rendered row for a line number, if CodeMirror currently has it on screen.
+const lineRow = (view, number) => {
+  const { doc } = view.state;
+  if (number < 1 || number > doc.lines) return null;
+  const { node } = view.domAtPos(doc.line(number).from, 1);
+  const anchor = node.nodeType === 3 ? node.parentElement : node;
+  return anchor?.closest?.('.cm-line') || null;
+};
+
+// Height of a run of lines. Rendered rows are exact; off-screen ones fall back to the height map,
+// which is only an estimate until CodeMirror measures them. Either way the animation lands on 0,
+// so an inexact start reads as a slightly shorter slide, never a jump at the end.
+const rowsPixelHeight = (view, from, to) => {
+  let height = 0;
+  for (let number = from; number <= to; number++) {
+    const row = lineRow(view, number);
+    const measured = row ? row.offsetHeight : 0;
+    height += measured || view.lineBlockAt(view.state.doc.line(number).from).height;
+  }
+  return height;
+};
+
+// One row's share of an auto-sink: start `dy` away from its final place and ease home.
+const slideIntoPlace = (row, dy) => {
+  if (!row || !dy) return;
+  const running = sinkSlides.get(row);
+  if (running) running.cancel();
+  const animation = row.animate(
+    [{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }],
+    { duration: SLIDE_MS, easing: SLIDE_EASE },
+  );
+  sinkSlides.set(row, animation);
+  const forget = () => { if (sinkSlides.get(row) === animation) sinkSlides.delete(row); };
+  animation.finished.then(forget, forget);
+};
+
+// An auto-sink moves two groups: the block itself travels down over the rows it passed, and those
+// rows rise by the block's height. Both are already in their final document order when this runs,
+// so only the transform animates — no text reflows, no intermediate state to undo.
+// `start` and `count` are the block's old first line and size; `tail` is its new last line.
+const animateSink = (view, { start, count, tail, blockHeight, betweenHeight }) => {
+  const blockStart = tail - count + 1;
+  for (let number = blockStart; number <= tail; number++) {
+    slideIntoPlace(lineRow(view, number), -betweenHeight);
+  }
+  // The rows it jumped over now sit exactly where the block used to begin.
+  for (let number = start; number < blockStart; number++) {
+    slideIntoPlace(lineRow(view, number), blockHeight);
+  }
 };
 
 // ─── Blocks and gaps ─────────────────────────────────────────────────────────
@@ -1186,19 +1263,99 @@ const moveTaskBlock = (view, block, gap) => {
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
+// Leading whitespace of any line, task or not.
+const indentWidth = (text) => /^[ \t]*/.exec(text)[0].length;
+
+// Last line of the item's own sub-tree: its nested tasks and their continuation lines. A blank
+// line, a sibling, or any other block at the item's level ends it, so two lists separated by a
+// blank line (or prose) never merge.
+const subtreeEnd = (doc, number, width) => {
+  let end = number;
+  for (let n = number + 1; n <= doc.lines; n++) {
+    const text = doc.line(n).text;
+    if (text.trim() === '') break;
+    const deeper = indentWidth(text) > width;
+    const task = taskLineInfo(text);
+    if (task ? !deeper : (!deeper && BLOCK_START_RE.test(text))) break;
+    end = n;
+  }
+  return end;
+};
+
+// The end of the list this row belongs to: walk the siblings at the SAME indent (each taking its
+// sub-tree along), stopping at the first thing that isn't one. Returns null when the row is last.
+const listTail = (doc, line, width) => {
+  const end = subtreeEnd(doc, line.number, width);
+  let last = end;
+  for (let n = end + 1; n <= doc.lines; n = last + 1) {
+    const text = doc.line(n).text;
+    const next = taskLineInfo(text);
+    if (!next || indentWidth(text) !== width) break;
+    last = subtreeEnd(doc, n, width);
+  }
+  return last > end ? last : null;
+};
+
+// Flip one line's own mark, leaving everything else untouched.
+const flipMark = (text, checked) => {
+  const info = taskLineInfo(text);
+  if (!info) return text;
+  return text.slice(0, info.checkPos) + (checked ? 'x' : ' ') + text.slice(info.checkPos + 1);
+};
+
 const toggleTask = (view, lineFrom) => {
   if (view.state.readOnly) return;
-  const line = view.state.doc.lineAt(lineFrom);
+  const { doc } = view.state;
+  const line = doc.lineAt(lineFrom);
   const info = taskLineInfo(line.text);
   if (!info) return;
-  const pos = line.from + info.checkPos;
+  const width = info.indent.length;
+  const checking = !info.checked;
+
+  // The row and everything nested under it: ticking a parent finishes its sub-items too, so the
+  // block reads as one finished unit instead of a done line above still-undone children.
+  const end = subtreeEnd(doc, line.number, width);
+  const block = [];
+  for (let n = line.number; n <= end; n++) {
+    const text = doc.line(n).text;
+    block.push(n === line.number || indentWidth(text) > width ? flipMark(text, checking) : text);
+  }
+  const text = block.join('\n');
+
+  // Ticking sinks the whole block (children included) to the end of its list. Both halves are one
+  // change set, so one Mod-z restores the order AND every mark at once.
+  const tail = checking ? listTail(doc, line, width) : null;
+
+  // Measured before the dispatch: the rows still show where they were, and their heights are what
+  // the move shifts them by.
+  const count = end - line.number + 1;
+  const blockHeight = tail ? rowsPixelHeight(view, line.number, end) : 0;
+  const betweenHeight = tail ? rowsPixelHeight(view, end + 1, tail) : 0;
 
   view.dispatch({
-    changes: { from: pos, to: pos + 1, insert: info.checked ? ' ' : 'x' },
+    changes: tail
+      ? {
+        from: line.from,
+        to: doc.line(tail).to,
+        // Everything after the block up to the last sibling, then the moved block itself.
+        insert: `${doc.slice(doc.line(end + 1).from, doc.line(tail).to)}\n${text}`,
+      }
+      : { from: line.from, to: doc.line(end).to, insert: text },
     // One checkbox, one undo step: Mod-z after clicking a box unchecks it
     annotations: isolateHistory.of('full'),
     userEvent: 'input.checkbox',
   });
+
+  // Same motion as dragging a row: the block travels down, the rows it passed rise.
+  if (tail) {
+    animateSink(view, {
+      start: line.number,
+      count,
+      tail,
+      blockHeight,
+      betweenHeight,
+    });
+  }
 };
 
 // Views where the user actually placed a cursor; without one, "add a checkbox" goes to the bottom
@@ -1392,29 +1549,48 @@ const taskAtomicRanges = EditorView.atomicRanges.of(
 
 // ─── Styling ─────────────────────────────────────────────────────────────────
 
+// The tick inside a checked box. Drawn as an inline SVG rather than a rotated L: a rotated border
+// box rotates about its own centre, but its ink (an L) is not centred on that point — the check
+// ended up ~4px low and looked like a slash. An SVG is centred by geometry, scales with the box
+// and keeps the arms at the right proportion (14 × 10.6 in a 24 box).
+const TASK_TICK_URL =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.6 4.6L19 6.5'/%3E%3C/svg%3E\")";
+
 const taskTheme = EditorView.theme({
   '.cm-task-widget': {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: '5px',
+    // 3px, not 5: the handle used to hang 2px out of the scroller on a negative margin and its left
+    // dot column was clipped by `overflow: hidden`. Moving that 2px into the gap keeps grip + gap at
+    // exactly 13px, so the checkbox and the words stay where they were while the handle sits fully
+    // inside the content box.
+    gap: '3px',
     marginRight: '6px',
     verticalAlign: 'middle',
+    // `middle` centres the box on the x-height, which puts a quarter of it below the baseline
+    // (it sits 3.6px low against Lora's 11px caps). Relative top lifts it onto the cap's centre:
+    // 2px above the caps, 2px below the baseline. Painting only — no effect on the line box.
+    position: 'relative',
+    top: '-1.5px',
     lineHeight: '1',
     userSelect: 'none',
     whiteSpace: 'nowrap',
   },
   '.cm-task-grip': {
-    width: '8px',
-    height: '12px',
+    width: '10px',
+    height: '15px',
     flex: '0 0 auto',
+    // No negative margin: the scroller is `overflow: hidden` and starts at the content edge, so
+    // anything hanging left of it gets cut. The 2px it used to steal lives in the widget gap instead.
+    marginLeft: '0',
     borderRadius: '3px',
     cursor: 'grab',
     touchAction: 'none',
-    opacity: '0.35',
+    opacity: '0.4',
     position: 'relative',
     // 2 × 3 dots, in the platform coral rather than the stone grey
-    backgroundImage: 'radial-gradient(circle at 2px 2px, #e85d56 1.1px, transparent 1.2px)',
-    backgroundSize: '4px 4px',
+    backgroundImage: 'radial-gradient(circle at 2.5px 2.5px, #e85d56 1.35px, transparent 1.45px)',
+    backgroundSize: '5px 5px',
     transition: 'opacity 120ms ease',
   },
   // Bigger hit area than the dots suggest, so a finger or a hurried mouse still grabs the row.
@@ -1431,35 +1607,53 @@ const taskTheme = EditorView.theme({
   '&.cm-task-dragging .cm-task-grip': { cursor: 'grabbing', opacity: '0.7' },
   '.cm-task-check': {
     boxSizing: 'border-box',
-    width: '15px',
-    height: '15px',
+    width: '19px',
+    height: '19px',
     flex: '0 0 auto',
     margin: '0',
     padding: '0',
     position: 'relative',
     border: '1.6px solid #bfb2a1',
-    borderRadius: '4.5px',
+    // Round. 19px is the largest size that still fits the 21.7px line box without pushing the
+    // rows apart (20px starts growing it); the widget stays centred on the cap height, so the
+    // box grows evenly above and below instead of sinking.
+    borderRadius: '50%',
     background: 'transparent',
     cursor: 'pointer',
     transition: 'background-color 120ms ease, border-color 120ms ease',
   },
   '.cm-task-check:hover': { borderColor: '#e85d56' },
-  '.cm-task-check.is-checked': { backgroundColor: '#e85d56', borderColor: '#e85d56' },
-  '.cm-task-check.is-checked::after': {
-    content: '""',
-    position: 'absolute',
-    left: '4px',
-    top: '1px',
-    width: '4px',
-    height: '8px',
-    border: 'solid #fff',
-    borderWidth: '0 2px 2px 0',
-    transform: 'rotate(45deg)',
+  // Checked used to fill with the full accent (#e85d56). A solid disc of the most saturated colour
+  // on the page is ~3× the ink of the unchecked hairline, so finished rows outshouted the rows still
+  // to do — backwards. Same hue at ~50% strength (#eda39c) keeps the box unmistakably ticked while
+  // sitting quieter than the text beside it; the white tick stays heavy (2.8) because contrast on a
+  // softer fill is lower, and the strike already carries the "done" reading.
+  '.cm-task-check.is-checked': {
+    backgroundColor: '#eda39c',
+    borderColor: '#eda39c',
+    backgroundImage: TASK_TICK_URL,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'center',
+    backgroundSize: '86%',
   },
-  '.cm-task-done': {
-    color: '#9c9892',
+  // A finished line has to read as finished at a glance: the old #9c9892 with a 65% strike was
+  // barely a shade off the cream, so it looked like a rendering artefact rather than a cross-out.
+  // Now that the checked box is the softer #eda39c, the text steps back with it: #78716c (the 4.5:1
+  // stone-500) still sat at body weight, so the line reads as "done" rather than "still reading".
+  // #8a847b lands ~3.3:1 on the cream — deliberately under the body-text bar, since the strike is
+  // the primary signal and this is de-emphasised text, not content you have to read.
+  '.cm-line.cm-task-done': {
+    // `.cm-line` (0,2,0 once the theme prefixes it) was beating a bare `.cm-task-done` (0,1,0), so
+    // the grey never actually applied — only the faint strike did. Two classes on the line fixes it.
+    color: '#8a847b',
+  },
+  // Struck from the first character of text after the checkbox to the end of the line. On the line
+  // itself the decoration also runs through the leading indent, which painted a stray dash to the
+  // left of the grip on every checked child row.
+  '.cm-task-done-text': {
     textDecoration: 'line-through',
-    textDecorationColor: 'rgba(156, 152, 146, 0.65)',
+    textDecorationColor: 'rgba(138, 132, 123, 0.85)',
+    textDecorationThickness: '1px',
   },
   '.cm-task-drag-source': { opacity: '0.35' },
   // 'row' drag: the lifted copy is the only visible copy, so the document's rows become the hole.

@@ -92,7 +92,7 @@ const Home = () => {
           <div className="space-y-3">
             {/* Folders Section */}
             <div>
-              <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
+              <h3 className="text-[12px] md:text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
                 <MdOutlineFolder className="mr-2" size={16} />
                 Folders
               </h3>

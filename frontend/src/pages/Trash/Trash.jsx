@@ -51,7 +51,7 @@ const Trash = () => {
     <div className="pb-24 pl-2 pr-2 sm:pr-6">
       {isEmpty ? (
         <div className="flex flex-col items-center justify-center min-h-[50vh] text-center">
-          <p className="text-stone-400 text-sm">
+          <p className="text-stone-400 text-[15px] md:text-sm">
             Trash is empty! Good job keeping things tidy.
           </p>
         </div>
@@ -59,7 +59,7 @@ const Trash = () => {
         <div className="space-y-3">
           {trashFolders.length > 0 && (
             <div>
-              <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
+              <h3 className="text-[12px] md:text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
                 <MdOutlineFolder className="mr-2" size={16} />
                 Folders
               </h3>
@@ -74,7 +74,7 @@ const Trash = () => {
 
           {individualTrashNotes.length > 0 && (
             <div>
-              <h3 className="text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
+              <h3 className="text-[12px] md:text-[11px] font-semibold text-stone-400 uppercase tracking-widest mb-3 flex items-center">
                 <MdOutlineStickyNote2 className="mr-2" size={16} />
                 Notes
               </h3>

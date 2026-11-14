@@ -337,7 +337,8 @@ const GlobalEditorOverlay = () => {
           Card ↔ full screen is one spring (--fs) that interpolates the gaps, the widths and the
           chrome. The floating width is interpolated between the closed and open measures (see the
           --editor-card-* vars below), so it only changes by the room that is actually missing.
-          The outer layer is a size container with no padding, so 100cqw is the window width. */}
+          The outer layer is a size container with no padding, so 100cqw is the page width — the
+          window minus the scrollbar strip the page reserves (see the width below). */}
       {activeTab && isEditorOpen && (
         <Motion.div
           className="fixed inset-0 z-20 animate-scale-up pointer-events-none @container"

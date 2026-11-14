@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
-import { MdAdd, MdClose, MdRefresh, MdKeyboardArrowDown, MdCheckBoxOutlineBlank, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen, MdOutlineLink, MdUndo, MdRedo } from 'react-icons/md'
+import { MdAdd, MdClose, MdRefresh, MdKeyboardArrowDown, MdCheckBoxOutlineBlank, MdViewSidebar, MdOutlineFolder, MdOpenInFull, MdCloseFullscreen, MdOutlineLink } from 'react-icons/md'
 import { FaWandMagicSparkles, FaTag } from 'react-icons/fa6'
 import { RiSparkling2Fill } from 'react-icons/ri'
 import { LuUndo2, LuRedo2 } from 'react-icons/lu'
@@ -42,6 +42,38 @@ const TextAreaPlaceholder = ({ text }) => (
   <div className="font-['Lora',Georgia,serif] text-[#333] whitespace-pre-wrap break-words" aria-hidden="true">
     {text || <span className="text-[#a8a29e]">Start typing...</span>}
   </div>
+);
+
+// The undo/redo trigger. Two icons side by side made the button 53px wide in a row of 36px squares,
+// and shrinking a 16-unit arrow pair into one square left it 9.5px tall and illegible. One circular
+// pair reads at 20px where a squeezed pair does not, so the mark is Tabler's refresh glyph: two
+// circular arrows, heads at opposite corners, backs to each other.
+//
+// It is drawn at its native size — no transform. Tabler's geometry spans 4–20 with a 2-unit stroke,
+// so the ink box is 3–21: an 18-unit square inset 3 units on every side, which is exactly the box
+// MdCheckBoxOutlineBlank and MdViewSidebar beside it occupy (both 3–21). Scaling this glyph up to
+// "match" a 24-unit frame pushed the stroke past the viewBox on all four sides and the button edge
+// clipped it; native size is the correct, uncropped match.
+const UNDO_REDO_ARROWS = [
+  'M20 11a8.1 8.1 0 0 0-15.5-2m-.5-4v4h4',
+  'M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4',
+];
+
+const UndoRedoMark = ({ className }) => (
+  <svg
+    viewBox="0 0 24 24"
+    width="1em"
+    height="1em"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    {UNDO_REDO_ARROWS.map((d) => <path key={d} d={d} />)}
+  </svg>
 );
 
 const isMobileOrTouch = () =>
@@ -857,7 +889,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           deleted and re-added, in markdown, above the same text again. Before / After swaps the
           body for your original, read-only, in the same editor look. */}
       {noteData?.agentStaged && (
-        <div className="shrink-0 flex items-center justify-between gap-3 px-5 md:px-7 pt-3 pb-2.5 border-b border-black/5 font-sans">
+        <div className="shrink-0 flex items-center justify-between gap-3 px-4 md:px-7 pt-3 pb-2.5 border-b border-black/5 font-sans">
           <p className="flex items-center gap-1.5 min-w-0 text-[11px] md:text-[13px] font-medium tracking-wider md:tracking-[0.15em] uppercase text-stone-500">
             <RiSparkling2Fill className="shrink-0 text-[#e85d56] text-xs md:text-sm" />
             <span className="truncate">{type === 'edit' ? 'Edited by the agent' : 'Drafted by the agent'} · unsaved</span>
@@ -911,7 +943,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       )}
 
       {/* editor content area */}
-      <div ref={scrollAreaRef} className='editor-column [--column-pad:1.25rem] md:[--column-pad:1.75rem] flex-grow flex flex-col pt-4 md:pt-5 pb-2 overflow-y-auto overflow-x-hidden overscroll-contain editor-scrollbar'>
+      <div ref={scrollAreaRef} className='editor-column [--column-pad:1rem] md:[--column-pad:1.75rem] flex-grow flex flex-col pt-4 md:pt-5 pb-4 overflow-y-auto overflow-x-hidden overscroll-contain editor-scrollbar'>
 
         {/* metadata area */}
         <div className="text-[11px] md:text-[13px] font-medium tracking-wider md:tracking-[0.15em] text-stone-500 mb-0.5 md:mb-1 uppercase flex items-center justify-between gap-1.5 md:gap-2 shrink-0">
@@ -1125,7 +1157,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           {/* ── CodeMirror live-preview markdown editor ── */}
           <div 
             data-editor-surface=""
-            className={`flex-grow min-w-0 overflow-x-hidden text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] cursor-text ${isShowingBefore || isShowingChanges ? 'hidden' : ''}`}
+            className={`flex-grow min-w-0 overflow-x-hidden text-[15.5px] leading-[1.55] cursor-text ${isShowingBefore || isShowingChanges ? 'hidden' : ''}`}
                onClick={(e) => {
                  if (e.target === e.currentTarget && cmViewRef.current) {
                    const view = cmViewRef.current;
@@ -1171,7 +1203,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
           {/* Before: your original, read-only, in the editor's own look (the live editor above is
               only hidden, so switching back keeps your place) */}
           {isShowingBefore && (
-            <div className="flex-grow text-[15px] leading-[1.55] md:text-[16px] md:leading-[1.75] opacity-70 select-text">
+            <div className="flex-grow text-[15.5px] leading-[1.55] opacity-70 select-text">
               <Suspense fallback={<TextAreaPlaceholder text={agentOriginalContent} />}>
                 <ReadOnlyMarkdown value={agentOriginalContent} />
               </Suspense>
@@ -1192,7 +1224,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
 
           {/* Link Previews list */}
           {linkPreviews.length > 0 && (
-            <div className={`flex flex-col gap-2 mt-2.5 border-t border-black/5 pt-2 shrink-0 font-sans ${isLinkPreviewsOpen ? 'pb-1' : 'pb-0.5'}`}>
+            <div className="flex flex-col gap-2 mt-2.5 border-t border-black/5 pt-2 shrink-0 font-sans">
               <button
                 type="button"
                 onClick={toggleLinkPreviews}
@@ -1223,7 +1255,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
                       }
                     }
                   }}
-                  className="flex gap-2 overflow-x-auto pb-1 previews-scrollbar py-0.5"
+                  className="flex gap-2 overflow-x-auto pb-0 previews-scrollbar py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden!"
                 >
                   {linkPreviews.map((preview, idx) => (
                     <a 
@@ -1284,7 +1316,7 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
       </div>
 
       {/* slim line separator */}
-      <div className="px-5 md:px-7 shrink-0">
+      <div className="px-4 md:px-7 shrink-0">
         <div className="h-[1px] w-full bg-black/5" />
       </div>
 
@@ -1346,13 +1378,13 @@ const AddEditNotes = ({ type, noteData, onUpdateTabState, onClose, onSaveSuccess
               <button
                 type="button"
                 onClick={() => setIsHistoryOpen((open) => !open)}
-                className={`flex items-center justify-center gap-px p-2 md:px-2.5 md:py-2 rounded-lg transition-colors cursor-pointer ${isHistoryOpen ? 'bg-white shadow-sm text-[#333]' : 'text-stone-500 hover:text-[#333] hover:bg-black/5'}`}
+                className={`flex items-center justify-center gap-1.5 p-2 md:px-2.5 md:py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isHistoryOpen ? 'bg-white shadow-sm text-[#333]' : 'text-stone-500 hover:text-[#333] hover:bg-black/5'}`}
                 title="Undo / redo"
                 aria-label="Undo and redo"
                 aria-expanded={isHistoryOpen}
               >
-                <MdUndo className="text-lg md:text-[15px]" />
-                <MdRedo className="text-lg md:text-[15px]" />
+                <UndoRedoMark className="text-xl md:text-base" />
+                <span className="hidden @min-[660px]:inline">History</span>
               </button>
 
               {isHistoryOpen && (

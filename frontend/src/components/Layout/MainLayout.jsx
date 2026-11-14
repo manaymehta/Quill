@@ -16,7 +16,7 @@ import AgentPanel from "../Agent/AgentPanel";
 import { useSearchStore } from "../../store/useSearchStore";
 import { useAgentToast } from "../../hooks/useAgentToast";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
-import { MOBILE_QUERY } from "../../constants/breakpoints";
+import { MOBILE_QUERY, SIDEBAR_DOCK_QUERY } from "../../constants/breakpoints";
 import { setKeyboardOverlaysContent } from "../../utils/virtualKeyboard";
 
 const MainLayout = () => {
@@ -76,6 +76,9 @@ const MainLayout = () => {
     // (straight through when the sidebar was too short to scroll, or once it reached its end).
     const isPhone = useMediaQuery(MOBILE_QUERY);
     const isPhoneSidebarOpen = isPhone && isSidebarOpen;
+    // Below the dock width the sidebar slides over the page instead of pushing it (it would squeeze
+    // the notes grid), so the page keeps only the rail's width, open or not.
+    const isSidebarDocked = useMediaQuery(SIDEBAR_DOCK_QUERY);
     useEffect(() => {
         if (isEditorActive || isAgentMode || isPhoneSidebarOpen) {
             document.body.style.overflow = 'hidden';
@@ -108,7 +111,9 @@ const MainLayout = () => {
             {!isEditorActive && !isAgentMode && <Navbar />}
 
             {/* Main Outlet content (hidden when editor is active) */}
-            <div className={`transition-[padding] ${isSidebarOpen ? "pl-0 sm:pl-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "pl-0 sm:pl-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]"} pt-[60px] md:pt-[72px] ${isEditorActive ? "hidden" : ""}`}>
+            {/* Top offset = the navbar's own height (60 below sm, 68 above — the logo sizes it) plus the
+                4px a card lifts on hover, so the first row never slides under the bar. */}
+            <div className={`transition-[padding] ${isSidebarOpen && isSidebarDocked ? "pl-0 sm:pl-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "pl-0 sm:pl-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]"} pt-[64px] sm:pt-[72px] ${isEditorActive ? "hidden" : ""}`}>
                 {/* The chat in place of the page. It opens with its own scale-up; closing, it leaves the
                     same way reversed (a slight shrink and a quick fade) and the page fades back in —
                     it used to vanish in one frame. The page stays mounted underneath, only hidden, as
@@ -140,7 +145,7 @@ const MainLayout = () => {
                                 // cancels the sidebar's padding above (same widths, timing and curve),
                                 // so the chat stays centred on the screen while the sidebar slides over
                                 // it, as the editor does; in the padded column it re-centred and shifted
-                                className={`absolute inset-x-0 top-0 transition-[margin] ${isSidebarOpen ? "ml-0 sm:-ml-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "ml-0 sm:-ml-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]"}`}
+                                className={`absolute inset-x-0 top-0 transition-[margin] ${isSidebarOpen && isSidebarDocked ? "ml-0 sm:-ml-55 duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "ml-0 sm:-ml-16 duration-200 ease-[cubic-bezier(0.2,0,0,1)]"}`}
                             >
                                 <AgentPanel />
                             </motion.div>
@@ -152,10 +157,10 @@ const MainLayout = () => {
             {/* Global Note Editor Overlay (z-20) */}
             <GlobalEditorOverlay />
             
-            {/* Sidebar backdrop: phones only (sm:hidden), as in the last commit. Above that the
-                sidebar pushes the page, and in full screen it slides over the editor. */}
+            {/* Sidebar backdrop: wherever the sidebar floats over the page (phones, and below the dock
+                width where it would squeeze the grid). Docked, it pushes the page instead, no dim. */}
             <div
-                className={`fixed -inset-2 bg-black/60 backdrop-blur-[2px] z-[75] sm:hidden transition-all ${isSidebarOpen ? "opacity-100 pointer-events-auto duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "opacity-0 pointer-events-none duration-200 ease-[cubic-bezier(0.2,0,0,1)]"}`}
+                className={`fixed -inset-2 bg-black/60 backdrop-blur-[2px] z-[75] ${isSidebarDocked ? "hidden" : ""} transition-all ${isSidebarOpen ? "opacity-100 pointer-events-auto duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)]" : "opacity-0 pointer-events-none duration-200 ease-[cubic-bezier(0.2,0,0,1)]"}`}
                 onClick={toggleSidebar}
             />
 
